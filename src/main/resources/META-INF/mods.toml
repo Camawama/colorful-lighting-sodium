@@ -33,7 +33,7 @@ side="BOTH"
 [[dependencies.${mod_id}]]
 modId="flywheel"
 mandatory=false
-versionRange="[1.0.5,)"
+versionRange="[1.0.4,1.0.8)"
 ordering="AFTER"
 side="CLIENT"
 
