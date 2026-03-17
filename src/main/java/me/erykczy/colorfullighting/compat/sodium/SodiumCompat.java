@@ -10,12 +10,17 @@ import net.minecraft.world.level.ChunkPos;
 import org.jetbrains.annotations.Nullable;
 
 public class SodiumCompat {
+    private static Boolean isLoaded = null;
+
     public static boolean isSodiumLoaded() {
-        try {
-            Class.forName("org.embeddedt.embeddium.impl.render.chunk.compile.ChunkBuildBuffers");
-            return true;
-        } catch (ClassNotFoundException e) {
-            return false;
+        if (isLoaded == null) {
+            try {
+                Class.forName("org.embeddedt.embeddium.impl.render.chunk.compile.ChunkBuildBuffers");
+                isLoaded = true;
+            } catch (ClassNotFoundException e) {
+                isLoaded = false;
+            }
         }
+        return isLoaded;
     }
 }
