@@ -15,6 +15,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+/*
+This mixin is a BAND-AID fix for lingering light from explosions.
+Until I find a better way to handle light updates, this will do.
+ */
+
 @Mixin(ClientPacketListener.class)
 public class ClientPacketListenerMixin {
 
