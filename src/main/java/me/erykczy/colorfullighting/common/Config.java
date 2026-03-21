@@ -90,7 +90,8 @@ public class Config {
         }
         return defaultColor.mul(lightEmission);
     }
-    
+
+    // Integration for Lively Lighting
     private static ColorRGB4 getDynamicColorFromNearbyEntities(BlockPos lightBlockPos) {
         if (Minecraft.getInstance().level == null) return null;
         
