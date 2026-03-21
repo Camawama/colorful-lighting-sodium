@@ -20,7 +20,7 @@
 	},
 	"minecraft:smoker": {
 		"states": {
-			"lit=true": "#fff3a7"
+			"lit=true": "orange;6"
 		},
 		"default": "#ff4400;1"
 	},
