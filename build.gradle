@@ -94,14 +94,17 @@ dependencies {
     compileOnly fg.deobf("curse.maven:architectury-api-419699:5137938")
     compileOnly fg.deobf("maven.modrinth:distanthorizonsapi:j15Y57xi")
     //compileOnly fg.deobf("curse.maven:flerovium-1142875:7584065")
+    //compileOnly fg.deobf("curse.maven:immersive-portals-for-forge-355440:6368524")
 
     // RUNTIME ONLY
-    runtimeOnly fg.deobf("curse.maven:distant-horizons-508933:7375280")
+    //runtimeOnly fg.deobf("curse.maven:cloth-config-348521:5729105")
+    //runtimeOnly fg.deobf("curse.maven:immersive-portals-for-forge-355440:6368524")
+    //runtimeOnly fg.deobf("curse.maven:distant-horizons-508933:7375280")
     //runtimeOnly fg.deobf("curse.maven:flerovium-1142875:7584065")
-    runtimeOnly fg.deobf("curse.maven:lively-lighting-1485353:7759348")
     //runtimeOnly fg.deobf("curse.maven:true-darkness-forge-updated-fork-970641:5080314")
+    //runtimeOnly fg.deobf("curse.maven:starlight-with-create-fix-1438426:7501699")
     runtimeOnly fg.deobf("curse.maven:wakes-reforged-1223529:7494279")
-    runtimeOnly fg.deobf("curse.maven:starlight-with-create-fix-1438426:7501699")
+    runtimeOnly fg.deobf("curse.maven:lively-lighting-1485353:7759348")
     runtimeOnly fg.deobf("curse.maven:oculus-581495:6020952")
     runtimeOnly fg.deobf("curse.maven:architectury-api-419699:5137938")
 
