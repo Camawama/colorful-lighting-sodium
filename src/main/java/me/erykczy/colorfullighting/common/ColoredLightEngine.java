@@ -15,7 +15,12 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.BooleanOp;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -625,13 +630,36 @@ public class ColoredLightEngine {
                 BlockStateAccessor neighbourState = level.getBlockState(neighbourPos);
                 if(neighbourState == null) return false; // section might have got unloaded and propagation should stop
 
-                // light attenuation
-                int lightBlocked = Math.max(1, neighbourState.getLightBlock(level, neighbourPos)); // vanilla light block
-                
-                // Check for custom absorption
+                // Start with vanilla light blocking
+                int lightBlocked = Math.max(1, neighbourState.getLightBlock(level, neighbourPos));
+
+                // Override with custom absorption if it's defined
                 int customAbsorption = Config.getLightAbsorption(level, neighbourPos, neighbourState);
                 if (customAbsorption >= 0) {
-                    lightBlocked = customAbsorption;
+                    if (customAbsorption < 15) {
+                        // It's a partial absorber, just use the value.
+                        lightBlocked = customAbsorption;
+                    } else {
+                        // It's a full absorber (door case).
+                        // Check geometry. If the face is open, let a little light in. Otherwise, block fully.
+                        BlockStateAccessor sourceStateAcc = level.getBlockState(request.blockPos);
+                        if (sourceStateAcc == null) {
+                            lightBlocked = 15; // Can't check, assume occluded
+                        } else {
+                            BlockState sourceBlockState = sourceStateAcc.getBlockState();
+                            BlockState neighborBlockState = neighbourState.getBlockState();
+                            VoxelShape sourceFaceShape = sourceBlockState.getFaceOcclusionShape(level.getLevel(), request.blockPos, direction);
+                            VoxelShape neighbourFaceShape = neighborBlockState.getFaceOcclusionShape(level.getLevel(), neighbourPos, direction.getOpposite());
+
+                            if (Shapes.faceShapeOccludes(sourceFaceShape, neighbourFaceShape)) {
+                                lightBlocked = 15;
+                            } else {
+                                // This is the door case: custom absorption is 15, but the face is open.
+                                // Let light in to light the face.
+                                lightBlocked = 1;
+                            }
+                        }
+                    }
                 }
                 
                 // Calculate transmittance based on both source exit and destination entry

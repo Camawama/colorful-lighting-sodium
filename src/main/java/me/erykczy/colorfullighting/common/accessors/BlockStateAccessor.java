@@ -3,6 +3,7 @@ package me.erykczy.colorfullighting.common.accessors;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 
 public interface BlockStateAccessor {
     ResourceKey<Block> getBlockKey();
@@ -13,4 +14,5 @@ public interface BlockStateAccessor {
     boolean isAir();
     String getPropertiesAsString();
     String getPropertyString(String propertyName);
+    BlockState getBlockState();
 }
