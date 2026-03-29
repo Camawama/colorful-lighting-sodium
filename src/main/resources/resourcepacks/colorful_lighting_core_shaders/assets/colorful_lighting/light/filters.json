@@ -201,8 +201,7 @@
   "minecraft:iron_door": {
     "states": {
       "open=true": "white;0",
-      "open=false,half=upper": "white;5",
-      "open=false,half=lower": "white;15"
+      "open=false": "white;15"
     },
     "default": "white;15"
   },
