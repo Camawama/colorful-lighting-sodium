@@ -11,12 +11,14 @@ import me.erykczy.colorfullighting.common.util.MathExt;
 import me.erykczy.colorfullighting.compat.sodium.SodiumCompat;
 import me.erykczy.colorfullighting.mixin.compat.sodium.SodiumWorldRendererAccessor;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.BooleanOp;
 import net.minecraft.world.phys.shapes.Shapes;
@@ -27,6 +29,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 
 /**
  * Class responsible for managing light color values in the client's world and sampling those values.
@@ -51,6 +54,8 @@ public class ColoredLightEngine {
     
     private boolean enabled = true;
 
+    private Frustum frustum;
+
     private static ColoredLightEngine instance;
     public static ColoredLightEngine getInstance() {
         return instance;
@@ -73,6 +78,10 @@ public class ColoredLightEngine {
     
     public boolean isEnabled() {
         return enabled;
+    }
+
+    public void updateFrustum(Frustum frustum) {
+        this.frustum = frustum;
     }
 
     public ColorRGB4 sampleLightColor(BlockPos pos) { return sampleLightColor(pos.getX(), pos.getY(), pos.getZ()); }
@@ -472,6 +481,32 @@ public class ColoredLightEngine {
             var iterator = chunksWaitingForPropagation.iterator();
             int minDistance = Integer.MAX_VALUE;
             ChunkPos nearestChunkPos = null;
+
+            if (frustum != null) {
+                List<ChunkPos> visibleChunks = new ArrayList<>();
+                while (iterator.hasNext()) {
+                    ChunkPos chunkPos = iterator.next();
+                    if (!level.hasChunkAndNeighbours(chunkPos)) continue;
+
+                    AABB chunkBox = new AABB(chunkPos.getMinBlockX(), level.getLevel().getMinBuildHeight(), chunkPos.getMinBlockZ(), chunkPos.getMaxBlockX() + 1, level.getLevel().getMaxBuildHeight(), chunkPos.getMaxBlockZ() + 1);
+                    if (frustum.isVisible(chunkBox)) {
+                        visibleChunks.add(chunkPos);
+                    }
+                }
+
+                if (!visibleChunks.isEmpty()) {
+                    for (ChunkPos chunkPos : visibleChunks) {
+                        int distance = chunkPos.getChessboardDistance(player.getChunkPos());
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            nearestChunkPos = chunkPos;
+                        }
+                    }
+                    return nearestChunkPos == null ? null : new NearestChunkResult(nearestChunkPos, minDistance * 16);
+                }
+            }
+
+            iterator = chunksWaitingForPropagation.iterator(); // Reset iterator
             while (iterator.hasNext()) {
                 ChunkPos chunkPos = iterator.next();
                 if(!level.hasChunkAndNeighbours(chunkPos)) continue; // chunk and neighbours must have available block state data
