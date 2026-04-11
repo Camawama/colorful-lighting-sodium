@@ -48,18 +48,7 @@ vec4 _sample_lightmap(sampler2D lightMap, ivec2 uv) {
 
     vec3 sky = _sample_lightmap_vanilla(lightMap, ivec2(0, skyLight4 << 4)).xyz;
 
-    // True Darkness Compat:
-    float maxComponent = max(blockLightColor.r, max(blockLightColor.g, blockLightColor.b));
-    vec3 block;
-
-    if (maxComponent > 0.001) {
-        int level = int(clamp(maxComponent * 15.0 + 0.5, 0.0, 15.0));
-        vec3 lightmapCurve = _sample_lightmap_vanilla(lightMap, ivec2(level << 4, 0)).xyz;
-        float curveBrightness = max(lightmapCurve.r, max(lightmapCurve.g, lightmapCurve.b));
-        block = (blockLightColor / maxComponent) * curveBrightness;
-    } else {
-        block = vec3(0.0);
-    }
+    vec3 block = pow(blockLightColor, vec3(1.3));
 
     // Calculate effective sky brightness influence based on moon phase.
     float moonWashoutFactor = mix(3.0, 0.0, u_NightVibrancy);
