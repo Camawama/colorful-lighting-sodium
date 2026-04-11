@@ -48,24 +48,7 @@ vec4 _sample_lightmap(sampler2D lightMap, ivec2 uv) {
 
     vec3 sky = _sample_lightmap_vanilla(lightMap, ivec2(0, skyLight4 << 4)).xyz;
 
-    // True Darkness Compat:
-    // Sample the vanilla lightmap to apply its brightness curve (and any modded darkening) to our colored light.
-    float maxComponent = max(blockLightColor.r, max(blockLightColor.g, blockLightColor.b));
-    vec3 block;
-
-    if (maxComponent > 0.001) {
-        int level = int(clamp(maxComponent * 15.0 + 0.5, 0.0, 15.0));
-        // Sample vanilla lightmap at the corresponding block light level (with 0 sky light)
-        vec3 lightmapCurve = _sample_lightmap_vanilla(lightMap, ivec2(level << 4, 0)).xyz;
-
-        // Extract brightness from the curve to avoid tinting our colored light with the vanilla lightmap color (e.g. torch yellow)
-        float curveBrightness = max(lightmapCurve.r, max(lightmapCurve.g, lightmapCurve.b));
-
-        // Apply the curve brightness to our normalized color
-        block = (blockLightColor / maxComponent) * curveBrightness;
-    } else {
-        block = vec3(0.0);
-    }
+    vec3 block = pow(blockLightColor, vec3(1.3));
 
     // Calculate effective sky brightness influence based on moon phase.
     float moonWashoutFactor = mix(3.0, 0.0, u_NightVibrancy);
