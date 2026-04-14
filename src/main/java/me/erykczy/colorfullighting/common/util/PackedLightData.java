@@ -33,21 +33,64 @@ public class PackedLightData {
         return packedData == 0xF0000000 || packedData == 0;
     }
 
-    public static int blend(int lightColor0, int lightColor1, int lightColor2, int lightColor3) {
-        if (isBlack(lightColor0)) lightColor0 = lightColor3;
-        if (isBlack(lightColor1)) lightColor1 = lightColor3;
-        if (isBlack(lightColor2)) lightColor2 = lightColor3;
+    private static int blendChannel(int a, int b, int c, int d) {
+        if ((a == 0) || (b == 0) || (c == 0) || (d == 0)) {
+            final int min = minNonZero(minNonZero(a, b), minNonZero(c, d));
+            a = Math.max(a, min);
+            b = Math.max(b, min);
+            c = Math.max(c, min);
+            d = Math.max(d, min);
+        }
+        return (a + b + c + d) >> 2;
+    }
 
+    private static int minNonZero(int a, int b) {
+        if (a == 0) return b;
+        if (b == 0) return a;
+        return Math.min(a, b);
+    }
+
+    public static int blend(int lightColor0, int lightColor1, int lightColor2, int lightColor3) {
         var data0 = unpackData(lightColor0);
         var data1 = unpackData(lightColor1);
         var data2 = unpackData(lightColor2);
         var data3 = unpackData(lightColor3);
 
+        int sky = blendChannel(data0.skyLight4, data1.skyLight4, data2.skyLight4, data3.skyLight4);
+
+        int lum0 = Math.max(data0.red8, Math.max(data0.green8, data0.blue8));
+        int lum1 = Math.max(data1.red8, Math.max(data1.green8, data1.blue8));
+        int lum2 = Math.max(data2.red8, Math.max(data2.green8, data2.blue8));
+        int lum3 = Math.max(data3.red8, Math.max(data3.green8, data3.blue8));
+
+        int minLum = 256;
+        PackedLightData minData = null;
+        if (lum0 > 0 && lum0 < minLum) { minLum = lum0; minData = data0; }
+        if (lum1 > 0 && lum1 < minLum) { minLum = lum1; minData = data1; }
+        if (lum2 > 0 && lum2 < minLum) { minLum = lum2; minData = data2; }
+        if (lum3 > 0 && lum3 < minLum) { minLum = lum3; minData = data3; }
+
+        int r0 = lum0 > 0 ? data0.red8 : (minData != null ? minData.red8 : 0);
+        int g0 = lum0 > 0 ? data0.green8 : (minData != null ? minData.green8 : 0);
+        int b0 = lum0 > 0 ? data0.blue8 : (minData != null ? minData.blue8 : 0);
+
+        int r1 = lum1 > 0 ? data1.red8 : (minData != null ? minData.red8 : 0);
+        int g1 = lum1 > 0 ? data1.green8 : (minData != null ? minData.green8 : 0);
+        int b1 = lum1 > 0 ? data1.blue8 : (minData != null ? minData.blue8 : 0);
+
+        int r2 = lum2 > 0 ? data2.red8 : (minData != null ? minData.red8 : 0);
+        int g2 = lum2 > 0 ? data2.green8 : (minData != null ? minData.green8 : 0);
+        int b2 = lum2 > 0 ? data2.blue8 : (minData != null ? minData.blue8 : 0);
+
+        int r3 = lum3 > 0 ? data3.red8 : (minData != null ? minData.red8 : 0);
+        int g3 = lum3 > 0 ? data3.green8 : (minData != null ? minData.green8 : 0);
+        int b3 = lum3 > 0 ? data3.blue8 : (minData != null ? minData.blue8 : 0);
+
         return packData(
-                (data0.skyLight4 + data1.skyLight4 + data2.skyLight4 + data3.skyLight4) >> 2,
-                (data0.red8 + data1.red8 + data2.red8 + data3.red8) >> 2,
-                (data0.green8 + data1.green8 + data2.green8 + data3.green8) >> 2,
-                (data0.blue8 + data1.blue8 + data2.blue8 + data3.blue8) >> 2
+                sky,
+                (r0 + r1 + r2 + r3) >> 2,
+                (g0 + g1 + g2 + g3) >> 2,
+                (b0 + b1 + b2 + b3) >> 2
         );
     }
 

@@ -65,4 +65,9 @@ public class BlockStateWrapper implements BlockStateAccessor {
         }
         return null;
     }
+
+    @Override
+    public BlockState getBlockState() {
+        return blockState;
+    }
 }

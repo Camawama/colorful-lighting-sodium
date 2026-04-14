@@ -112,19 +112,45 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
             return (sl_avg << 16) | bl_avg;
         }
 
-        if (SodiumPackedLightData.isBlack(a)) a = d;
-        if (SodiumPackedLightData.isBlack(b)) b = d;
-        if (SodiumPackedLightData.isBlack(c)) c = d;
-
         var da = SodiumPackedLightData.unpackData(a);
         var db = SodiumPackedLightData.unpackData(b);
         var dc = SodiumPackedLightData.unpackData(c);
         var dd = SodiumPackedLightData.unpackData(d);
 
         int sky = blendChannel(da.skyLight4, db.skyLight4, dc.skyLight4, dd.skyLight4);
-        int red = (da.red8 + db.red8 + dc.red8 + dd.red8) >> 2;
-        int green = (da.green8 + db.green8 + dc.green8 + dd.green8) >> 2;
-        int blue = (da.blue8 + db.blue8 + dc.blue8 + dd.blue8) >> 2;
+
+        int lum_a = Math.max(da.red8, Math.max(da.green8, da.blue8));
+        int lum_b = Math.max(db.red8, Math.max(db.green8, db.blue8));
+        int lum_c = Math.max(dc.red8, Math.max(dc.green8, dc.blue8));
+        int lum_d = Math.max(dd.red8, Math.max(dd.green8, dd.blue8));
+
+        int minLum = 256;
+        SodiumPackedLightData minData = null;
+
+        if (lum_a > 0 && lum_a < minLum) { minLum = lum_a; minData = da; }
+        if (lum_b > 0 && lum_b < minLum) { minLum = lum_b; minData = db; }
+        if (lum_c > 0 && lum_c < minLum) { minLum = lum_c; minData = dc; }
+        if (lum_d > 0 && lum_d < minLum) { minLum = lum_d; minData = dd; }
+
+        int r_a = lum_a > 0 ? da.red8 : (minData != null ? minData.red8 : 0);
+        int g_a = lum_a > 0 ? da.green8 : (minData != null ? minData.green8 : 0);
+        int b_a = lum_a > 0 ? da.blue8 : (minData != null ? minData.blue8 : 0);
+
+        int r_b = lum_b > 0 ? db.red8 : (minData != null ? minData.red8 : 0);
+        int g_b = lum_b > 0 ? db.green8 : (minData != null ? minData.green8 : 0);
+        int b_b = lum_b > 0 ? db.blue8 : (minData != null ? minData.blue8 : 0);
+
+        int r_c = lum_c > 0 ? dc.red8 : (minData != null ? minData.red8 : 0);
+        int g_c = lum_c > 0 ? dc.green8 : (minData != null ? minData.green8 : 0);
+        int b_c = lum_c > 0 ? dc.blue8 : (minData != null ? minData.blue8 : 0);
+
+        int r_d = lum_d > 0 ? dd.red8 : (minData != null ? minData.red8 : 0);
+        int g_d = lum_d > 0 ? dd.green8 : (minData != null ? minData.green8 : 0);
+        int b_d = lum_d > 0 ? dd.blue8 : (minData != null ? minData.blue8 : 0);
+
+        int red = (r_a + r_b + r_c + r_d) >> 2;
+        int green = (g_a + g_b + g_c + g_d) >> 2;
+        int blue = (b_a + b_b + b_c + b_d) >> 2;
 
         return SodiumPackedLightData.packData(sky, red, green, blue);
     }

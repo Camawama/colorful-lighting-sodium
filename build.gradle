@@ -96,7 +96,7 @@ dependencies {
     //compileOnly fg.deobf("curse.maven:flerovium-1142875:7584065")
     //compileOnly fg.deobf("curse.maven:immersive-portals-for-forge-355440:6368524")
 
-    // RUNTIME ONLY (for testing)
+    // RUNTIME ONLY
     //runtimeOnly fg.deobf("curse.maven:cloth-config-348521:5729105")
     //runtimeOnly fg.deobf("curse.maven:immersive-portals-for-forge-355440:6368524")
     //runtimeOnly fg.deobf("curse.maven:distant-horizons-508933:7375280")
