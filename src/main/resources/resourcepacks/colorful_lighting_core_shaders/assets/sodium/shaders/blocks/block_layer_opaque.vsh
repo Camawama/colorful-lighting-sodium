@@ -29,33 +29,61 @@ vec4 _sample_lightmap_vanilla(sampler2D lightMap, ivec2 uv) {
 }
 
 vec4 _sample_lightmap(sampler2D lightMap, ivec2 uv) {
-    int leastSignificantShort = uv.x;
-    int mostSignificantShort = uv.y;
+    uint packed_light;
+#ifdef USE_VERTEX_COMPRESSION
+    packed_light = (uint(uv.y) << 16) | uint(uv.x);
+#else
+    // In non-compact mode, the 16-bit light data is split into two 8-bit values.
+    // We need to reconstruct the 16-bit value here.
+    packed_light = (uint(uv.y) << 8) | uint(uv.x);
+#endif
 
-    int red8 = (leastSignificantShort >> 0) & 0xFF;
-    int green8 = (leastSignificantShort >> 8) & 0xFF;
+    // Check for our magic number in the highest 4 bits.
+    if (((packed_light >> 28) & 0xFu) == 0xFu) {
+        // It's our format (Compact), unpack the full color data.
+        uint red8 = (packed_light >> 0) & 0xFFu;
+        uint green8 = (packed_light >> 8) & 0xFFu;
+        uint skyLight4 = (packed_light >> 16) & 0xFu;
+        uint blue8 = (packed_light >> 20) & 0xFFu;
 
-    int skyLight4 = (mostSignificantShort >> 0) & 0xF;
-    int blue8 = (mostSignificantShort >> 4) & 0xFF;
-    int alpha4 = (mostSignificantShort >> 12) & 0xF;
+        const float divideBy255 = 0.00392156862;
+        vec3 blockLightColor = vec3(float(red8)*divideBy255, float(green8)*divideBy255, float(blue8)*divideBy255);
+        vec3 sky = _sample_lightmap_vanilla(lightMap, ivec2(0, int(skyLight4) << 4)).xyz;
+        vec3 block = pow(blockLightColor, vec3(1.3));
 
-    if ((mostSignificantShort & 0xF000) != 0xF000) {
-        return _sample_lightmap_vanilla(lightMap, uv);
+        float moonWashoutFactor = mix(3.0, 0.0, u_NightVibrancy);
+        float skyExposure = float(skyLight4) / 15.0;
+        float effectiveSkyBrightness = sky.r * moonWashoutFactor * skyExposure;
+
+        return vec4(sky + block * max(0.3, 1.0 - effectiveSkyBrightness), 1.0);
     }
 
-    const float divideBy255 = 0.00392156862;
-    vec3 blockLightColor = vec3(float(red8)*divideBy255, float(green8)*divideBy255, float(blue8)*divideBy255);
+    // Check if it's our compressed 16-bit non-compact format (bit 0 == 1)
+    if ((packed_light & 0x1u) == 0x1u) {
+        // Unpack from the 16-bit integer (actually the lower 16 bits of packed_light)
+        uint skyLight4 = (packed_light >> 1) & 0xFu;
+        uint red4 = (packed_light >> 5) & 0xFu;
+        uint green4 = (packed_light >> 9) & 0xFu;
+        uint blue3 = (packed_light >> 13) & 0x7u;
 
-    vec3 sky = _sample_lightmap_vanilla(lightMap, ivec2(0, skyLight4 << 4)).xyz;
+        // Expand to 8-bit equivalent
+        float red8 = float(red4) / 15.0;
+        float green8 = float(green4) / 15.0;
+        float blue8 = float(blue3) / 7.0;
 
-    vec3 block = pow(blockLightColor, vec3(1.3));
+        vec3 blockLightColor = vec3(red8, green8, blue8);
+        vec3 sky = _sample_lightmap_vanilla(lightMap, ivec2(0, int(skyLight4) << 4)).xyz;
+        vec3 block = pow(blockLightColor, vec3(1.3));
 
-    // Calculate effective sky brightness influence based on moon phase.
-    float moonWashoutFactor = mix(3.0, 0.0, u_NightVibrancy);
-    float skyExposure = float(skyLight4) / 15.0;
-    float effectiveSkyBrightness = sky.r * moonWashoutFactor * skyExposure;
+        float moonWashoutFactor = mix(3.0, 0.0, u_NightVibrancy);
+        float skyExposure = float(skyLight4) / 15.0;
+        float effectiveSkyBrightness = sky.r * moonWashoutFactor * skyExposure;
 
-    return vec4(sky + block * max(0.3, 1.0 - effectiveSkyBrightness), 1.0);
+        return vec4(sky + block * max(0.3, 1.0 - effectiveSkyBrightness), 1.0);
+    }
+
+    // Not our format, use vanilla lighting.
+    return _sample_lightmap_vanilla(lightMap, uv);
 }
 // --- COLORFUL LIGHTING END ---
 

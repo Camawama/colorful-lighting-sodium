@@ -29,7 +29,8 @@
     "compat.starlight.StarlightInterfaceMixin",
     "compat.starlight.StarlightLevelLightEngineMixin",
     "ClientPacketListenerMixin",
-    "compat.wakes.BrickMixin"
+    "compat.wakes.BrickMixin",
+    "compat.sodium.embeddium.VanillaLikeChunkVertexMixin"
   ],
   "injectors": {
     "defaultRequire": 1
