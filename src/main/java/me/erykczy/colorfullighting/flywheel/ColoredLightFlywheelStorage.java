@@ -70,6 +70,11 @@ public class ColoredLightFlywheelStorage {
         collector.collectLightData(ptr, section);
     }
 
+    public void recollectSectionIfTracked(long section) {
+        if (!section2ArenaIndex.containsKey(section)) return;
+        collectSection(section);
+    }
+
     public void uploadChangedSections(StagingBuffer staging) {
         sectionsGPUBuffer.ensureCapacity(capacity());
         for (int i = changed.nextSetBit(0); i >= 0; i = changed.nextSetBit(i + 1)) {

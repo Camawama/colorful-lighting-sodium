@@ -243,6 +243,10 @@ public class ColoredLightEngine {
                     sodiumRenderer.scheduleRebuild(sectionPos.x(), sectionPos.y(), sectionPos.z(), true);
                 }
             }
+
+            if (net.minecraftforge.fml.ModList.get().isLoaded("flywheel") && me.erykczy.colorfullighting.flywheel.FlywheelCompat.isAvailable()) {
+                me.erykczy.colorfullighting.flywheel.FlywheelCompat.getInstance().flywheelColoredLightStorage.recollectSectionIfTracked(dirtySection);
+            }
         }
     }
     

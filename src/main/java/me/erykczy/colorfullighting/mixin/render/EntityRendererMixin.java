@@ -42,7 +42,7 @@ public class EntityRendererMixin {
             EntityType.DRAGON_FIREBALL,
             EntityType.EXPERIENCE_ORB,
             EntityType.GLOW_SQUID,
-            EntityType.GLOW_ITEM_FRAME,
+            // EntityType.ITEM_FRAME, // Removed to allow colored lighting on Item Frames
             EntityType.SHULKER_BULLET,
             EntityType.EYE_OF_ENDER,
             EntityType.FIREBALL,
@@ -54,6 +54,9 @@ public class EntityRendererMixin {
 
     @Inject(method = "getPackedLightCoords", at = @At("HEAD"), cancellable = true)
     private <T extends Entity>void colorfullighting$getPackedLightCoords(T entity, float partialTicks, CallbackInfoReturnable<Integer> cir) {
+        if (!ColoredLightEngine.getInstance().isEnabled()) {
+            return;
+        }
         BlockPos blockpos = BlockPos.containing(entity.getLightProbePosition(partialTicks));
         int skyLight = entity.level().getBrightness(LightLayer.SKY, blockpos);
         ColorRGB8 color = ColoredLightEngine.getInstance().sampleTrilinearLightColor(entity.getLightProbePosition(partialTicks));
