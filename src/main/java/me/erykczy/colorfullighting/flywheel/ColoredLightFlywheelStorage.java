@@ -25,6 +25,8 @@ public class ColoredLightFlywheelStorage {
     private final SlowLightCollector collector;
 
     private final ResizableStorageArray sectionsGPUBuffer = new ResizableStorageArray(SECTION_SIZE_BYTES);
+    
+    private boolean deleted = false;
 
     public ColoredLightFlywheelStorage() {
         this.arena = new CpuArena(SECTION_SIZE_BYTES, DEFAULT_ARENA_CAPACITY_SECTIONS);
@@ -38,7 +40,12 @@ public class ColoredLightFlywheelStorage {
     }
 
     public void delete() {
+        if (deleted) return;
         arena.delete();
+        sectionsGPUBuffer.delete();
+        section2ArenaIndex.clear();
+        changed.clear();
+        deleted = true;
     }
 
     private int indexForSection(long section) {
@@ -53,11 +60,15 @@ public class ColoredLightFlywheelStorage {
     }
 
     public void removeSection(long section) {
-        arena.free(indexForSection(section));
-        section2ArenaIndex.remove(section);
+        if (deleted) return;
+        int index = section2ArenaIndex.remove(section);
+        if (index != INVALID_SECTION) {
+            arena.free(index);
+        }
     }
 
     public void collectSection(long section) {
+        if (deleted) return;
         int index = indexForSection(section);
 
         changed.set(index);
@@ -71,11 +82,13 @@ public class ColoredLightFlywheelStorage {
     }
 
     public void recollectSectionIfTracked(long section) {
+        if (deleted) return;
         if (!section2ArenaIndex.containsKey(section)) return;
         collectSection(section);
     }
 
     public void uploadChangedSections(StagingBuffer staging) {
+        if (deleted) return;
         sectionsGPUBuffer.ensureCapacity(capacity());
         for (int i = changed.nextSetBit(0); i >= 0; i = changed.nextSetBit(i + 1)) {
             staging.enqueueCopy(arena.indexToPointer(i), SECTION_SIZE_BYTES, sectionsGPUBuffer.handle(), i * SECTION_SIZE_BYTES);
@@ -84,6 +97,7 @@ public class ColoredLightFlywheelStorage {
     }
 
     public void bindBuffers() {
+        if (deleted) return;
         GL46.glBindBufferRange(GL46.GL_SHADER_STORAGE_BUFFER, COLORED_LIGHT_BUFFER_BINDING, sectionsGPUBuffer.handle(), 0, sectionsGPUBuffer.byteCapacity());
     }
 }
