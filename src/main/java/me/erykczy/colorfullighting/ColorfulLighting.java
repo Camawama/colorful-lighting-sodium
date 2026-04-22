@@ -7,6 +7,8 @@ import me.erykczy.colorfullighting.common.accessors.ClientAccessor;
 import me.erykczy.colorfullighting.compat.oculus.OculusCompat;
 import me.erykczy.colorfullighting.compat.sodium.SodiumCompat;
 import me.erykczy.colorfullighting.event.ClientEventListener;
+import me.erykczy.colorfullighting.flywheel.CreateCompat;
+import me.erykczy.colorfullighting.flywheel.FlywheelCompat;
 import me.erykczy.colorfullighting.resourcemanager.CoreShaderRegistration;
 import me.erykczy.colorfullighting.resourcemanager.ModResourceManagers;
 import net.minecraft.client.Minecraft;
@@ -14,6 +16,7 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.event.lifecycle.FMLLoadCompleteEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.slf4j.Logger;
@@ -49,5 +52,14 @@ public class ColorfulLighting
         }
         clientAccessor = new MinecraftWrapper(Minecraft.getInstance());
         ColoredLightEngine.create(clientAccessor);
+
+        if(ModList.get().isLoaded("flywheel")) {
+            FlywheelCompat.create();
+            LOGGER.info("Flywheel detected!");
+        }
+        if(ModList.get().isLoaded("create")) {
+            CreateCompat.create();
+            LOGGER.info("Create detected!");
+        }
     }
 }

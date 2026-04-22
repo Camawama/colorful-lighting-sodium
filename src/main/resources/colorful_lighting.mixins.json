@@ -30,7 +30,12 @@
     "compat.starlight.StarlightLevelLightEngineMixin",
     "ClientPacketListenerMixin",
     "compat.wakes.BrickMixin",
-    "compat.sodium.embeddium.VanillaLikeChunkVertexMixin"
+    "compat.sodium.embeddium.VanillaLikeChunkVertexMixin",
+    "flywheel.LightBuffersMixin",
+    "flywheel.LightStorageMixin",
+    "create.ChainConveyorRendererMixin",
+    "create.AnimatedSceneElementBaseMixin",
+    "create.ShadeSeparatingSuperByteBufferMixin"
   ],
   "injectors": {
     "defaultRequire": 1

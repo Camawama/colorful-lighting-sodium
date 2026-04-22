@@ -10,11 +10,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(LevelLightEngine.class)
 public class LevelLightEngineMixin {
-    @Inject(method = "runLightUpdates", at = @At("TAIL"))
+    @Inject(method = "runLightUpdates", at = @At("HEAD"))
     private void colorfullighting$runLightUpdates(CallbackInfoReturnable<Integer> cir) {
-        if (!ColoredLightEngine.getInstance().isEnabled()) {
-            return;
-        }
         if(!Minecraft.getInstance().isSameThread()) return; // only client side
         ColoredLightEngine.getInstance().onLightUpdate();
     }
