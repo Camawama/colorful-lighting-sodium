@@ -3,6 +3,7 @@
   "package": "me.erykczy.colorfullighting.mixin",
   "compatibilityLevel": "JAVA_17",
   "refmap": "colorful_lighting.refmap.json",
+  "plugin": "me.erykczy.colorfullighting.mixin.ColorfulLightingMixinPlugin",
   "mixins": [],
   "client": [
     "BlockLightEngineMixin",

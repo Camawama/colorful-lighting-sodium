@@ -17,7 +17,8 @@ public class ChainConveyorRendererMixin {
             value = "INVOKE",
             target = "Lnet/minecraft/client/renderer/LightTexture;pack(II)I",
             ordinal = 0
-        )
+        ),
+        require = 0
     )
     private int colorfullighting$renderChains0(int original, @Local Level level, @Local(ordinal=0) BlockPos blockPos, @Local(ordinal=1) BlockPos tilePos) {
         return LevelRenderer.getLightColor(level, tilePos);
@@ -29,7 +30,8 @@ public class ChainConveyorRendererMixin {
                     value = "INVOKE",
                     target = "Lnet/minecraft/client/renderer/LightTexture;pack(II)I",
                     ordinal = 1
-            )
+            ),
+            require = 0
     )
     private int colorfullighting$renderChains1(int original, @Local Level level, @Local(ordinal=0) BlockPos blockPos, @Local(ordinal=1) BlockPos tilePos) {
         return LevelRenderer.getLightColor(level, tilePos.offset(blockPos));
