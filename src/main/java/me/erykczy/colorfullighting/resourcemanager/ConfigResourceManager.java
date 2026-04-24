@@ -29,11 +29,12 @@ public class ConfigResourceManager implements ResourceManagerReloadListener {
     public void onResourceManagerReload(ResourceManager resourceManager) {
         HashMap<ResourceLocation, Config.BlockEmitterConfig> emitters = new HashMap<>();
         HashMap<ResourceLocation, Config.BlockFilterConfig> filters = new HashMap<>();
+        HashMap<ResourceLocation, Config.BlockAbsorberConfig> absorbers = new HashMap<>();
         HashMap<ResourceLocation, Config.ColorEmitter> entityEmitters = new HashMap<>();
         HashMap<ResourceLocation, Config.ColorEmitter> itemEmitters = new HashMap<>();
         Map<Integer, Config.ColorMoonPhase> moonPhases = new HashMap<>();
 
-        loadBuiltInLightConfigs(emitters, filters, entityEmitters, itemEmitters, moonPhases);
+        loadBuiltInLightConfigs(emitters, filters, absorbers, entityEmitters, itemEmitters, moonPhases);
 
         resourceManager.listPacks().forEach((pack) -> {
             for(String namespace : pack.getNamespaces(PackType.CLIENT_RESOURCES)) {
@@ -58,6 +59,18 @@ public class ConfigResourceManager implements ResourceManagerReloadListener {
                     }
                     catch (Exception e) {
                         LOGGER.warn("Failed to load light color filters from pack {}", resource.sourcePackId(), e);
+                    }
+                }
+
+                for(Resource resource : resourceManager.getResourceStack(ResourceLocation.tryBuild(namespace, "light/absorbers.json"))) {
+                    try {
+                        JsonObject object = GSON.fromJson(resource.openAsReader(), JsonObject.class);
+                        if (object != null) {
+                            processAbsorberEntries(object, resource.sourcePackId(), absorbers);
+                        }
+                    }
+                    catch (Exception e) {
+                        LOGGER.warn("Failed to load light color absorbers from pack {}", resource.sourcePackId(), e);
                     }
                 }
 
@@ -101,6 +114,7 @@ public class ConfigResourceManager implements ResourceManagerReloadListener {
 
         Config.setColorEmitters(emitters);
         Config.setColorFilters(filters);
+        Config.setColorAbsorbers(absorbers);
         Config.setEntityEmitters(entityEmitters);
         Config.setItemEmitters(itemEmitters);
         Config.setMoonPhases(moonPhases);
@@ -110,6 +124,7 @@ public class ConfigResourceManager implements ResourceManagerReloadListener {
 
     private static void loadBuiltInLightConfigs(HashMap<ResourceLocation, Config.BlockEmitterConfig> emitters,
                                                  HashMap<ResourceLocation, Config.BlockFilterConfig> filters,
+                                                 HashMap<ResourceLocation, Config.BlockAbsorberConfig> absorbers,
                                                  HashMap<ResourceLocation, Config.ColorEmitter> entityEmitters,
                                                  HashMap<ResourceLocation, Config.ColorEmitter> itemEmitters,
                                                  Map<Integer, Config.ColorMoonPhase> moonPhases) {
@@ -121,6 +136,11 @@ public class ConfigResourceManager implements ResourceManagerReloadListener {
         JsonObject filterObject = loadBuiltInLightJson("filters.json");
         if (filterObject != null) {
             processFilterEntries(filterObject, ColorfulLighting.BUILT_IN_RESOURCE_PACK_ID, filters);
+        }
+
+        JsonObject absorberObject = loadBuiltInLightJson("absorbers.json");
+        if (absorberObject != null) {
+            processAbsorberEntries(absorberObject, ColorfulLighting.BUILT_IN_RESOURCE_PACK_ID, absorbers);
         }
 
         JsonObject entityObject = loadBuiltInLightJson("entities.json");
@@ -161,6 +181,19 @@ public class ConfigResourceManager implements ResourceManagerReloadListener {
             }
             catch (Exception e) {
                 LOGGER.warn("Failed to load light color filter entry {} from pack {}", entry.toString(), sourcePackId, e);
+            }
+        }
+    }
+
+    private static void processAbsorberEntries(JsonObject object, String sourcePackId, HashMap<ResourceLocation, Config.BlockAbsorberConfig> absorbers) {
+        for (var entry : object.entrySet()) {
+            try {
+                var key = ResourceLocation.tryParse(entry.getKey());
+                if(!BuiltInRegistries.BLOCK.containsKey(key)) throw new IllegalArgumentException("Couldn't find block "+key);
+                absorbers.put(key, Config.BlockAbsorberConfig.fromJsonElement(entry.getValue()));
+            }
+            catch (Exception e) {
+                LOGGER.warn("Failed to load light color absorber entry {} from pack {}", entry.toString(), sourcePackId, e);
             }
         }
     }

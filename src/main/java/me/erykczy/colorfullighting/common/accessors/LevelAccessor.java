@@ -14,6 +14,7 @@ public interface LevelAccessor {
     boolean hasChunk(ChunkPos chunkPos);
     boolean hasChunkAndNeighbours(ChunkPos chunkPos);
     void findLightSources(ChunkPos chunkPos, Consumer<BlockPos> consumer);
+    void findDarknessSources(ChunkPos chunkPos, Consumer<BlockPos> consumer);
     @Nullable
     BlockStateAccessor getBlockState(BlockPos pos);
     boolean isInBounds(BlockPos pos);
