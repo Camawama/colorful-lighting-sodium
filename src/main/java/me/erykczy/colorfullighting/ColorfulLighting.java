@@ -51,11 +51,12 @@ public class ColorfulLighting
     }
 
     public static void onLoadingComplete(FMLLoadCompleteEvent event) {
-        if (SodiumCompat.isSodiumLoaded()) {
-            LOGGER.info("Embeddium/Sodium detected!");
+        if (ModList.get().isLoaded("rubidium") || ModList.get().isLoaded("embeddium") || ModList.get().isLoaded("sodium")) {
+            LOGGER.info("Sodium/Embeddium detected!");
         }
-        if (OculusCompat.isOculusLoaded()) {
-            LOGGER.info("Oculus detected!");
+        if (ModList.get().isLoaded("oculus") || ModList.get().isLoaded("iris")) {
+            OculusCompat.init();
+            LOGGER.info("Iris/Oculus detected!");
         }
         if(ModList.get().isLoaded("flywheel")) {
             FlywheelCompat.create();
