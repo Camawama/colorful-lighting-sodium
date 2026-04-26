@@ -5,7 +5,6 @@ import me.erykczy.colorfullighting.accessors.MinecraftWrapper;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.accessors.ClientAccessor;
 import me.erykczy.colorfullighting.compat.oculus.OculusCompat;
-import me.erykczy.colorfullighting.compat.sodium.SodiumCompat;
 import me.erykczy.colorfullighting.event.ClientEventListener;
 import me.erykczy.colorfullighting.compat.create.CreateCompat;
 import me.erykczy.colorfullighting.compat.flywheel.FlywheelCompat;
@@ -59,11 +58,11 @@ public class ColorfulLighting
             LOGGER.info("Iris/Oculus detected!");
         }
         if(ModList.get().isLoaded("flywheel")) {
-            FlywheelCompat.create();
+            FlywheelCompat.init();
             LOGGER.info("Flywheel detected!");
         }
         if(ModList.get().isLoaded("create")) {
-            CreateCompat.create();
+            CreateCompat.init();
             LOGGER.info("Create detected!");
         }
     }

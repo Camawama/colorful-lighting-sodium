@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public class CreateCompat {
     private static CreateCompat instance;
 
-    public static void create() {
+    public static void init() {
         instance = new CreateCompat();
     }
 

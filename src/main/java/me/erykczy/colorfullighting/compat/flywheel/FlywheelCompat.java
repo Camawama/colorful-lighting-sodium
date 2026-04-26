@@ -6,7 +6,7 @@ public class FlywheelCompat {
     private static FlywheelCompat instance;
     public ColoredLightFlywheelStorage flywheelColoredLightStorage;
 
-    public static void create() {
+    public static void init() {
         RenderSystem.recordRenderCall(() -> instance = new FlywheelCompat());
     }
 
