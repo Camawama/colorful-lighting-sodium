@@ -1,4 +1,4 @@
-package me.erykczy.colorfullighting.mixin.create;
+package me.erykczy.colorfullighting.mixin.compat.create;
 
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.llamalad7.mixinextras.sugar.Local;

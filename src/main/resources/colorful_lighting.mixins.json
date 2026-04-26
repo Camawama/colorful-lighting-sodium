@@ -32,11 +32,11 @@
     "ClientPacketListenerMixin",
     "compat.wakes.BrickMixin",
     "compat.sodium.embeddium.VanillaLikeChunkVertexMixin",
-    "flywheel.LightBuffersMixin",
-    "flywheel.LightStorageMixin",
-    "create.ChainConveyorRendererMixin",
-    "create.AnimatedSceneElementBaseMixin",
-    "create.ShadeSeparatingSuperByteBufferMixin"
+    "compat.flywheel.LightBuffersMixin",
+    "compat.flywheel.LightStorageMixin",
+    "compat.create.ChainConveyorRendererMixin",
+    "compat.create.AnimatedSceneElementBaseMixin",
+    "compat.create.ShadeSeparatingSuperByteBufferMixin"
   ],
   "injectors": {
     "defaultRequire": 1

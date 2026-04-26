@@ -7,8 +7,8 @@ import me.erykczy.colorfullighting.common.accessors.ClientAccessor;
 import me.erykczy.colorfullighting.compat.oculus.OculusCompat;
 import me.erykczy.colorfullighting.compat.sodium.SodiumCompat;
 import me.erykczy.colorfullighting.event.ClientEventListener;
-import me.erykczy.colorfullighting.flywheel.CreateCompat;
-import me.erykczy.colorfullighting.flywheel.FlywheelCompat;
+import me.erykczy.colorfullighting.compat.create.CreateCompat;
+import me.erykczy.colorfullighting.compat.flywheel.FlywheelCompat;
 import me.erykczy.colorfullighting.resourcemanager.CoreShaderRegistration;
 import me.erykczy.colorfullighting.resourcemanager.ModResourceManagers;
 import net.minecraft.client.Minecraft;
@@ -57,7 +57,6 @@ public class ColorfulLighting
         if (OculusCompat.isOculusLoaded()) {
             LOGGER.info("Oculus detected!");
         }
-
         if(ModList.get().isLoaded("flywheel")) {
             FlywheelCompat.create();
             LOGGER.info("Flywheel detected!");

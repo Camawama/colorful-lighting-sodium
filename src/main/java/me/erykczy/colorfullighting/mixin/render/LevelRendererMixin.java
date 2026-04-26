@@ -2,7 +2,6 @@ package me.erykczy.colorfullighting.mixin.render;
 
 import me.erykczy.colorfullighting.ColorfulLighting;
 import me.erykczy.colorfullighting.accessors.BlockStateWrapper;
-import me.erykczy.colorfullighting.accessors.LevelWrapper;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.Config;
 import me.erykczy.colorfullighting.common.accessors.BlockStateAccessor;
@@ -10,7 +9,7 @@ import me.erykczy.colorfullighting.common.accessors.LevelAccessor;
 import me.erykczy.colorfullighting.common.util.ColorRGB4;
 import me.erykczy.colorfullighting.common.util.ColorRGB8;
 import me.erykczy.colorfullighting.common.util.PackedLightData;
-import me.erykczy.colorfullighting.flywheel.CreateCompat;
+import me.erykczy.colorfullighting.compat.create.CreateCompat;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.BlockAndTintGetter;

@@ -1,4 +1,4 @@
-package me.erykczy.colorfullighting.flywheel;
+package me.erykczy.colorfullighting.compat.create;
 
 import com.simibubi.create.foundation.virtualWorld.VirtualRenderWorld;
 import me.erykczy.colorfullighting.common.util.PackedLightData;

@@ -1,7 +1,7 @@
-package me.erykczy.colorfullighting.mixin.flywheel;
+package me.erykczy.colorfullighting.mixin.compat.flywheel;
 
 import dev.engine_room.flywheel.backend.engine.indirect.LightBuffers;
-import me.erykczy.colorfullighting.flywheel.FlywheelCompat;
+import me.erykczy.colorfullighting.compat.flywheel.FlywheelCompat;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;

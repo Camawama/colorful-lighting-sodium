@@ -1,4 +1,4 @@
-package me.erykczy.colorfullighting.flywheel;
+package me.erykczy.colorfullighting.compat.flywheel;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 

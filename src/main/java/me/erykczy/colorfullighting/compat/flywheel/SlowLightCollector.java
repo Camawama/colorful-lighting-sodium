@@ -1,4 +1,4 @@
-package me.erykczy.colorfullighting.flywheel;
+package me.erykczy.colorfullighting.compat.flywheel;
 
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.util.ColorRGB4;

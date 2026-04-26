@@ -1,4 +1,4 @@
-package me.erykczy.colorfullighting.mixin.create;
+package me.erykczy.colorfullighting.mixin.compat.create;
 
 import me.erykczy.colorfullighting.common.util.PackedLightData;
 import net.createmod.ponder.foundation.element.AnimatedSceneElementBase;

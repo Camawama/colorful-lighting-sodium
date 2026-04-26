@@ -8,6 +8,7 @@ import me.erykczy.colorfullighting.common.accessors.PlayerAccessor;
 import me.erykczy.colorfullighting.common.util.ColorRGB4;
 import me.erykczy.colorfullighting.common.util.ColorRGB8;
 import me.erykczy.colorfullighting.common.util.MathExt;
+import me.erykczy.colorfullighting.compat.flywheel.FlywheelCompat;
 import me.erykczy.colorfullighting.compat.sodium.SodiumCompat;
 import me.erykczy.colorfullighting.mixin.compat.sodium.SodiumWorldRendererAccessor;
 import net.minecraft.client.Minecraft;
@@ -16,11 +17,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.world.phys.shapes.BooleanOp;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
@@ -29,8 +28,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 /**
  * Class responsible for managing light color values in the client's world and sampling those values.
@@ -311,8 +308,8 @@ public class ColoredLightEngine {
                 }
             }
 
-            if (net.minecraftforge.fml.ModList.get().isLoaded("flywheel") && me.erykczy.colorfullighting.flywheel.FlywheelCompat.isAvailable()) {
-                me.erykczy.colorfullighting.flywheel.FlywheelCompat.getInstance().flywheelColoredLightStorage.recollectSectionIfTracked(dirtySection);
+            if (net.minecraftforge.fml.ModList.get().isLoaded("flywheel") && FlywheelCompat.isAvailable()) {
+                FlywheelCompat.getInstance().flywheelColoredLightStorage.recollectSectionIfTracked(dirtySection);
             }
         }
     }

@@ -1,4 +1,4 @@
-package me.erykczy.colorfullighting.flywheel;
+package me.erykczy.colorfullighting.compat.flywheel;
 
 import dev.engine_room.flywheel.backend.engine.CpuArena;
 import dev.engine_room.flywheel.backend.engine.indirect.ResizableStorageArray;
