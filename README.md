@@ -25,7 +25,7 @@ To avoid performance issues, all of this light propagation is handled on a separ
 *   **Starlight Support**: Works seamlessly with Starlight.
 *   **True Darkness Support**: Compatible with True Darkness.
 *   **Oculus Support**: Most shader packs must be manually modified to support Colorful Lighting. By default, the Colored Light Engine is disabled when a shader is active.
-*   **Dynamic Light Mods**: Most Dynamic Light mods will simply not work. [Lively Lighting](https://modrinth.com/mod/lively-lighting) is the only known working Dynamic Lighting Mod compatible with Colorful Lighting.
+*   **Dynamic Light Mods**: Most Dynamic Light mods will simply not work. [Lively Lighting](https://github.com/Camawama/LivelyLighting) is the only known working Dynamic Lighting Mod compatible with Colorful Lighting.
 *   **Wakes: Reforged**: Works perfectly with wakes and tints them accordingly
 *   **Flywheel**: Flywheel rendered objects now render with colorful lighting since the Colorful Lighting 2.4.0 update (tested with flywheel 1.0.5).
 *   **Distant Horizons**: Lights rendered inside LODs will not have color. This is something we are working on for a future release.
@@ -120,7 +120,7 @@ This file defines which blocks will completely eat (absorb) light around them. Y
 
 ## entities.json
 
-Define what light color entities emit (REQUIRES [LIVELY LIGHTING](https://modrinth.com/mod/lively-lighting)).
+Define what light color entities emit (REQUIRES [LIVELY LIGHTING](https://github.com/Camawama/LivelyLighting)).
 
 ```
 {
@@ -131,7 +131,7 @@ Define what light color entities emit (REQUIRES [LIVELY LIGHTING](https://modrin
 
 ## items.json
 
-Define what light color held items emit (REQUIRES [LIVELY LIGHTING](https://modrinth.com/mod/lively-lighting)).
+Define what light color held items emit (REQUIRES [LIVELY LIGHTING](https://github.com/Camawama/LivelyLighting)).
 
 ```
 {
