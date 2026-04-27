@@ -66,7 +66,7 @@
 
 	"minecraft:beacon": "white",
 	"minecraft:conduit": "#9cffff",
-	"minecraft:dragon_egg": "magenta",
+	"minecraft:dragon_egg": "magenta;6",
 	"minecraft:enchanting_table": "purple",
 	"minecraft:ender_chest": "purple",
 	"minecraft:glowstone": "#fff3a7",
@@ -75,8 +75,8 @@
 	"minecraft:sea_lantern": "#e0f7f7",
 	"minecraft:shroomlight": "#ffc080",
 
-	"minecraft:end_gateway": "white",
-	"minecraft:end_portal": "white",
+	"minecraft:end_portal": "white;0",
+	"minecraft:end_gateway": "white;0",
 	"minecraft:end_portal_frame": "white",
 	"minecraft:nether_portal": "purple",
 

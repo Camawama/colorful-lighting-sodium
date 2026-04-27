@@ -30,6 +30,7 @@ public class Config {
     public static final ColorRGB4 defaultColor = ColorRGB4.fromRGB4(15, 15, 15);
     private static HashMap<ResourceLocation, BlockEmitterConfig> colorEmitters = new HashMap<>();
     private static HashMap<ResourceLocation, BlockFilterConfig> colorFilters = new HashMap<>();
+    private static HashMap<ResourceLocation, BlockAbsorberConfig> colorAbsorbers = new HashMap<>();
     private static HashMap<ResourceLocation, ColorEmitter> entityEmitters = new HashMap<>();
     private static HashMap<ResourceLocation, ColorEmitter> itemEmitters = new HashMap<>();
     private static Map<Integer, ColorMoonPhase> moonPhases = new HashMap<>();
@@ -40,6 +41,10 @@ public class Config {
 
     public static void setColorFilters(HashMap<ResourceLocation, BlockFilterConfig> filters) {
         colorFilters = filters;
+    }
+
+    public static void setColorAbsorbers(HashMap<ResourceLocation, BlockAbsorberConfig> absorbers) {
+        colorAbsorbers = absorbers;
     }
 
     public static void setEntityEmitters(HashMap<ResourceLocation, ColorEmitter> emitters) {
@@ -232,6 +237,40 @@ public class Config {
         return blockState.getLightEmission();
     }
 
+    public static int getAbsorption(LevelAccessor level, BlockPos blockPos, BlockStateAccessor blockState) {
+        ResourceKey<Block> blockResourceKey = blockState.getBlockKey();
+        if(blockResourceKey != null) {
+            BlockAbsorberConfig config = colorAbsorbers.get(blockResourceKey.location());
+            if(config != null) {
+                ColorEmitter emitter = config.getAbsorber(blockState);
+                if (emitter != null && emitter.overriddenBrightness4 >= 0) {
+                    return emitter.overriddenBrightness4;
+                }
+            }
+        }
+        return 0;
+    }
+
+    public static ColorRGB4 getAbsorptionColor(LevelAccessor level, BlockPos blockPos) {
+        return getAbsorptionColor(level, blockPos, level.getBlockState(blockPos));
+    }
+
+    public static ColorRGB4 getAbsorptionColor(LevelAccessor level, BlockPos pos, BlockStateAccessor blockState) {
+        float absorption = getAbsorption(level, pos, blockState) / 15.0f;
+        ResourceKey<Block> blockResourceKey = blockState.getBlockKey();
+
+        if(blockResourceKey != null) {
+            BlockAbsorberConfig config = colorAbsorbers.get(blockResourceKey.location());
+            if(config != null) {
+                ColorEmitter emitter = config.getAbsorber(blockState);
+                if (emitter != null) {
+                    return emitter.color().mul(emitter.overriddenBrightness4 < 0 ? absorption : emitter.overriddenBrightness4 / 15.0f);
+                }
+            }
+        }
+        return ColorRGB4.BLACK;
+    }
+
     public static class BlockEmitterConfig {
         public final ColorEmitter defaultEmitter;
         public final Map<String, ColorEmitter> stateEmitters;
@@ -343,6 +382,63 @@ public class Config {
                 }
             }
             return defaultFilter;
+        }
+    }
+
+    public static class BlockAbsorberConfig {
+        public final ColorEmitter defaultAbsorber;
+        public final Map<String, ColorEmitter> stateAbsorbers;
+
+        public BlockAbsorberConfig(ColorEmitter defaultAbsorber, Map<String, ColorEmitter> stateAbsorbers) {
+            this.defaultAbsorber = defaultAbsorber;
+            this.stateAbsorbers = stateAbsorbers;
+        }
+
+        public static BlockAbsorberConfig fromJsonElement(JsonElement value) {
+            if (value.isJsonObject()) {
+                JsonObject obj = value.getAsJsonObject();
+                ColorEmitter defaultAbsorber = null;
+                if (obj.has("default")) {
+                    defaultAbsorber = ColorEmitter.fromJsonElement(obj.get("default"));
+                }
+
+                Map<String, ColorEmitter> stateAbsorbers = new HashMap<>();
+                if (obj.has("states")) {
+                    JsonObject statesObj = obj.getAsJsonObject("states");
+                    for (var entry : statesObj.entrySet()) {
+                        stateAbsorbers.put(entry.getKey(), ColorEmitter.fromJsonElement(entry.getValue()));
+                    }
+                }
+                return new BlockAbsorberConfig(defaultAbsorber, stateAbsorbers);
+            } else {
+                return new BlockAbsorberConfig(ColorEmitter.fromJsonElement(value), new HashMap<>());
+            }
+        }
+
+        public ColorEmitter getAbsorber(BlockStateAccessor blockState) {
+            if (stateAbsorbers != null && !stateAbsorbers.isEmpty()) {
+                for (var entry : stateAbsorbers.entrySet()) {
+                    String[] statePairs = entry.getKey().split(",");
+                    boolean allMatch = true;
+                    for (String pair : statePairs) {
+                        String[] kv = pair.split("=");
+                        if (kv.length == 2) {
+                            String propName = kv[0].trim();
+                            String targetValue = kv[1].trim();
+                            String propValue = blockState.getPropertyString(propName);
+
+                            if (propValue == null || !propValue.equals(targetValue)) {
+                                allMatch = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (allMatch) {
+                        return entry.getValue();
+                    }
+                }
+            }
+            return defaultAbsorber;
         }
     }
 

@@ -3,6 +3,7 @@
   "package": "me.erykczy.colorfullighting.mixin",
   "compatibilityLevel": "JAVA_17",
   "refmap": "colorful_lighting.refmap.json",
+  "plugin": "me.erykczy.colorfullighting.mixin.ColorfulLightingMixinPlugin",
   "mixins": [],
   "client": [
     "BlockLightEngineMixin",
@@ -29,7 +30,13 @@
     "compat.starlight.StarlightInterfaceMixin",
     "compat.starlight.StarlightLevelLightEngineMixin",
     "ClientPacketListenerMixin",
-    "compat.wakes.BrickMixin"
+    "compat.wakes.BrickMixin",
+    "compat.sodium.embeddium.VanillaLikeChunkVertexMixin",
+    "compat.flywheel.LightBuffersMixin",
+    "compat.flywheel.LightStorageMixin",
+    "compat.create.ChainConveyorRendererMixin",
+    "compat.create.AnimatedSceneElementBaseMixin",
+    "compat.create.ShadeSeparatingSuperByteBufferMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -5,15 +5,18 @@ import me.erykczy.colorfullighting.accessors.MinecraftWrapper;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.accessors.ClientAccessor;
 import me.erykczy.colorfullighting.compat.oculus.OculusCompat;
-import me.erykczy.colorfullighting.compat.sodium.SodiumCompat;
 import me.erykczy.colorfullighting.event.ClientEventListener;
+import me.erykczy.colorfullighting.compat.create.CreateCompat;
+import me.erykczy.colorfullighting.compat.flywheel.FlywheelCompat;
 import me.erykczy.colorfullighting.resourcemanager.CoreShaderRegistration;
 import me.erykczy.colorfullighting.resourcemanager.ModResourceManagers;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.DistExecutor;
+import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLLoadCompleteEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.slf4j.Logger;
@@ -35,19 +38,32 @@ public class ColorfulLighting
                 ModResourceManagers.register(context.getModEventBus());
                 CoreShaderRegistration.register(context.getModEventBus());
                 MinecraftForge.EVENT_BUS.register(new ClientEventListener());
+                context.getModEventBus().addListener(ColorfulLighting::onClientSetup);
                 context.getModEventBus().addListener(ColorfulLighting::onLoadingComplete);
             }
         });
     }
 
-    public static void onLoadingComplete(FMLLoadCompleteEvent event) {
-        if (SodiumCompat.isSodiumLoaded()) {
-            LOGGER.info("Embeddium/Sodium detected!");
-        }
-        if (OculusCompat.isOculusLoaded()) {
-            LOGGER.info("Oculus detected!");
-        }
+    public static void onClientSetup(FMLClientSetupEvent event) {
         clientAccessor = new MinecraftWrapper(Minecraft.getInstance());
         ColoredLightEngine.create(clientAccessor);
+    }
+
+    public static void onLoadingComplete(FMLLoadCompleteEvent event) {
+        if (ModList.get().isLoaded("rubidium") || ModList.get().isLoaded("embeddium") || ModList.get().isLoaded("sodium")) {
+            LOGGER.info("Sodium/Embeddium detected!");
+        }
+        if (ModList.get().isLoaded("oculus") || ModList.get().isLoaded("iris")) {
+            OculusCompat.init();
+            LOGGER.info("Iris/Oculus detected!");
+        }
+        if(ModList.get().isLoaded("flywheel")) {
+            FlywheelCompat.init();
+            LOGGER.info("Flywheel detected!");
+        }
+        if(ModList.get().isLoaded("create")) {
+            CreateCompat.init();
+            LOGGER.info("Create detected!");
+        }
     }
 }

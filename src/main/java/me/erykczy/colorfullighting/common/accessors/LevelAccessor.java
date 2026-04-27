@@ -2,6 +2,7 @@ package me.erykczy.colorfullighting.common.accessors;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
 
 import javax.annotation.Nullable;
 import java.util.function.Consumer;
@@ -13,8 +14,10 @@ public interface LevelAccessor {
     boolean hasChunk(ChunkPos chunkPos);
     boolean hasChunkAndNeighbours(ChunkPos chunkPos);
     void findLightSources(ChunkPos chunkPos, Consumer<BlockPos> consumer);
+    void findDarknessSources(ChunkPos chunkPos, Consumer<BlockPos> consumer);
     @Nullable
     BlockStateAccessor getBlockState(BlockPos pos);
     boolean isInBounds(BlockPos pos);
     void setSectionDirty(int x, int y, int z);
+    Level getLevel();
 }

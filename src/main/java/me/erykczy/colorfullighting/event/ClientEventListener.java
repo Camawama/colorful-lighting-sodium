@@ -6,11 +6,13 @@ import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.ViewArea;
 import me.erykczy.colorfullighting.compat.oculus.OculusCompat;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraftforge.client.event.RegisterClientCommandsEvent;
+import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.level.LevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -52,6 +54,16 @@ public class ClientEventListener {
                 pos.z + renderDistance
         );
         ColoredLightEngine.getInstance().updateViewArea(viewArea);
+    }
+
+    @SubscribeEvent
+    public void onRenderLevelStage(RenderLevelStageEvent event) {
+        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
+            LevelRenderer levelRenderer = Minecraft.getInstance().levelRenderer;
+            if (levelRenderer != null) {
+                ColoredLightEngine.getInstance().updateFrustum(levelRenderer.getFrustum());
+            }
+        }
     }
 
     @SubscribeEvent
