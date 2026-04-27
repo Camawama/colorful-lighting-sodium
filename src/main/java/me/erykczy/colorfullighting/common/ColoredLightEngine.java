@@ -232,7 +232,7 @@ public class ColoredLightEngine {
 
         // propagate light if new blockState emits light
         if(Config.getEmissionBrightness(level, blockPos, 0) > 0)
-            increaseRequests.add(new LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false, true));
+            increaseRequests.add(new LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false, true, false));
     }
 
     private void handleDarknessUpdate(LevelAccessor level, Queue<LightUpdateRequest> increaseRequests, Queue<LightUpdateRequest> decreaseRequests, BlockPos blockPos) {
@@ -249,7 +249,7 @@ public class ColoredLightEngine {
 
         // propagate darkness if new blockState absorbs light
         if(Config.getAbsorption(level, blockPos, level.getBlockState(blockPos)) > 0)
-            increaseRequests.add(new LightUpdateRequest(blockPos, Config.getAbsorptionColor(level, blockPos), false, true));
+            increaseRequests.add(new LightUpdateRequest(blockPos, Config.getAbsorptionColor(level, blockPos), false, true, false));
     }
 
     private void requestLightPullIn(Queue<LightUpdateRequest> increaseRequests, BlockPos blockPos) {
@@ -262,7 +262,7 @@ public class ColoredLightEngine {
             if(neighbourLight == null) continue;
 
             if(neighbourLight.red4 == 0 && neighbourLight.green4 == 0 && neighbourLight.blue4 == 0) continue;
-            increaseRequests.add(new LightUpdateRequest(neighbourPos, neighbourLight, true));
+            increaseRequests.add(new LightUpdateRequest(neighbourPos, null, true, false, true));
         }
     }
 
@@ -276,7 +276,7 @@ public class ColoredLightEngine {
             if(neighbourDarkness == null) continue;
 
             if(neighbourDarkness.red4 == 0 && neighbourDarkness.green4 == 0 && neighbourDarkness.blue4 == 0) continue;
-            increaseRequests.add(new LightUpdateRequest(neighbourPos, neighbourDarkness, true));
+            increaseRequests.add(new LightUpdateRequest(neighbourPos, null, true, false, true));
         }
     }
 
@@ -537,10 +537,10 @@ public class ColoredLightEngine {
             for (int cx = minChunkX; cx <= maxChunkX; cx++) {
                 for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
                     level.findLightSources(new ChunkPos(cx, cz), (blockPos -> {
-                        increaseRequests.add(new LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false));
+                        increaseRequests.add(new LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false, true, false));
                     }));
                     level.findDarknessSources(new ChunkPos(cx, cz), (blockPos -> {
-                        darknessIncreaseRequests.add(new LightUpdateRequest(blockPos, Config.getAbsorptionColor(level, blockPos), false));
+                        darknessIncreaseRequests.add(new LightUpdateRequest(blockPos, Config.getAbsorptionColor(level, blockPos), false, true, false));
                     }));
                 }
             }
@@ -836,7 +836,7 @@ public class ColoredLightEngine {
                 Queue<LightUpdateRequest> increaseRequests = new LinkedList<>();
                 // find light sources and request their propagation
                 level.findLightSources(chunkPos, (blockPos -> {
-                    increaseRequests.add(new LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false));
+                    increaseRequests.add(new LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false, true, false));
                 }));
                 propagateIncreases(level, increaseRequests);
                 // new chunks' light propagation is not synchronized with main thread
@@ -875,7 +875,7 @@ public class ColoredLightEngine {
                 Queue<LightUpdateRequest> increaseRequests = new LinkedList<>();
                 // find darkness sources and request their propagation
                 level.findDarknessSources(chunkPos, (blockPos -> {
-                    increaseRequests.add(new LightUpdateRequest(blockPos, Config.getAbsorptionColor(level, blockPos), false));
+                    increaseRequests.add(new LightUpdateRequest(blockPos, Config.getAbsorptionColor(level, blockPos), false, true, false));
                 }));
                 propagateDarknessIncreases(level, increaseRequests);
                 // new chunks' darkness propagation is not synchronized with main thread
@@ -920,6 +920,12 @@ public class ColoredLightEngine {
                  BlockStateAccessor blockState = level.getBlockState(request.blockPos);
                  if (blockState == null || Config.getEmissionBrightness(level, request.blockPos, blockState) == 0) {
                      return false;
+                 }
+            }
+
+            if (request.repropagate) {
+                 if (request.lightColor == null) {
+                    request.lightColor = getLatestLightColor(request.blockPos);
                  }
             }
 
@@ -1002,6 +1008,12 @@ public class ColoredLightEngine {
                  }
             }
 
+            if (request.repropagate) {
+                 if (request.lightColor == null) {
+                    request.lightColor = getLatestDarknessColor(request.blockPos);
+                 }
+            }
+
             ColorRGB4 oldDarknessColor = getLatestDarknessColor(request.blockPos);
             if(oldDarknessColor == null) return false; // section might have got unloaded and propagation should stop
             ColorRGB4 newDarknessColor = ColorRGB4.fromRGB4(
@@ -1035,14 +1047,36 @@ public class ColoredLightEngine {
          * Handles all decrease propagation requests.
          */
         private void propagateDecreases(LevelAccessor level, Queue<LightUpdateRequest> decreaseRequests, Queue<LightUpdateRequest> increaseRequests) {
+            Map<BlockPos, ColorRGB4> visited = new HashMap<>();
             while(!decreaseRequests.isEmpty()) {
-                propagateDecrease(increaseRequests, decreaseRequests, decreaseRequests.poll(), level);
+                LightUpdateRequest req = decreaseRequests.poll();
+                ColorRGB4 prev = visited.get(req.blockPos);
+                if (prev != null && prev.red4 >= req.lightColor.red4 && prev.green4 >= req.lightColor.green4 && prev.blue4 >= req.lightColor.blue4) {
+                    continue;
+                }
+                if (prev == null) {
+                    visited.put(req.blockPos, req.lightColor);
+                } else {
+                    visited.put(req.blockPos, ColorRGB4.max(prev, req.lightColor));
+                }
+                propagateDecrease(increaseRequests, decreaseRequests, req, level);
             }
         }
 
         private void propagateDarknessDecreases(LevelAccessor level, Queue<LightUpdateRequest> decreaseRequests, Queue<LightUpdateRequest> increaseRequests) {
+            Map<BlockPos, ColorRGB4> visited = new HashMap<>();
             while(!decreaseRequests.isEmpty()) {
-                propagateDarknessDecrease(increaseRequests, decreaseRequests, decreaseRequests.poll(), level);
+                LightUpdateRequest req = decreaseRequests.poll();
+                ColorRGB4 prev = visited.get(req.blockPos);
+                if (prev != null && prev.red4 >= req.lightColor.red4 && prev.green4 >= req.lightColor.green4 && prev.blue4 >= req.lightColor.blue4) {
+                    continue;
+                }
+                if (prev == null) {
+                    visited.put(req.blockPos, req.lightColor);
+                } else {
+                    visited.put(req.blockPos, ColorRGB4.max(prev, req.lightColor));
+                }
+                propagateDarknessDecrease(increaseRequests, decreaseRequests, req, level);
             }
         }
 
@@ -1050,15 +1084,13 @@ public class ColoredLightEngine {
             ColorRGB4 oldLightColor = getLatestLightColor(request.blockPos);
             if(oldLightColor == null) return false; // section might have got unloaded and propagation should stop
 
-            // if light color didn't change (check is ignored if request is forced)
-            if(!request.force && oldLightColor.red4 == 0 && oldLightColor.green4 == 0 && oldLightColor.blue4 == 0) return true;
             addLightColorChange(request.blockPos, ColorRGB4.fromRGB4(0, 0, 0));
 
             BlockStateAccessor blockState = level.getBlockState(request.blockPos);
             if(blockState == null) return false; // section might have got unloaded and propagation should stop
             // repropagate removed light
             if(Config.getEmissionBrightness(level, request.blockPos, blockState) > 0) {
-                increaseRequests.add(new LightUpdateRequest(request.blockPos, Config.getColorEmission(level, request.blockPos), false));
+                increaseRequests.add(new LightUpdateRequest(request.blockPos, Config.getColorEmission(level, request.blockPos), false, true, false));
             }
 
             // attenuation
@@ -1083,7 +1115,7 @@ public class ColoredLightEngine {
                         continue;
 
                     // force neighbour to propagate light to the region that has been just cleared (decreased)
-                    increaseRequests.add(new LightUpdateRequest(neighbourPos, neighbourLightColor, true));
+                    increaseRequests.add(new LightUpdateRequest(neighbourPos, null, true, false, true));
                 }
             }
             return true;
@@ -1093,15 +1125,13 @@ public class ColoredLightEngine {
             ColorRGB4 oldDarknessColor = getLatestDarknessColor(request.blockPos);
             if(oldDarknessColor == null) return false; // section might have got unloaded and propagation should stop
 
-            // if light color didn't change (check is ignored if request is forced)
-            if(!request.force && oldDarknessColor.red4 == 0 && oldDarknessColor.green4 == 0 && oldDarknessColor.blue4 == 0) return true;
             addDarknessColorChange(request.blockPos, ColorRGB4.fromRGB4(0, 0, 0));
 
             BlockStateAccessor blockState = level.getBlockState(request.blockPos);
             if(blockState == null) return false; // section might have got unloaded and propagation should stop
             // repropagate removed darkness
             if(Config.getAbsorption(level, request.blockPos, blockState) > 0) {
-                increaseRequests.add(new LightUpdateRequest(request.blockPos, Config.getAbsorptionColor(level, request.blockPos), false));
+                increaseRequests.add(new LightUpdateRequest(request.blockPos, Config.getAbsorptionColor(level, request.blockPos), false, true, false));
             }
 
             // attenuation
@@ -1126,7 +1156,7 @@ public class ColoredLightEngine {
                         continue;
 
                     // force neighbour to propagate light to the region that has been just cleared (decreased)
-                    increaseRequests.add(new LightUpdateRequest(neighbourPos, neighbourDarknessColor, true));
+                    increaseRequests.add(new LightUpdateRequest(neighbourPos, null, true, false, true));
                 }
             }
             return true;
@@ -1147,16 +1177,22 @@ public class ColoredLightEngine {
         ColorRGB4 lightColor;
         boolean force;
         boolean checkSource;
+        boolean repropagate;
 
         public LightUpdateRequest(BlockPos blockPos, ColorRGB4 lightColor, boolean force) {
-            this(blockPos, lightColor, force, false);
+            this(blockPos, lightColor, force, false, false);
         }
 
         public LightUpdateRequest(BlockPos blockPos, ColorRGB4 lightColor, boolean force, boolean checkSource) {
+            this(blockPos, lightColor, force, checkSource, false);
+        }
+
+        public LightUpdateRequest(BlockPos blockPos, ColorRGB4 lightColor, boolean force, boolean checkSource, boolean repropagate) {
             this.blockPos = blockPos;
             this.lightColor = lightColor;
             this.force = force;
             this.checkSource = checkSource;
+            this.repropagate = repropagate;
         }
     }
 
