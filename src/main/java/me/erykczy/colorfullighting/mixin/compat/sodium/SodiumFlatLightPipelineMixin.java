@@ -70,7 +70,7 @@ public abstract class SodiumFlatLightPipelineMixin {
                 // 3. Only override the light if the block ACTUALLY emits configured light
                 if (Config.getEmissionBrightness(stateAccessor) > 0) {
                     var emission = Config.getLightColor(stateAccessor);
-                    return SodiumPackedLightData.packData(15, ColorRGB8.fromRGB4(emission));
+                    return SodiumPackedLightData.packData(skyLight, ColorRGB8.fromRGB4(emission));
                 }
              }
         }
@@ -134,7 +134,7 @@ public abstract class SodiumFlatLightPipelineMixin {
                         
                         if (Config.getEmissionBrightness(stateAccessor) > 0) {
                             var emission = Config.getLightColor(stateAccessor);
-                            lightmap = SodiumPackedLightData.packData(15, ColorRGB8.fromRGB4(emission));
+                            lightmap = SodiumPackedLightData.packData(skyLight, ColorRGB8.fromRGB4(emission));
                             overridden = true;
                         }
                      }
