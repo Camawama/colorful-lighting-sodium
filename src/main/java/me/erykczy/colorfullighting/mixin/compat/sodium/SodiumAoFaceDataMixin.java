@@ -59,8 +59,8 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
             if(levelAccessor != null) {
                 BlockStateAccessor stateAccessor = new BlockStateWrapper(state);
                 
-                if (Config.getEmissionBrightness(stateAccessor) > 0) {
-                    var emission = Config.getLightColor(stateAccessor);
+                var emission = Config.getLightColor(stateAccessor);
+                if (!emission.equals(Config.defaultColor)) {
                     return SodiumPackedLightData.packData(skyLight, ColorRGB8.fromRGB4(emission));
                 }
             }
