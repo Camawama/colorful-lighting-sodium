@@ -904,15 +904,11 @@ public class ColoredLightEngine {
         }
 
         private ColorRGB4 attenuateLight(ColorRGB4 source, int lightBlocked) {
-            int maxComponent = Math.max(source.red4, Math.max(source.green4, source.blue4));
-            int newMaxComponent = maxComponent - lightBlocked;
-
-            if (newMaxComponent <= 0) {
-                return ColorRGB4.BLACK;
-            }
-
-            float factor = (float)newMaxComponent / maxComponent;
-            return source.mul(factor);
+            return ColorRGB4.fromRGB4(
+                    Math.max(0, source.red4 - lightBlocked),
+                    Math.max(0, source.green4 - lightBlocked),
+                    Math.max(0, source.blue4 - lightBlocked)
+            );
         }
 
         private boolean propagateIncrease(Queue<LightUpdateRequest> increaseRequests, LightUpdateRequest request, LevelAccessor level) {
