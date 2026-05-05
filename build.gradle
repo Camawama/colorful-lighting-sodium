@@ -102,7 +102,7 @@ dependencies {
     //runtimeOnly fg.deobf("curse.maven:immersive-portals-for-forge-355440:6368524")
     //runtimeOnly fg.deobf("curse.maven:distant-horizons-508933:7375280")
     //runtimeOnly fg.deobf("curse.maven:flerovium-1142875:7584065")
-    //runtimeOnly fg.deobf("curse.maven:true-darkness-forge-updated-fork-970641:5080314")
+    runtimeOnly fg.deobf("curse.maven:true-darkness-forge-updated-fork-970641:5080314")
     runtimeOnly fg.deobf("curse.maven:starlight-with-create-fix-1438426:7501699")
     runtimeOnly fg.deobf("curse.maven:wakes-reforged-1223529:7494279")
     runtimeOnly fg.deobf("curse.maven:lively-lighting-1485353:7759348")
