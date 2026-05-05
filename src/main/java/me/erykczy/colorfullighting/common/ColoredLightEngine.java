@@ -951,7 +951,7 @@ public class ColoredLightEngine {
                 if (customAbsorption >= 0) {
                     if (customAbsorption < 15) {
                         // It's a partial absorber, just use the value.
-                        lightBlocked = customAbsorption;
+                        lightBlocked = Math.max(1, customAbsorption);
                     } else {
                         // It's a full absorber (door case).
                         // Check geometry. If the face is open, let a little light in. Otherwise, block fully.
