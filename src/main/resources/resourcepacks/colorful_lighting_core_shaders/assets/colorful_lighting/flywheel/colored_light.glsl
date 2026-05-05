@@ -45,7 +45,7 @@ vec4 mixColoredLightWithLightMap(sampler2D lightMap, ColoredLightFloatData data)
         minecraft_sample_vanilla_lightmap(lightMap, ivec2(int(data.lightColor.g * 255.0), 0)).r,
         minecraft_sample_vanilla_lightmap(lightMap, ivec2(int(data.lightColor.b * 255.0), 0)).r
     );
-    return vec4(sky + block * max(0.3, 1.0 - sky.r), 1.0);
+    return vec4(sky + block * max(0.1, 1.0 - sky.r), 1.0);
 }
 
 // get packed colored light from uniform buffer object

@@ -19,6 +19,9 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(targets = "me.jellysquid.mods.sodium.client.model.light.smooth.AoFaceData", remap = false)
 public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension {
@@ -180,8 +183,12 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
      * @author Erykczy
      * @reason Inject colored lighting logic into AO calculation
      */
-    @Overwrite
-    public void initLightData(LightDataAccess cache, BlockPos pos, Direction direction, boolean offset) {
+    @Inject(method = "initLightData", at = @At("RETURN"))
+    public void colorfullighting$initLightData(LightDataAccess cache, BlockPos pos, Direction direction, boolean offset, CallbackInfo ci) {
+        if (!ColoredLightEngine.getInstance().isEnabled()) {
+            return;
+        }
+
         final int x = pos.getX();
         final int y = pos.getY();
         final int z = pos.getZ();
@@ -205,28 +212,22 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
 
         final int adjWord = cache.get(adjX, adjY, adjZ);
 
-        final float caao = LightDataAccess.unpackAO(adjWord);
-
         Direction[] faces = NEIGHBOR_FACES[direction.get3DDataValue()];
 
         final int e0 = cache.get(adjX, adjY, adjZ, faces[0]);
         final int e0lm = getFilteredNeighborLight(cache, adjX + faces[0].getStepX(), adjY + faces[0].getStepY(), adjZ + faces[0].getStepZ(), centerState, centerLight);
-        final float e0ao = LightDataAccess.unpackAO(e0);
         final boolean e0op = LightDataAccess.unpackOP(e0);
 
         final int e1 = cache.get(adjX, adjY, adjZ, faces[1]);
         final int e1lm = getFilteredNeighborLight(cache, adjX + faces[1].getStepX(), adjY + faces[1].getStepY(), adjZ + faces[1].getStepZ(), centerState, centerLight);
-        final float e1ao = LightDataAccess.unpackAO(e1);
         final boolean e1op = LightDataAccess.unpackOP(e1);
 
         final int e2 = cache.get(adjX, adjY, adjZ, faces[2]);
         final int e2lm = getFilteredNeighborLight(cache, adjX + faces[2].getStepX(), adjY + faces[2].getStepY(), adjZ + faces[2].getStepZ(), centerState, centerLight);
-        final float e2ao = LightDataAccess.unpackAO(e2);
         final boolean e2op = LightDataAccess.unpackOP(e2);
 
         final int e3 = cache.get(adjX, adjY, adjZ, faces[3]);
         final int e3lm = getFilteredNeighborLight(cache, adjX + faces[3].getStepX(), adjY + faces[3].getStepY(), adjZ + faces[3].getStepZ(), centerState, centerLight);
-        final float e3ao = LightDataAccess.unpackAO(e3);
         final boolean e3op = LightDataAccess.unpackOP(e3);
 
         final int c0lm;
@@ -257,32 +258,20 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
             c3lm = getFilteredNeighborLight(cache, adjX + faces[1].getStepX() + faces[3].getStepX(), adjY + faces[1].getStepY() + faces[3].getStepY(), adjZ + faces[1].getStepZ() + faces[3].getStepZ(), centerState, centerLight);
         }
 
-        float[] ao = this.ao;
-        ao[0] = (e3ao + e0ao + LightDataAccess.unpackAO(cache.get(adjX, adjY, adjZ, faces[0], faces[3])) + caao) * 0.25f;
-        ao[1] = (e2ao + e0ao + LightDataAccess.unpackAO(cache.get(adjX, adjY, adjZ, faces[0], faces[2])) + caao) * 0.25f;
-        ao[2] = (e2ao + e1ao + LightDataAccess.unpackAO(cache.get(adjX, adjY, adjZ, faces[1], faces[2])) + caao) * 0.25f;
-        ao[3] = (e3ao + e1ao + LightDataAccess.unpackAO(cache.get(adjX, adjY, adjZ, faces[1], faces[3])) + caao) * 0.25f;
-
         int[] cb = this.lm;
 
         final int calm;
-        final boolean caem;
 
         if (offset && LightDataAccess.unpackFO(adjWord)) {
-            final int originWord = cache.get(x, y, z);
             calm = getFilteredNeighborLight(cache, x, y, z, centerState, centerLight);
-            caem = LightDataAccess.unpackEM(originWord);
         } else {
             calm = getFilteredNeighborLight(cache, adjX, adjY, adjZ, centerState, centerLight);
-            caem = LightDataAccess.unpackEM(adjWord);
         }
 
         cb[0] = blend(e3lm, e0lm, c1lm, calm);
         cb[1] = blend(e2lm, e0lm, c0lm, calm);
         cb[2] = blend(e2lm, e1lm, c2lm, calm);
         cb[3] = blend(e3lm, e1lm, c3lm, calm);
-
-        this.flags |= 1;
     }
 
     /**
