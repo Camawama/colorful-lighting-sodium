@@ -40,8 +40,12 @@ ColoredLightFloatData coloredLightData_integerToFloat(ColoredLightIntegerData da
 
 vec4 mixColoredLightWithLightMap(sampler2D lightMap, ColoredLightFloatData data) {
     vec3 sky = minecraft_sample_vanilla_lightmap(lightMap, ivec2(0, int(data.skyLight * 15) << 4)).xyz;
-    vec3 block = pow(data.lightColor, vec3(1.3));
-    return vec4(sky + block * max(0.3, 1.0 - sky.r), 1.0);
+    vec3 block = vec3(
+        minecraft_sample_vanilla_lightmap(lightMap, ivec2(int(data.lightColor.r * 255.0), 0)).r,
+        minecraft_sample_vanilla_lightmap(lightMap, ivec2(int(data.lightColor.g * 255.0), 0)).r,
+        minecraft_sample_vanilla_lightmap(lightMap, ivec2(int(data.lightColor.b * 255.0), 0)).r
+    );
+    return vec4(sky + block * max(0.1, 1.0 - sky.r), 1.0);
 }
 
 // get packed colored light from uniform buffer object

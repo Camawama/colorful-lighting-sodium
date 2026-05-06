@@ -34,13 +34,14 @@ public class LevelRendererMixin {
         int skyLight = level.getBrightness(LightLayer.SKY, pos);
         if(state.emissiveRendering(level, pos)) {
             LevelAccessor levelAccessor = ColorfulLighting.clientAccessor.getLevel();
-            if(levelAccessor == null) {
-                cir.setReturnValue(PackedLightData.packData(15, 255, 255, 255));
-                return;
+            if(levelAccessor != null) {
+                BlockStateAccessor stateAccessor = new BlockStateWrapper(state);
+                if (Config.getEmissionBrightness(stateAccessor) > 0) {
+                    var emission = Config.getLightColor(stateAccessor);
+                    cir.setReturnValue(PackedLightData.packData(skyLight, ColorRGB8.fromRGB4(emission)));
+                    return;
+                }
             }
-            BlockStateAccessor stateAccessor = new BlockStateWrapper(state);
-            var emission = Config.getLightColor(stateAccessor);
-            cir.setReturnValue(PackedLightData.packData(skyLight, ColorRGB8.fromRGB4(emission)));
         }
 
         ColorRGB4 color = ColoredLightEngine.getInstance().sampleLightColor(pos);

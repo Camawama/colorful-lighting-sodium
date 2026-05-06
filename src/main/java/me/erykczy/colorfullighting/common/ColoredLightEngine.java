@@ -904,15 +904,11 @@ public class ColoredLightEngine {
         }
 
         private ColorRGB4 attenuateLight(ColorRGB4 source, int lightBlocked) {
-            int maxComponent = Math.max(source.red4, Math.max(source.green4, source.blue4));
-            int newMaxComponent = maxComponent - lightBlocked;
-
-            if (newMaxComponent <= 0) {
-                return ColorRGB4.BLACK;
-            }
-
-            float factor = (float)newMaxComponent / maxComponent;
-            return source.mul(factor);
+            return ColorRGB4.fromRGB4(
+                    Math.max(0, source.red4 - lightBlocked),
+                    Math.max(0, source.green4 - lightBlocked),
+                    Math.max(0, source.blue4 - lightBlocked)
+            );
         }
 
         private boolean propagateIncrease(Queue<LightUpdateRequest> increaseRequests, LightUpdateRequest request, LevelAccessor level) {
@@ -952,30 +948,36 @@ public class ColoredLightEngine {
 
                 // Override with custom absorption if it's defined
                 int customAbsorption = Config.getLightAbsorption(level, neighbourPos, neighbourState);
+                
+                boolean geometryOccludes = false;
+                BlockStateAccessor sourceStateAcc = level.getBlockState(request.blockPos);
+                if (sourceStateAcc != null) {
+                    BlockState sourceBlockState = sourceStateAcc.getBlockState();
+                    BlockState neighborBlockState = neighbourState.getBlockState();
+                    
+                    boolean sourceOccludes = sourceBlockState.useShapeForLightOcclusion();
+                    boolean neighborOccludes = neighborBlockState.useShapeForLightOcclusion();
+                    
+                    if (sourceOccludes || neighborOccludes) {
+                        VoxelShape sourceFaceShape = sourceOccludes ? sourceBlockState.getFaceOcclusionShape(level.getLevel(), request.blockPos, direction) : Shapes.empty();
+                        VoxelShape neighbourFaceShape = neighborOccludes ? neighborBlockState.getFaceOcclusionShape(level.getLevel(), neighbourPos, direction.getOpposite()) : Shapes.empty();
+                        geometryOccludes = Shapes.faceShapeOccludes(sourceFaceShape, neighbourFaceShape);
+                    }
+                }
+
                 if (customAbsorption >= 0) {
                     if (customAbsorption < 15) {
-                        // It's a partial absorber, just use the value.
-                        lightBlocked = customAbsorption;
+                        lightBlocked = Math.max(1, customAbsorption);
                     } else {
-                        // It's a full absorber (door case).
-                        // Check geometry. If the face is open, let a little light in. Otherwise, block fully.
-                        BlockStateAccessor sourceStateAcc = level.getBlockState(request.blockPos);
-                        if (sourceStateAcc == null) {
-                            lightBlocked = 15; // Can't check, assume occluded
+                        if (geometryOccludes) {
+                            lightBlocked = 15;
                         } else {
-                            BlockState sourceBlockState = sourceStateAcc.getBlockState();
-                            BlockState neighborBlockState = neighbourState.getBlockState();
-                            VoxelShape sourceFaceShape = sourceBlockState.getFaceOcclusionShape(level.getLevel(), request.blockPos, direction);
-                            VoxelShape neighbourFaceShape = neighborBlockState.getFaceOcclusionShape(level.getLevel(), neighbourPos, direction.getOpposite());
-
-                            if (Shapes.faceShapeOccludes(sourceFaceShape, neighbourFaceShape)) {
-                                lightBlocked = 15;
-                            } else {
-                                // This is the door case: custom absorption is 15, but the face is open.
-                                // Let light in to light the face.
-                                lightBlocked = 1;
-                            }
+                            lightBlocked = 1;
                         }
+                    }
+                } else {
+                    if (geometryOccludes) {
+                        lightBlocked = 15;
                     }
                 }
                 
@@ -1033,6 +1035,24 @@ public class ColoredLightEngine {
                 if(neighbourState == null) return false; // section might have got unloaded and propagation should stop
 
                 int lightBlocked = Math.max(1, neighbourState.getLightBlock(level, neighbourPos));
+                
+                BlockStateAccessor sourceStateAcc = level.getBlockState(request.blockPos);
+                if (sourceStateAcc != null) {
+                    BlockState sourceBlockState = sourceStateAcc.getBlockState();
+                    BlockState neighborBlockState = neighbourState.getBlockState();
+                    
+                    boolean sourceOccludes = sourceBlockState.useShapeForLightOcclusion();
+                    boolean neighborOccludes = neighborBlockState.useShapeForLightOcclusion();
+                    
+                    if (sourceOccludes || neighborOccludes) {
+                        VoxelShape sourceFaceShape = sourceOccludes ? sourceBlockState.getFaceOcclusionShape(level.getLevel(), request.blockPos, direction) : Shapes.empty();
+                        VoxelShape neighbourFaceShape = neighborOccludes ? neighborBlockState.getFaceOcclusionShape(level.getLevel(), neighbourPos, direction.getOpposite()) : Shapes.empty();
+                        
+                        if (Shapes.faceShapeOccludes(sourceFaceShape, neighbourFaceShape)) {
+                            lightBlocked = 15;
+                        }
+                    }
+                }
                 
                 ColorRGB4 attenuated = attenuateLight(request.lightColor, lightBlocked);
                 // if no more color to propagate

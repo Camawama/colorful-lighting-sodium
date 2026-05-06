@@ -19,6 +19,9 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(targets = "me.jellysquid.mods.sodium.client.model.light.smooth.AoFaceData", remap = false)
 public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension {
@@ -51,16 +54,19 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
         ColorRGB4 color = ColoredLightEngine.getInstance().sampleLightColor(pos);
         int word = cache.get(x, y, z);
         int skyLight = LightDataAccess.unpackSL(word);
+        
         if (LightDataAccess.unpackEM(word)) {
             BlockAndTintGetter level = cache.getWorld();
             BlockState state = level.getBlockState(pos);
             LevelAccessor levelAccessor = ColorfulLighting.clientAccessor.getLevel();
             if(levelAccessor != null) {
                 BlockStateAccessor stateAccessor = new BlockStateWrapper(state);
+                
                 var emission = Config.getLightColor(stateAccessor);
-                return SodiumPackedLightData.packData(15, ColorRGB8.fromRGB4(emission));
+                if (!emission.equals(Config.defaultColor)) {
+                    return SodiumPackedLightData.packData(skyLight, ColorRGB8.fromRGB4(emission));
+                }
             }
-            return SodiumPackedLightData.packData(15, 255, 255, 255);
         }
         return SodiumPackedLightData.packData(skyLight, ColorRGB8.fromRGB4(color));
     }
@@ -93,9 +99,27 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
     }
 
     @Unique
+    private static int blendChannel(int a, int b, int c, int d) {
+        if ((a == 0) || (b == 0) || (c == 0) || (d == 0)) {
+            final int min = minNonZero(minNonZero(a, b), minNonZero(c, d));
+            a = Math.max(a, min);
+            b = Math.max(b, min);
+            c = Math.max(c, min);
+            d = Math.max(d, min);
+        }
+        return (a + b + c + d) >> 2;
+    }
+
+    @Unique
+    private static int minNonZero(int a, int b) {
+        if (a == 0) return b;
+        if (b == 0) return a;
+        return Math.min(a, b);
+    }
+
+    @Unique
     private static int blend(int a, int b, int c, int d) {
         if (!ColoredLightEngine.getInstance().isEnabled()) {
-            // Use blendChannel logic for vanilla components to avoid dark edges
             int sl_a = (a >> 16) & 0xFF;
             int sl_b = (b >> 16) & 0xFF;
             int sl_c = (c >> 16) & 0xFF;
@@ -155,61 +179,16 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
         return SodiumPackedLightData.packData(sky, red, green, blue);
     }
 
-    @Unique
-    private static int blendChannel(int a, int b, int c, int d) {
-        if ((a == 0) || (b == 0) || (c == 0) || (d == 0)) {
-            final int min = minNonZero(minNonZero(a, b), minNonZero(c, d));
-            a = Math.max(a, min);
-            b = Math.max(b, min);
-            c = Math.max(c, min);
-            d = Math.max(d, min);
-        }
-        return (a + b + c + d) >> 2;
-    }
-
-    @Unique
-    private static int minNonZero(int a, int b) {
-        if (a == 0) return b;
-        if (b == 0) return a;
-        return Math.min(a, b);
-    }
-
-    @Unique
-    private static int blendSmooth(int a, int b, int c, int d) {
-        int ar = a & 0xFF;
-        int ag = (a >>> 8) & 0xFF;
-        int as = (a >>> 16) & 0xF;
-        int ab = (a >>> 20) & 0xFF;
-
-        int br = b & 0xFF;
-        int bg = (b >>> 8) & 0xFF;
-        int bs = (b >>> 16) & 0xF;
-        int bb = (b >>> 20) & 0xFF;
-
-        int cr = c & 0xFF;
-        int cg = (c >>> 8) & 0xFF;
-        int cs = (c >>> 16) & 0xF;
-        int cb = (c >>> 20) & 0xFF;
-
-        int dr = d & 0xFF;
-        int dg = (d >>> 8) & 0xFF;
-        int ds = (d >>> 16) & 0xF;
-        int db = (d >>> 20) & 0xFF;
-
-        int r = (ar + br + cr + dr) >> 2;
-        int g = (ag + bg + cg + dg) >> 2;
-        int s = (as + bs + cs + ds) >> 2;
-        int bch = (ab + bb + cb + db) >> 2;
-
-        return r | (g << 8) | (s << 16) | (bch << 20) | (15 << 28);
-    }
-
     /**
      * @author Erykczy
      * @reason Inject colored lighting logic into AO calculation
      */
-    @Overwrite
-    public void initLightData(LightDataAccess cache, BlockPos pos, Direction direction, boolean offset) {
+    @Inject(method = "initLightData", at = @At("RETURN"))
+    public void colorfullighting$initLightData(LightDataAccess cache, BlockPos pos, Direction direction, boolean offset, CallbackInfo ci) {
+        if (!ColoredLightEngine.getInstance().isEnabled()) {
+            return;
+        }
+
         final int x = pos.getX();
         final int y = pos.getY();
         final int z = pos.getZ();
@@ -233,28 +212,22 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
 
         final int adjWord = cache.get(adjX, adjY, adjZ);
 
-        final float caao = LightDataAccess.unpackAO(adjWord);
-
         Direction[] faces = NEIGHBOR_FACES[direction.get3DDataValue()];
 
         final int e0 = cache.get(adjX, adjY, adjZ, faces[0]);
         final int e0lm = getFilteredNeighborLight(cache, adjX + faces[0].getStepX(), adjY + faces[0].getStepY(), adjZ + faces[0].getStepZ(), centerState, centerLight);
-        final float e0ao = LightDataAccess.unpackAO(e0);
         final boolean e0op = LightDataAccess.unpackOP(e0);
 
         final int e1 = cache.get(adjX, adjY, adjZ, faces[1]);
         final int e1lm = getFilteredNeighborLight(cache, adjX + faces[1].getStepX(), adjY + faces[1].getStepY(), adjZ + faces[1].getStepZ(), centerState, centerLight);
-        final float e1ao = LightDataAccess.unpackAO(e1);
         final boolean e1op = LightDataAccess.unpackOP(e1);
 
         final int e2 = cache.get(adjX, adjY, adjZ, faces[2]);
         final int e2lm = getFilteredNeighborLight(cache, adjX + faces[2].getStepX(), adjY + faces[2].getStepY(), adjZ + faces[2].getStepZ(), centerState, centerLight);
-        final float e2ao = LightDataAccess.unpackAO(e2);
         final boolean e2op = LightDataAccess.unpackOP(e2);
 
         final int e3 = cache.get(adjX, adjY, adjZ, faces[3]);
         final int e3lm = getFilteredNeighborLight(cache, adjX + faces[3].getStepX(), adjY + faces[3].getStepY(), adjZ + faces[3].getStepZ(), centerState, centerLight);
-        final float e3ao = LightDataAccess.unpackAO(e3);
         final boolean e3op = LightDataAccess.unpackOP(e3);
 
         final int c0lm;
@@ -285,32 +258,20 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
             c3lm = getFilteredNeighborLight(cache, adjX + faces[1].getStepX() + faces[3].getStepX(), adjY + faces[1].getStepY() + faces[3].getStepY(), adjZ + faces[1].getStepZ() + faces[3].getStepZ(), centerState, centerLight);
         }
 
-        float[] ao = this.ao;
-        ao[0] = (e3ao + e0ao + LightDataAccess.unpackAO(cache.get(adjX, adjY, adjZ, faces[0], faces[3])) + caao) * 0.25f;
-        ao[1] = (e2ao + e0ao + LightDataAccess.unpackAO(cache.get(adjX, adjY, adjZ, faces[0], faces[2])) + caao) * 0.25f;
-        ao[2] = (e2ao + e1ao + LightDataAccess.unpackAO(cache.get(adjX, adjY, adjZ, faces[1], faces[2])) + caao) * 0.25f;
-        ao[3] = (e3ao + e1ao + LightDataAccess.unpackAO(cache.get(adjX, adjY, adjZ, faces[1], faces[3])) + caao) * 0.25f;
-
         int[] cb = this.lm;
 
         final int calm;
-        final boolean caem;
 
         if (offset && LightDataAccess.unpackFO(adjWord)) {
-            final int originWord = cache.get(x, y, z);
             calm = getFilteredNeighborLight(cache, x, y, z, centerState, centerLight);
-            caem = LightDataAccess.unpackEM(originWord);
         } else {
             calm = getFilteredNeighborLight(cache, adjX, adjY, adjZ, centerState, centerLight);
-            caem = LightDataAccess.unpackEM(adjWord);
         }
 
         cb[0] = blend(e3lm, e0lm, c1lm, calm);
         cb[1] = blend(e2lm, e0lm, c0lm, calm);
         cb[2] = blend(e2lm, e1lm, c2lm, calm);
         cb[3] = blend(e3lm, e1lm, c3lm, calm);
-
-        this.flags |= 1;
     }
 
     /**

@@ -110,7 +110,7 @@ dependencies {
     runtimeOnly fg.deobf("curse.maven:architectury-api-419699:5137938")
     runtimeOnly fg.deobf("curse.maven:cubes-without-borders-975120:5855464")
     runtimeOnly fg.deobf("curse.maven:free-cam-557076:4643128")
-    runtimeOnly fg.deobf("curse.maven:vanillin-965702:6446560")
+    //runtimeOnly fg.deobf("curse.maven:vanillin-965702:6446560")
     //runtimeOnly fg.deobf("curse.maven:supplementaries-412082:7884611")
     //runtimeOnly fg.deobf("curse.maven:selene-499980:7945711")
 

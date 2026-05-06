@@ -36,8 +36,7 @@
   "minecraft:oak_door": {
     "states": {
       "open=true": "white;0",
-      "open=false,half=upper": "white;5",
-      "open=false,half=lower": "white;15"
+      "open=false": "white;5"
     },
     "default": "white;15"
   },
@@ -53,7 +52,7 @@
   "minecraft:spruce_door": {
     "states": {
       "open=true": "white;0",
-      "open=false": "white;15"
+      "open=false": "white;12"
     },
     "default": "white;15"
   },
@@ -61,7 +60,7 @@
   "minecraft:spruce_trapdoor": {
     "states": {
       "open=true": "white;0",
-      "open=false": "white;15"
+      "open=false": "white;12"
     },
     "default": "white;15"
   },
@@ -69,8 +68,7 @@
   "minecraft:birch_door": {
     "states": {
       "open=true": "white;0",
-      "open=false,half=upper": "vanilla;5",
-      "open=false,half=lower": "vanilla;6"
+      "open=false": "white;6"
     },
     "default": "white;15"
   },
@@ -86,8 +84,7 @@
   "minecraft:jungle_door": {
     "states": {
       "open=true": "white;0",
-      "open=false,half=upper": "white;5",
-      "open=false,half=lower": "white;15"
+      "open=false": "white;5"
     },
     "default": "white;15"
   },
@@ -103,7 +100,7 @@
   "minecraft:dark_oak_door": {
     "states": {
       "open=true": "white;0",
-      "open=false": "white;15"
+      "open=false": "white;12"
     },
     "default": "white;15"
   },
@@ -111,7 +108,7 @@
   "minecraft:dark_oak_trapdoor": {
     "states": {
       "open=true": "white;0",
-      "open=false": "white;15"
+      "open=false": "white;12"
     },
     "default": "white;15"
   },
@@ -119,7 +116,7 @@
   "minecraft:mangrove_door": {
     "states": {
       "open=true": "white;0",
-      "open=false": "white;15"
+      "open=false": "white;12"
     },
     "default": "white;15"
   },
@@ -129,14 +126,13 @@
       "open=true": "white;0",
       "open=false": "white;5"
     },
-    "default": "white;15"
+    "default": "white;12"
   },
 
   "minecraft:cherry_door": {
     "states": {
       "open=true": "white;0",
-      "open=false,half=upper": "vanilla;5",
-      "open=false,half=lower": "vanilla;6"
+      "open=false": "white;6"
     },
     "default": "white;15"
   },
@@ -152,8 +148,7 @@
   "minecraft:bamboo_door": {
     "states": {
       "open=true": "white;0",
-      "open=false,half=upper": "white;3",
-      "open=false,half=lower": "white;15"
+      "open=false": "white;3"
     },
     "default": "white;15"
   },
@@ -169,7 +164,7 @@
   "minecraft:crimson_door": {
     "states": {
       "open=true": "white;0",
-      "open=false": "white;15"
+      "open=false": "white;12"
     },
     "default": "white;15"
   },
@@ -185,7 +180,7 @@
   "minecraft:warped_door": {
     "states": {
       "open=true": "white;0",
-      "open=false": "white;15"
+      "open=false": "white;12"
     },
     "default": "white;15"
   },
@@ -201,7 +196,7 @@
   "minecraft:iron_door": {
     "states": {
       "open=true": "white;0",
-      "open=false": "white;15"
+      "open=false": "white;5"
     },
     "default": "white;15"
   },

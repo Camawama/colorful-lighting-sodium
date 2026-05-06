@@ -15,10 +15,12 @@ vec4 sample_lightmap_colored(sampler2D lightMap, ivec2 uv) {
     if(alpha4 != 0xF) {
         return minecraft_sample_vanilla_lightmap(lightMap, uv);
     }
-    const float divideBy255 = 0.003921;
-    vec3 blockLightColor = vec3(red8*divideBy255, green8*divideBy255, blue8*divideBy255);
 
     vec3 sky = minecraft_sample_vanilla_lightmap(lightMap, ivec2(0, skyLight4 << 4)).xyz;
-    vec3 block = pow(blockLightColor, vec3(1.3));
-    return vec4(sky + block * max(0.3, 1.0 - sky.r), 1.0);
+    vec3 block = vec3(
+        minecraft_sample_vanilla_lightmap(lightMap, ivec2(red8, 0)).r,
+        minecraft_sample_vanilla_lightmap(lightMap, ivec2(green8, 0)).r,
+        minecraft_sample_vanilla_lightmap(lightMap, ivec2(blue8, 0)).r
+    );
+    return vec4(sky + block * max(0.1, 1.0 - sky.r), 1.0);
 }
