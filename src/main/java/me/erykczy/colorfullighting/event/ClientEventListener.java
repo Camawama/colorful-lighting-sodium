@@ -11,20 +11,18 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraftforge.client.event.RegisterClientCommandsEvent;
-import net.minecraftforge.client.event.RenderLevelStageEvent;
-import net.minecraftforge.event.TickEvent;
-import net.minecraftforge.event.level.LevelEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
+import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import net.neoforged.neoforge.event.level.LevelEvent;
 
 public class ClientEventListener {
     private boolean wasShaderPackInUse = false;
 
     @SubscribeEvent
-    public void onTick(TickEvent.ClientTickEvent event) {
-        if (event.phase == TickEvent.Phase.START) return;
+    public void onTick(ClientTickEvent.Post event) {
 
-        // Check for Oculus shader state changes
         if (OculusCompat.isOculusLoaded()) {
             boolean isShaderPackInUse = OculusCompat.isShaderPackInUse();
             if (isShaderPackInUse != wasShaderPackInUse) {
@@ -99,7 +97,6 @@ public class ClientEventListener {
                                         })
                                 )
                                 .executes(context -> {
-                                    // Default behavior (same as 'all') for backward compatibility
                                     ColoredLightEngine.getInstance().reset();
                                     if (Minecraft.getInstance().levelRenderer != null) {
                                         Minecraft.getInstance().levelRenderer.allChanged();

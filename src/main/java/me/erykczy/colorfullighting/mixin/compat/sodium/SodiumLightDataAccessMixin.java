@@ -1,15 +1,8 @@
 package me.erykczy.colorfullighting.mixin.compat.sodium;
 
-import me.erykczy.colorfullighting.ColorfulLighting;
-import me.erykczy.colorfullighting.accessors.BlockStateWrapper;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
-import me.erykczy.colorfullighting.common.Config;
-import me.erykczy.colorfullighting.common.accessors.BlockStateAccessor;
-import me.erykczy.colorfullighting.common.accessors.LevelAccessor;
-import me.erykczy.colorfullighting.common.util.ColorRGB4;
-import me.erykczy.colorfullighting.common.util.ColorRGB8;
 import me.erykczy.colorfullighting.compat.sodium.SodiumPackedLightData;
-import me.jellysquid.mods.sodium.client.model.light.data.LightDataAccess;
+import net.caffeinemc.mods.sodium.client.model.light.data.LightDataAccess;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.core.BlockPos;
@@ -19,14 +12,11 @@ import net.minecraft.world.level.block.state.BlockState;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
-import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(LightDataAccess.class)
 public abstract class SodiumLightDataAccessMixin {
 
-    @Shadow protected BlockAndTintGetter world;
+    @Shadow protected BlockAndTintGetter level;
 
     @Shadow public static int packBL(int blockLight) { return 0; }
     @Shadow public static int packSL(int skyLight) { return 0; }
@@ -44,7 +34,7 @@ public abstract class SodiumLightDataAccessMixin {
     @Overwrite(remap = false)
     protected int compute(int x, int y, int z) {
         BlockPos pos = new BlockPos(x, y, z);
-        BlockAndTintGetter world = this.world;
+        BlockAndTintGetter world = this.level;
 
         BlockState state = world.getBlockState(pos);
 

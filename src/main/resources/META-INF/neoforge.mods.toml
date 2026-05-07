@@ -17,9 +17,9 @@ description='''${mod_description}'''
 config="${mod_id}.mixins.json"
 
 [[dependencies.${mod_id}]]
-modId="forge"
+modId="neoforge"
 mandatory=true
-versionRange="${forge_version_range}"
+versionRange="[${neo_version},)"
 ordering="NONE"
 side="BOTH"
 
@@ -41,12 +41,5 @@ side="CLIENT"
 modId="create"
 mandatory=false
 versionRange="[6.0.8,6.1.0)"
-ordering="AFTER"
-side="BOTH"
-
-[[dependencies.${mod_id}]]
-modId="generations_core"
-mandatory=false
-versionRange="[1.0.2,)"
 ordering="AFTER"
 side="BOTH"

@@ -11,17 +11,16 @@ import me.erykczy.colorfullighting.compat.flywheel.FlywheelCompat;
 import me.erykczy.colorfullighting.resourcemanager.CoreShaderRegistration;
 import me.erykczy.colorfullighting.resourcemanager.ModResourceManagers;
 import net.minecraft.client.Minecraft;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.fml.DistExecutor;
-import net.minecraftforge.fml.ModList;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
-import net.minecraftforge.fml.event.lifecycle.FMLLoadCompleteEvent;
-import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModList;
+import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
+import net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent;
+import net.neoforged.neoforge.common.NeoForge;
 import org.slf4j.Logger;
 
-@Mod(value = ColorfulLighting.MOD_ID)
+@Mod(value = ColorfulLighting.MOD_ID, dist = Dist.CLIENT)
 public class ColorfulLighting
 {
     public static final String MOD_ID = "colorful_lighting";
@@ -30,18 +29,13 @@ public class ColorfulLighting
     public static final Logger LOGGER = LogUtils.getLogger();
     public static ClientAccessor clientAccessor;
 
-    public ColorfulLighting(FMLJavaModLoadingContext context)
+    public ColorfulLighting(IEventBus modEventBus)
     {
-        DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> new DistExecutor.SafeRunnable() {
-            @Override
-            public void run() {
-                ModResourceManagers.register(context.getModEventBus());
-                CoreShaderRegistration.register(context.getModEventBus());
-                MinecraftForge.EVENT_BUS.register(new ClientEventListener());
-                context.getModEventBus().addListener(ColorfulLighting::onClientSetup);
-                context.getModEventBus().addListener(ColorfulLighting::onLoadingComplete);
-            }
-        });
+        ModResourceManagers.register(modEventBus);
+        CoreShaderRegistration.register(modEventBus);
+        NeoForge.EVENT_BUS.register(new ClientEventListener());
+        modEventBus.addListener(ColorfulLighting::onClientSetup);
+        modEventBus.addListener(ColorfulLighting::onLoadingComplete);
     }
 
     public static void onClientSetup(FMLClientSetupEvent event) {

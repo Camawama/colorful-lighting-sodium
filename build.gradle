@@ -1,10 +1,7 @@
 plugins {
-    id 'eclipse'
-    id 'idea'
+    id 'java-library'
     id 'maven-publish'
-    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
-    id 'org.spongepowered.mixin' version '0.7.+'
-    id 'com.github.johnrengelman.shadow' version '7.1.2'
+    id 'net.neoforged.gradle.userdev' version '7.+'
 }
 
 version = mod_version
@@ -14,49 +11,37 @@ base {
     archivesName = "$mod_id-$minecraft_version"
 }
 
-java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 println "Java: ${System.getProperty 'java.version'}, JVM: ${System.getProperty 'java.vm.version'} (${System.getProperty 'java.vendor'}), Arch: ${System.getProperty 'os.arch'}"
-minecraft {
-    mappings channel: mapping_channel, version: mapping_version
 
-    copyIdeResources = true
+minecraft.accessTransformers.file rootProject.file('src/main/resources/META-INF/accesstransformer.cfg')
 
-    accessTransformer = file('src/main/resources/META-INF/accesstransformer.cfg')
+runs {
+    configureEach {
+        systemProperty 'forge.logging.markers', 'REGISTRIES'
+        systemProperty 'forge.logging.console.level', 'debug'
 
-    runs {
-        configureEach {
-            workingDirectory project.file('run')
+        workingDirectory project.layout.projectDirectory.dir('run').dir(name)
 
-            property 'forge.logging.markers', 'REGISTRIES'
+        modSource project.sourceSets.main
+    }
 
-            property 'forge.logging.console.level', 'debug'
+    client {
+        systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
+    }
 
-            mods {
-                "${mod_id}" {
-                    source sourceSets.main
-                }
-            }
-        }
+    server {
+        systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
+        argument '--nogui'
+    }
 
-        client {
-            property 'forge.enabledGameTestNamespaces', mod_id
-        }
+    gameTestServer {
+        systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
+    }
 
-        server {
-            property 'forge.enabledGameTestNamespaces', mod_id
-            args '--nogui'
-        }
-
-        gameTestServer {
-            property 'forge.enabledGameTestNamespaces', mod_id
-        }
-
-        data {
-            workingDirectory project.file('run-data')
-
-            args '--mod', mod_id, '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
-        }
+    data {
+        arguments.addAll '--mod', mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
     }
 }
 
@@ -65,7 +50,8 @@ sourceSets.main.resources { srcDir 'src/generated/resources' }
 repositories {
     mavenCentral()
     maven { url = "https://maven.createmod.net" }
-    maven { url = "https://maven.ithundxr.dev/mirror" }
+    maven { url = "https://maven.ithundxr.dev/snapshots" }
+    maven { url = "https://maven.tterrag.com/" }
     maven {
         url "https://cursemaven.com"
         content {
@@ -77,65 +63,48 @@ repositories {
         url = "https://api.modrinth.com/maven"
     }
     maven { url = "https://raw.githubusercontent.com/Fuzss/modresources/main/maven/" }
+    maven {
+        url "https://uncomfortable-fey-midnight145-884fba2b.koyeb.app"
+        content {
+            includeGroup "curse.fetch"
+        }
+    }
 }
 
 dependencies {
-    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    implementation "net.neoforged:neoforge:${neo_version}"
 
-    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+    implementation "curse.maven:sodium-394468:6382651"
 
-    compileOnly(annotationProcessor("io.github.llamalad7:mixinextras-common:0.4.1"))
-    implementation(jarJar("io.github.llamalad7:mixinextras-forge:0.4.1")) {
-        jarJar.ranged(it, "[0.4.1,)")
-    }
+    compileOnly "curse.maven:irisshaders-455508:6661598"
+    compileOnly "curse.maven:architectury-api-419699:5786327"
+    compileOnly "maven.modrinth:distanthorizonsapi:dQUW27oF"
 
-    // IMPLEMENTATION
-    implementation fg.deobf("curse.maven:embeddium-908741:5681725")
+    runtimeOnly "curse.maven:irisshaders-455508:6661598"
+    runtimeOnly "curse.fetch:8044933:trulydark-neoforge-1.21.1-2.1.0:jar"
+    runtimeOnly "curse.maven:architectury-api-419699:5786327"
+    runtimeOnly "curse.maven:wakes-reforged-1223529:7562282"
+    runtimeOnly "curse.maven:cubes-without-borders-975120:5855532"
+    runtimeOnly "curse.maven:free-cam-557076:5572364"
+    runtimeOnly "curse.maven:sodium-core-shader-support-956376:6391144"
 
-    // COMPILE ONLY
-    compileOnly fg.deobf("curse.maven:oculus-581495:6020952")
-    compileOnly fg.deobf("curse.maven:architectury-api-419699:5137938")
-    compileOnly fg.deobf("maven.modrinth:distanthorizonsapi:j15Y57xi")
-
-    // RUNTIME ONLY
-    //runtimeOnly fg.deobf("curse.maven:cloth-config-348521:5729105")
-    //runtimeOnly fg.deobf("curse.maven:immersive-portals-for-forge-355440:6368524")
-    //runtimeOnly fg.deobf("curse.maven:distant-horizons-508933:7375280")
-    //runtimeOnly fg.deobf("curse.maven:flerovium-1142875:7584065")
-    runtimeOnly fg.deobf("curse.maven:true-darkness-forge-updated-fork-970641:5080314")
-    runtimeOnly fg.deobf("curse.maven:starlight-with-create-fix-1438426:7501699")
-    runtimeOnly fg.deobf("curse.maven:wakes-reforged-1223529:7494279")
-    runtimeOnly fg.deobf("curse.maven:lively-lighting-1485353:7759348")
-    runtimeOnly fg.deobf("curse.maven:oculus-581495:6020952")
-    runtimeOnly fg.deobf("curse.maven:architectury-api-419699:5137938")
-    runtimeOnly fg.deobf("curse.maven:cubes-without-borders-975120:5855464")
-    runtimeOnly fg.deobf("curse.maven:free-cam-557076:4643128")
-    //runtimeOnly fg.deobf("curse.maven:vanillin-965702:6446560")
-    //runtimeOnly fg.deobf("curse.maven:supplementaries-412082:7884611")
-    //runtimeOnly fg.deobf("curse.maven:selene-499980:7945711")
-
-    // Create (dev environment)
-    implementation fg.deobf("com.simibubi.create:create-${minecraft_version}:${create_version}:slim") {
+    implementation("com.simibubi.create:create-${minecraft_version}:${create_version}:slim") {
         transitive = false
     }
 
-    // Ponder (required by Create dev setup)
-    implementation fg.deobf("net.createmod.ponder:Ponder-Forge-${minecraft_version}:${ponder_version}")
+    implementation "net.createmod.ponder:ponder-neoforge:${ponder_version}+mc${minecraft_version}"
 
-    // Flywheel
-    compileOnly fg.deobf("dev.engine-room.flywheel:flywheel-forge-api-${minecraft_version}:[1.0.5,)")
-    implementation fg.deobf("dev.engine-room.flywheel:flywheel-forge-${minecraft_version}:[1.0.5,)")
+    compileOnly "dev.engine-room.flywheel:flywheel-neoforge-api-${minecraft_version}:${flywheel_version}"
+    implementation "dev.engine-room.flywheel:flywheel-neoforge-${minecraft_version}:${flywheel_version}"
 
-    // Registrate (required by Create internally)
-    implementation fg.deobf("com.tterrag.registrate:Registrate:${registrate_version}")
+    implementation "com.tterrag.registrate:Registrate:${registrate_version}"
 }
 
-tasks.named('processResources', ProcessResources).configure {
+tasks.withType(ProcessResources).configureEach {
     var replaceProperties = [
-            minecraft_version: minecraft_version,
+            minecraft_version      : minecraft_version,
             minecraft_version_range: minecraft_version_range,
-            forge_version            : forge_version,
-            forge_version_range      : forge_version_range,
+            neo_version            : neo_version,
             loader_version_range   : loader_version_range,
             mod_id                 : mod_id,
             mod_name               : mod_name,
@@ -149,14 +118,9 @@ tasks.named('processResources', ProcessResources).configure {
     ]
     inputs.properties replaceProperties
 
-    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
-        expand replaceProperties + [project: project]
+    filesMatching(['META-INF/neoforge.mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties
     }
-}
-
-mixin {
-    add sourceSets.main, 'colorful_lighting.refmap.json'
-    config 'colorful_lighting.mixins.json'
 }
 
 tasks.named('jar', Jar).configure {
@@ -164,21 +128,19 @@ tasks.named('jar', Jar).configure {
         attributes([
                 'Specification-Title'     : mod_id,
                 'Specification-Vendor'    : mod_authors,
-                'Specification-Version'   : '1', // We are version 1 of ourselves
+                'Specification-Version'   : '1',
                 'Implementation-Title'    : project.name,
                 'Implementation-Version'  : project.jar.archiveVersion,
                 'Implementation-Vendor'   : mod_authors,
                 'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
         ])
     }
-
-    finalizedBy 'reobfJar'
 }
 
 publishing {
     publications {
         register('mavenJava', MavenPublication) {
-            artifact jar
+            from components.java
         }
     }
     repositories {

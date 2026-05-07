@@ -24,11 +24,11 @@ uniform float u_NightVibrancy;
 uniform sampler2D u_LightTex; // The light map texture sampler
 
 // --- COLORFUL LIGHTING START ---
-vec4 _sample_lightmap_vanilla(sampler2D lightMap, ivec2 uv) {
+vec4 _sample_lightmap_vanilla(sampler2D lightMap, vec2 uv) {
     return texture(lightMap, clamp(uv / 256.0, vec2(0.5 / 16.0), vec2(15.5 / 16.0)));
 }
 
-vec4 _sample_lightmap(sampler2D lightMap, ivec2 uv) {
+vec4 _sample_lightmap(sampler2D lightMap, vec2 uv) {
     uint packed_light;
 #ifdef USE_VERTEX_COMPRESSION
     packed_light = (uint(uv.y) << 16) | uint(uv.x);
@@ -46,11 +46,11 @@ vec4 _sample_lightmap(sampler2D lightMap, ivec2 uv) {
         uint skyLight4 = (packed_light >> 16) & 0xFu;
         uint blue8 = (packed_light >> 20) & 0xFFu;
 
-        vec3 sky = _sample_lightmap_vanilla(lightMap, ivec2(0, int(skyLight4) << 4)).xyz;
+        vec3 sky = _sample_lightmap_vanilla(lightMap, vec2(0, int(skyLight4) << 4)).xyz;
         vec3 block = vec3(
-            _sample_lightmap_vanilla(lightMap, ivec2(int(red8), 0)).r,
-            _sample_lightmap_vanilla(lightMap, ivec2(int(green8), 0)).r,
-            _sample_lightmap_vanilla(lightMap, ivec2(int(blue8), 0)).r
+            _sample_lightmap_vanilla(lightMap, vec2(int(red8), 0)).r,
+            _sample_lightmap_vanilla(lightMap, vec2(int(green8), 0)).r,
+            _sample_lightmap_vanilla(lightMap, vec2(int(blue8), 0)).r
         );
 
         float moonWashoutFactor = mix(3.0, 0.0, u_NightVibrancy);
@@ -73,11 +73,11 @@ vec4 _sample_lightmap(sampler2D lightMap, ivec2 uv) {
         float green8 = float(green4) / 15.0;
         float blue8 = float(blue3) / 7.0;
 
-        vec3 sky = _sample_lightmap_vanilla(lightMap, ivec2(0, int(skyLight4) << 4)).xyz;
+        vec3 sky = _sample_lightmap_vanilla(lightMap, vec2(0, int(skyLight4) << 4)).xyz;
         vec3 block = vec3(
-            _sample_lightmap_vanilla(lightMap, ivec2(int(red8 * 255.0), 0)).r,
-            _sample_lightmap_vanilla(lightMap, ivec2(int(green8 * 255.0), 0)).r,
-            _sample_lightmap_vanilla(lightMap, ivec2(int(blue8 * 255.0), 0)).r
+            _sample_lightmap_vanilla(lightMap, vec2(int(red8 * 255.0), 0)).r,
+            _sample_lightmap_vanilla(lightMap, vec2(int(green8 * 255.0), 0)).r,
+            _sample_lightmap_vanilla(lightMap, vec2(int(blue8 * 255.0), 0)).r
         );
 
         float moonWashoutFactor = mix(3.0, 0.0, u_NightVibrancy);

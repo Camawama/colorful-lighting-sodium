@@ -10,7 +10,7 @@ import me.erykczy.colorfullighting.common.util.ColorRGB4;
 import me.erykczy.colorfullighting.common.util.ColorRGB8;
 import me.erykczy.colorfullighting.compat.sodium.SodiumAoFaceDataExtension;
 import me.erykczy.colorfullighting.compat.sodium.SodiumPackedLightData;
-import me.jellysquid.mods.sodium.client.model.light.data.LightDataAccess;
+import net.caffeinemc.mods.sodium.client.model.light.data.LightDataAccess;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.BlockAndTintGetter;
@@ -23,7 +23,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(targets = "me.jellysquid.mods.sodium.client.model.light.smooth.AoFaceData", remap = false)
+@Mixin(targets = "net.caffeinemc.mods.sodium.client.model.light.smooth.AoFaceData", remap = false)
 public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension {
 
     @Shadow public final int[] lm = new int[4];
@@ -56,7 +56,7 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
         int skyLight = LightDataAccess.unpackSL(word);
         
         if (LightDataAccess.unpackEM(word)) {
-            BlockAndTintGetter level = cache.getWorld();
+            BlockAndTintGetter level = cache.getLevel();
             BlockState state = level.getBlockState(pos);
             LevelAccessor levelAccessor = ColorfulLighting.clientAccessor.getLevel();
             if(levelAccessor != null) {
@@ -193,7 +193,7 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
         final int y = pos.getY();
         final int z = pos.getZ();
 
-        final BlockState centerState = cache.getWorld().getBlockState(pos);
+        final BlockState centerState = cache.getLevel().getBlockState(pos);
         final int centerLight = getBaseColoredLight(cache, x, y, z);
 
         final int adjX;

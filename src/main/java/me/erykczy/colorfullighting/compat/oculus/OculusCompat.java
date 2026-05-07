@@ -1,7 +1,7 @@
 package me.erykczy.colorfullighting.compat.oculus;
 
 import java.lang.reflect.Method;
-import net.minecraftforge.fml.ModList;
+import net.neoforged.fml.ModList;
 
 public class OculusCompat {
     private static Object irisApiInstance;

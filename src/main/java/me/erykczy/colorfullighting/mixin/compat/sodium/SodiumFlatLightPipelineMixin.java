@@ -9,11 +9,11 @@ import me.erykczy.colorfullighting.common.accessors.LevelAccessor;
 import me.erykczy.colorfullighting.common.util.ColorRGB4;
 import me.erykczy.colorfullighting.common.util.ColorRGB8;
 import me.erykczy.colorfullighting.compat.sodium.SodiumPackedLightData;
-import me.jellysquid.mods.sodium.client.model.light.data.LightDataAccess;
-import me.jellysquid.mods.sodium.client.model.light.data.QuadLightData;
-import me.jellysquid.mods.sodium.client.model.quad.ModelQuadView;
-import me.jellysquid.mods.sodium.client.model.quad.properties.ModelQuadFlags;
-import net.caffeinemc.mods.sodium.api.util.NormI8;
+import net.caffeinemc.mods.sodium.client.model.light.data.LightDataAccess;
+import net.caffeinemc.mods.sodium.client.model.light.data.QuadLightData;
+import net.caffeinemc.mods.sodium.client.model.light.flat.FlatLightPipeline;
+import net.caffeinemc.mods.sodium.client.model.quad.ModelQuadView;
+import net.caffeinemc.mods.sodium.client.model.quad.properties.ModelQuadFlags;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.BlockAndTintGetter;
@@ -24,13 +24,10 @@ import org.spongepowered.asm.mixin.Shadow;
 
 import java.util.Arrays;
 
-@Mixin(targets = "me.jellysquid.mods.sodium.client.model.light.flat.FlatLightPipeline", remap = false, priority = 500)
+@Mixin(value = FlatLightPipeline.class, remap = false, priority = 500)
 public abstract class SodiumFlatLightPipelineMixin {
 
     @Shadow private LightDataAccess lightCache;
-    @Shadow private boolean useQuadNormalsForShading;
-
-    @Shadow private void applySidedBrightnessFromNormals(ModelQuadView quad, QuadLightData out, boolean shade) {}
 
     /**
      * @author Erykczy
@@ -60,7 +57,7 @@ public abstract class SodiumFlatLightPipelineMixin {
 
         // 2. Check if the block has the emissive flag
         if (LightDataAccess.unpackEM(word)) {
-             BlockAndTintGetter level = this.lightCache.getWorld();
+             BlockAndTintGetter level = this.lightCache.getLevel();
              BlockState state = level.getBlockState(pos);
              
              LevelAccessor levelAccessor = ColorfulLighting.clientAccessor.getLevel();
@@ -84,7 +81,7 @@ public abstract class SodiumFlatLightPipelineMixin {
      * @reason Ensure colored lighting is used even for non-offset faces (plants, etc.)
      */
     @Overwrite
-    public void calculate(ModelQuadView quad, BlockPos pos, QuadLightData out, Direction cullFace, Direction lightFace, boolean shade) {
+    public void calculate(ModelQuadView quad, BlockPos pos, QuadLightData out, Direction cullFace, Direction lightFace, boolean shade, boolean enhanced) {
         if (!ColoredLightEngine.getInstance().isEnabled()) {
             // Replicate vanilla/Sodium logic
             int lightmap = 0;
@@ -92,17 +89,15 @@ public abstract class SodiumFlatLightPipelineMixin {
                 lightmap = getOffsetLightmap(pos, cullFace);
             } else {
                 int flags = quad.getFlags();
-                if ((flags & ModelQuadFlags.IS_ALIGNED) != 0 || ((flags & ModelQuadFlags.IS_PARALLEL) != 0 && LightDataAccess.unpackFC(this.lightCache.get(pos)))) {
+                if ((flags & 4) == 0 && ((flags & 2) == 0 || !LightDataAccess.unpackFC(this.lightCache.get(pos)))) {
                     lightmap = getOffsetLightmap(pos, lightFace);
                 } else {
                     lightmap = LightDataAccess.getLightmap(this.lightCache.get(pos));
                 }
             }
             Arrays.fill(out.lm, lightmap);
-            if((quad.getFlags() & ModelQuadFlags.IS_VANILLA_SHADED) != 0 || !this.useQuadNormalsForShading) {
-                Arrays.fill(out.br, this.lightCache.getWorld().getShade(lightFace, shade));
-            } else {
-                this.applySidedBrightnessFromNormals(quad, out, shade);
+            if((quad.getFlags()) != 0 || !shade) {
+                Arrays.fill(out.br, this.lightCache.getLevel().getShade(lightFace, shade));
             }
             return;
         }
@@ -125,7 +120,7 @@ public abstract class SodiumFlatLightPipelineMixin {
                 boolean overridden = false;
 
                 if (LightDataAccess.unpackEM(word)) {
-                     BlockAndTintGetter level = this.lightCache.getWorld();
+                     BlockAndTintGetter level = this.lightCache.getLevel();
                      BlockState state = level.getBlockState(pos);
                      LevelAccessor levelAccessor = ColorfulLighting.clientAccessor.getLevel();
                      
@@ -147,10 +142,8 @@ public abstract class SodiumFlatLightPipelineMixin {
         }
 
         Arrays.fill(out.lm, lightmap);
-        if((quad.getFlags() & ModelQuadFlags.IS_VANILLA_SHADED) != 0 || !this.useQuadNormalsForShading) {
-            Arrays.fill(out.br, this.lightCache.getWorld().getShade(lightFace, shade));
-        } else {
-            this.applySidedBrightnessFromNormals(quad, out, shade);
+        if((quad.getFlags()) != 0 || !shade) {
+            Arrays.fill(out.br, this.lightCache.getLevel().getShade(lightFace, shade));
         }
     }
 }

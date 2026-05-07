@@ -2,21 +2,24 @@ package me.erykczy.colorfullighting.resourcemanager;
 
 import com.mojang.datafixers.util.Pair;
 import me.erykczy.colorfullighting.ColorfulLighting;
-import net.minecraft.SharedConstants;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.packs.PackLocationInfo;
+import net.minecraft.server.packs.PackResources;
+import net.minecraft.server.packs.PackSelectionConfig;
 import net.minecraft.server.packs.PathPackResources;
 import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.repository.Pack;
 import net.minecraft.server.packs.repository.PackSource;
-import net.minecraft.world.flag.FeatureFlagSet;
-import net.minecraftforge.event.AddPackFindersEvent;
-import net.minecraftforge.eventbus.api.EventPriority;
-import net.minecraftforge.eventbus.api.IEventBus;
-import net.minecraftforge.fml.ModList;
-import net.minecraftforge.fml.loading.FMLLoader;
-import net.minecraftforge.forgespi.language.IModFileInfo;
-import net.minecraftforge.forgespi.language.IModInfo;
+import net.neoforged.bus.api.EventPriority;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModList;
+import net.neoforged.fml.loading.FMLLoader;
+import net.neoforged.neoforge.event.AddPackFindersEvent;
+import net.neoforged.neoforgespi.language.IModFileInfo;
+import net.neoforged.neoforgespi.language.IModInfo;
+
+import java.util.Optional;
 
 import java.awt.*;
 import java.io.IOException;
@@ -56,25 +59,36 @@ public class CoreShaderRegistration {
                 return;
             }
 
-            final Pack.Info packInfo = createInfoForLatest(displayName, false);
-            final Pack pack = Pack.create(
-                    ColorfulLighting.MOD_ID + ":add_pack/" + id.getPath(), displayName,
-                    true,
-                    (path) -> new PathPackResources(path, resourcePath, true),
-                    packInfo, PackType.CLIENT_RESOURCES, Pack.Position.TOP, true, PackSource.BUILT_IN);
-            event.addRepositorySource((packConsumer) ->
-                    packConsumer.accept(pack));
-        }
-    }
+            PackLocationInfo locationInfo = new PackLocationInfo(
+                    id.toString(),
+                    displayName,
+                    PackSource.BUILT_IN,
+                    Optional.empty()
+            );
 
-    private static Pack.Info createInfoForLatest(Component description, boolean hidden) {
-        return new Pack.Info(
-                description,
-                SharedConstants.getCurrentVersion().getPackVersion(PackType.SERVER_DATA),
-                SharedConstants.getCurrentVersion().getPackVersion(PackType.CLIENT_RESOURCES),
-                FeatureFlagSet.of(),
-                hidden
-        );
+            Pack.ResourcesSupplier supplier = new Pack.ResourcesSupplier() {
+                @Override
+                public PackResources openPrimary(PackLocationInfo location) {
+                    return new PathPackResources(location, resourcePath);
+                }
+
+                @Override
+                public PackResources openFull(PackLocationInfo location, Pack.Metadata metadata) {
+                    return new PathPackResources(location, resourcePath);
+                }
+            };
+
+            Pack pack = Pack.readMetaAndCreate(
+                    locationInfo,
+                    supplier,
+                    PackType.CLIENT_RESOURCES,
+                    new PackSelectionConfig(true, Pack.Position.TOP, true)
+            );
+
+            if (pack != null) {
+                event.addRepositorySource(packConsumer -> packConsumer.accept(pack));
+            }
+        }
     }
 
     private static boolean fileExists(IModInfo info, String path) {

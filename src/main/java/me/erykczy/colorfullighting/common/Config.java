@@ -9,6 +9,7 @@ import me.erykczy.colorfullighting.common.util.JsonHelper;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
@@ -18,7 +19,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
-import net.minecraftforge.registries.ForgeRegistries;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -64,7 +64,6 @@ public class Config {
         if (moonPhase != null) {
             return moonPhase.vibrancy();
         }
-        // Fallback to original calculation if not defined
         int dist = Math.abs(phase - 4);
         float normalizedDist = dist / 4.0f;
         return 1.0f - normalizedDist;
@@ -77,8 +76,7 @@ public class Config {
         ResourceKey<Block> blockResourceKey = blockState.getBlockKey();
 
         if(blockResourceKey != null) {
-            // Dynamic Lighting Integration
-            if (blockResourceKey.location().equals(ForgeRegistries.BLOCKS.getKey(Blocks.LIGHT))) {
+            if (blockResourceKey.location().equals(BuiltInRegistries.BLOCK.getKey(Blocks.LIGHT))) {
                 ColorRGB4 dynamicColor = getDynamicColorFromNearbyEntities(pos);
                 if (dynamicColor != null) {
                     return dynamicColor.mul(lightEmission);
@@ -96,41 +94,37 @@ public class Config {
         return defaultColor.mul(lightEmission);
     }
 
-    // Integration for Lively Lighting
     private static ColorRGB4 getDynamicColorFromNearbyEntities(BlockPos lightBlockPos) {
         if (Minecraft.getInstance().level == null) return null;
         
-        // Search for entities within a small radius
         AABB searchBox = new AABB(lightBlockPos).inflate(2.0);
         List<Entity> nearbyEntities = Minecraft.getInstance().level.getEntitiesOfClass(Entity.class, searchBox);
 
         for (Entity entity : nearbyEntities) {
             if (entity instanceof Player player) {
-                // Check Main Hand
                 ItemStack mainHand = player.getMainHandItem();
-                ResourceLocation mainHandKey = ForgeRegistries.ITEMS.getKey(mainHand.getItem());
+                ResourceLocation mainHandKey = BuiltInRegistries.ITEM.getKey(mainHand.getItem());
                 if (mainHandKey != null) {
                     BlockEmitterConfig config = colorEmitters.get(mainHandKey);
                     if (config != null) return config.defaultEmitter.color();
                 }
                 
-                // Check Off Hand
                 ItemStack offHand = player.getOffhandItem();
-                ResourceLocation offHandKey = ForgeRegistries.ITEMS.getKey(offHand.getItem());
+                ResourceLocation offHandKey = BuiltInRegistries.ITEM.getKey(offHand.getItem());
                 if (offHandKey != null) {
                     BlockEmitterConfig config = colorEmitters.get(offHandKey);
                     if (config != null) return config.defaultEmitter.color();
                 }
             } else if (entity instanceof ItemEntity itemEntity) {
                 ItemStack itemStack = itemEntity.getItem();
-                ResourceLocation itemKey = ForgeRegistries.ITEMS.getKey(itemStack.getItem());
+                ResourceLocation itemKey = BuiltInRegistries.ITEM.getKey(itemStack.getItem());
                 if (itemKey != null) {
                     BlockEmitterConfig config = colorEmitters.get(itemKey);
                     if (config != null) return config.defaultEmitter.color();
                 }
             }
 
-            ResourceLocation entityKey = ForgeRegistries.ENTITY_TYPES.getKey(entity.getType());
+            ResourceLocation entityKey = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
             if (entityKey != null) {
                 ColorEmitter config = entityEmitters.get(entityKey);
                 if (config != null) return config.color();
@@ -166,16 +160,14 @@ public class Config {
 
     public static ColorRGB4 getColoredLightTransmittance(@NotNull LevelAccessor level, BlockPos pos, @NotNull BlockStateAccessor blockState, Direction direction) {
         ColorRGB4 baseColor = getColoredLightTransmittance(level, pos, blockState);
-        if (baseColor.equals(ColorRGB4.WHITE)) return baseColor; // No filter
+        if (baseColor.equals(ColorRGB4.WHITE)) return baseColor;
 
-        // Check for Glass Pane logic
         String north = blockState.getPropertyString("north");
         String south = blockState.getPropertyString("south");
         String east = blockState.getPropertyString("east");
         String west = blockState.getPropertyString("west");
 
         if (north != null && south != null && east != null && west != null) {
-            // It's a pane-like block
             if (direction.getAxis().isVertical()) return ColorRGB4.WHITE;
 
             boolean hasNorth = north.equals("true");
@@ -183,12 +175,12 @@ public class Config {
             boolean hasEast = east.equals("true");
             boolean hasWest = west.equals("true");
 
-            if (direction.getAxis() == Direction.Axis.X) { // East/West movement
-                if (hasNorth || hasSouth) return baseColor; // Blocked by N-S glass
+            if (direction.getAxis() == Direction.Axis.X) {
+                if (hasNorth || hasSouth) return baseColor;
                 return ColorRGB4.WHITE;
             }
-            if (direction.getAxis() == Direction.Axis.Z) { // North/South movement
-                if (hasEast || hasWest) return baseColor; // Blocked by E-W glass
+            if (direction.getAxis() == Direction.Axis.Z) {
+                if (hasEast || hasWest) return baseColor;
                 return ColorRGB4.WHITE;
             }
         }

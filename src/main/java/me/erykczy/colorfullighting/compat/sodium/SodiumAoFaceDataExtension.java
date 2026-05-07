@@ -1,6 +1,6 @@
 package me.erykczy.colorfullighting.compat.sodium;
 
-import me.jellysquid.mods.sodium.client.model.light.data.LightDataAccess;
+import net.caffeinemc.mods.sodium.client.model.light.data.LightDataAccess;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 

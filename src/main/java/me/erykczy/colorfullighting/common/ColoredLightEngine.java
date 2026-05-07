@@ -308,7 +308,7 @@ public class ColoredLightEngine {
                 }
             }
 
-            if (net.minecraftforge.fml.ModList.get().isLoaded("flywheel") && FlywheelCompat.isAvailable()) {
+            if (net.neoforged.fml.ModList.get().isLoaded("flywheel") && FlywheelCompat.isAvailable()) {
                 FlywheelCompat.getInstance().flywheelColoredLightStorage.recollectSectionIfTracked(dirtySection);
             }
         }

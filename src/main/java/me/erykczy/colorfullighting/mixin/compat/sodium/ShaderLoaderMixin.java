@@ -1,6 +1,6 @@
 package me.erykczy.colorfullighting.mixin.compat.sodium;
 
-import me.jellysquid.mods.sodium.client.gl.shader.ShaderLoader;
+import net.caffeinemc.mods.sodium.client.gl.shader.ShaderLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.Resource;
@@ -32,7 +32,7 @@ public class ShaderLoaderMixin {
 
         // The requested id is e.g. "sodium:blocks/block_layer_opaque.vsh".
         // Resource packs store it at "assets/sodium/shaders/blocks/block_layer_opaque.vsh".
-        ResourceLocation packId = new ResourceLocation(id.getNamespace(), "shaders/" + id.getPath());
+        ResourceLocation packId = ResourceLocation.fromNamespaceAndPath(id.getNamespace(), "shaders/" + id.getPath());
 
         Optional<Resource> res;
         try {

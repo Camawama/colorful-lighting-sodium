@@ -1,8 +1,8 @@
 package me.erykczy.colorfullighting.resourcemanager;
 
-import net.minecraftforge.client.event.RegisterClientReloadListenersEvent;
-import net.minecraftforge.eventbus.api.IEventBus;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
 
 public class ModResourceManagers {
     public static void register(IEventBus bus) {
