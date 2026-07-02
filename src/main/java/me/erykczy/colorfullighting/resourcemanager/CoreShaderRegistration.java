@@ -59,7 +59,7 @@ public class CoreShaderRegistration {
             final Pack.Info packInfo = createInfoForLatest(displayName, false);
             final Pack pack = Pack.create(
                     ColorfulLighting.MOD_ID + ":add_pack/" + id.getPath(), displayName,
-                    true,
+                    false,
                     (path) -> new PathPackResources(path, resourcePath, true),
                     packInfo, PackType.CLIENT_RESOURCES, Pack.Position.TOP, true, PackSource.BUILT_IN);
             event.addRepositorySource((packConsumer) ->

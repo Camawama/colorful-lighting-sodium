@@ -16,6 +16,7 @@ import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
+import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
@@ -55,6 +56,9 @@ public class ColoredLightEngine {
     private Thread lightPropagatorThread;
     
     private boolean enabled = true;
+    private boolean packsInitialized = false;
+
+    private static final String CORE_SHADER_PACK_ID = ColorfulLighting.MOD_ID + ":add_pack/" + ColorfulLighting.BUILT_IN_RESOURCE_PACK_ID;
 
     private Frustum frustum;
 
@@ -74,12 +78,37 @@ public class ColoredLightEngine {
     public void setEnabled(boolean enabled) {
         if (this.enabled != enabled) {
             this.enabled = enabled;
+            ColorfulLightingConfig.ENABLED.set(enabled);
+            ColorfulLightingConfig.save();
             reset();
+            updateShaderPack();
         }
     }
     
     public boolean isEnabled() {
         return enabled;
+    }
+    
+    public void onPacksInitialized() {
+        packsInitialized = true;
+        updateShaderPack();
+    }
+
+    private void updateShaderPack() {
+        if (!packsInitialized) return;
+        Minecraft mc = Minecraft.getInstance();
+        PackRepository repo = mc.getResourcePackRepository();
+        if (enabled) {
+            if (repo.getPack(CORE_SHADER_PACK_ID) != null && !repo.getSelectedIds().contains(CORE_SHADER_PACK_ID)) {
+                repo.addPack(CORE_SHADER_PACK_ID);
+                mc.reloadResourcePacks();
+            }
+        } else {
+            if (repo.getPack(CORE_SHADER_PACK_ID) != null && repo.getSelectedIds().contains(CORE_SHADER_PACK_ID)) {
+                repo.removePack(CORE_SHADER_PACK_ID);
+                mc.reloadResourcePacks();
+            }
+        }
     }
 
     public void updateFrustum(Frustum frustum) {
@@ -230,9 +259,10 @@ public class ColoredLightEngine {
         else
             decreaseRequests.add(new LightUpdateRequest(blockPos, lightColor, false)); // block probably placed/replaced with non-transparent, light might need to be decreased
 
-        // propagate light if new blockState emits light
-        if(Config.getEmissionBrightness(level, blockPos, 0) > 0)
-            increaseRequests.add(new LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false, true, false));
+        // propagate light if new blockState emits light (single lookup for both brightness and color)
+        BlockStateAccessor blockState = level.getBlockState(blockPos);
+        if (blockState != null && Config.getEmissionBrightness(level, blockPos, blockState) > 0)
+            increaseRequests.add(new LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos, blockState), false, true, false));
     }
 
     private void handleDarknessUpdate(LevelAccessor level, Queue<LightUpdateRequest> increaseRequests, Queue<LightUpdateRequest> decreaseRequests, BlockPos blockPos) {
@@ -247,9 +277,10 @@ public class ColoredLightEngine {
         else
             decreaseRequests.add(new LightUpdateRequest(blockPos, darknessColor, false));
 
-        // propagate darkness if new blockState absorbs light
-        if(Config.getAbsorption(level, blockPos, level.getBlockState(blockPos)) > 0)
-            increaseRequests.add(new LightUpdateRequest(blockPos, Config.getAbsorptionColor(level, blockPos), false, true, false));
+        // propagate darkness if new blockState absorbs light (single lookup)
+        BlockStateAccessor blockState = level.getBlockState(blockPos);
+        if (blockState != null && Config.getAbsorption(level, blockPos, blockState) > 0)
+            increaseRequests.add(new LightUpdateRequest(blockPos, Config.getAbsorptionColor(level, blockPos, blockState), false, true, false));
     }
 
     private void requestLightPullIn(Queue<LightUpdateRequest> increaseRequests, BlockPos blockPos) {
@@ -349,7 +380,8 @@ public class ColoredLightEngine {
         
         if (enabled) {
             lightPropagator = new LightPropagator();
-            lightPropagatorThread = new Thread(lightPropagator);
+            lightPropagatorThread = new Thread(lightPropagator, "CL-LightPropagator");
+            lightPropagatorThread.setPriority(Thread.MIN_PRIORITY);
             lightPropagatorThread.start();
             ColorfulLighting.LOGGER.info("Colored light engine reset");
         } else {
@@ -937,6 +969,13 @@ public class ColoredLightEngine {
             if(!request.force && newLightColor.red4 == oldLightColor.red4 && newLightColor.green4 == oldLightColor.green4 && newLightColor.blue4 == oldLightColor.blue4) return true;
             addLightColorChange(request.blockPos, newLightColor);
 
+            // Cache source block state and geometry info once, not per-direction
+            BlockStateAccessor sourceState = level.getBlockState(request.blockPos);
+            boolean sourceStateExists = sourceState != null;
+            BlockState sourceBlockState = sourceStateExists ? sourceState.getBlockState() : null;
+            boolean sourceOccludes = sourceStateExists && sourceBlockState.useShapeForLightOcclusion();
+            ColorRGB4 sourceBaseTransmittance = sourceStateExists ? Config.getColoredLightTransmittance(level, request.blockPos, sourceState) : ColorRGB4.WHITE;
+
             for(var direction : Direction.values()) {
                 BlockPos neighbourPos = request.blockPos.relative(direction);
                 if(!level.isInBounds(neighbourPos)) continue;
@@ -950,12 +989,8 @@ public class ColoredLightEngine {
                 int customAbsorption = Config.getLightAbsorption(level, neighbourPos, neighbourState);
                 
                 boolean geometryOccludes = false;
-                BlockStateAccessor sourceStateAcc = level.getBlockState(request.blockPos);
-                if (sourceStateAcc != null) {
-                    BlockState sourceBlockState = sourceStateAcc.getBlockState();
+                if (sourceStateExists) {
                     BlockState neighborBlockState = neighbourState.getBlockState();
-                    
-                    boolean sourceOccludes = sourceBlockState.useShapeForLightOcclusion();
                     boolean neighborOccludes = neighborBlockState.useShapeForLightOcclusion();
                     
                     if (sourceOccludes || neighborOccludes) {
@@ -969,21 +1004,17 @@ public class ColoredLightEngine {
                     if (customAbsorption < 15) {
                         lightBlocked = Math.max(1, customAbsorption);
                     } else {
-                        if (geometryOccludes) {
-                            lightBlocked = 15;
-                        } else {
-                            lightBlocked = 1;
-                        }
+                        lightBlocked = geometryOccludes ? 15 : 1;
                     }
-                } else {
-                    if (geometryOccludes) {
-                        lightBlocked = 15;
-                    }
+                } else if (geometryOccludes) {
+                    lightBlocked = 15;
                 }
                 
                 // Calculate transmittance based on both source exit and destination entry
-                BlockStateAccessor sourceState = level.getBlockState(request.blockPos);
-                ColorRGB4 exitTransmittance = sourceState == null ? ColorRGB4.WHITE : Config.getColoredLightTransmittance(level, request.blockPos, sourceState, direction);
+                ColorRGB4 exitTransmittance = sourceBaseTransmittance;
+                if (!sourceBaseTransmittance.equals(ColorRGB4.WHITE)) {
+                    exitTransmittance = Config.getColoredLightTransmittance(level, request.blockPos, sourceState, direction);
+                }
                 ColorRGB4 entryTransmittance = Config.getColoredLightTransmittance(level, neighbourPos, neighbourState, direction.getOpposite());
                 
                 ColorRGB4 coloredLightTransmittance = ColorRGB4.min(exitTransmittance, entryTransmittance);
@@ -1028,6 +1059,12 @@ public class ColoredLightEngine {
             if(!request.force && newDarknessColor.red4 == oldDarknessColor.red4 && newDarknessColor.green4 == oldDarknessColor.green4 && newDarknessColor.blue4 == oldDarknessColor.blue4) return true;
             addDarknessColorChange(request.blockPos, newDarknessColor);
 
+            // Cache source block state and geometry info once, not per-direction
+            BlockStateAccessor sourceState = level.getBlockState(request.blockPos);
+            boolean sourceStateExists = sourceState != null;
+            BlockState sourceBlockState = sourceStateExists ? sourceState.getBlockState() : null;
+            boolean sourceOccludes = sourceStateExists && sourceBlockState.useShapeForLightOcclusion();
+
             for(var direction : Direction.values()) {
                 BlockPos neighbourPos = request.blockPos.relative(direction);
                 if(!level.isInBounds(neighbourPos)) continue;
@@ -1036,12 +1073,8 @@ public class ColoredLightEngine {
 
                 int lightBlocked = Math.max(1, neighbourState.getLightBlock(level, neighbourPos));
                 
-                BlockStateAccessor sourceStateAcc = level.getBlockState(request.blockPos);
-                if (sourceStateAcc != null) {
-                    BlockState sourceBlockState = sourceStateAcc.getBlockState();
+                if (sourceStateExists) {
                     BlockState neighborBlockState = neighbourState.getBlockState();
-                    
-                    boolean sourceOccludes = sourceBlockState.useShapeForLightOcclusion();
                     boolean neighborOccludes = neighborBlockState.useShapeForLightOcclusion();
                     
                     if (sourceOccludes || neighborOccludes) {
@@ -1108,9 +1141,9 @@ public class ColoredLightEngine {
 
             BlockStateAccessor blockState = level.getBlockState(request.blockPos);
             if(blockState == null) return false; // section might have got unloaded and propagation should stop
-            // repropagate removed light
+            // repropagate removed light (single lookup for both brightness and color)
             if(Config.getEmissionBrightness(level, request.blockPos, blockState) > 0) {
-                increaseRequests.add(new LightUpdateRequest(request.blockPos, Config.getColorEmission(level, request.blockPos), false, true, false));
+                increaseRequests.add(new LightUpdateRequest(request.blockPos, Config.getColorEmission(level, request.blockPos, blockState), false, true, false));
             }
 
             // attenuation
@@ -1149,9 +1182,9 @@ public class ColoredLightEngine {
 
             BlockStateAccessor blockState = level.getBlockState(request.blockPos);
             if(blockState == null) return false; // section might have got unloaded and propagation should stop
-            // repropagate removed darkness
+            // repropagate removed darkness (single lookup for both absorption and color)
             if(Config.getAbsorption(level, request.blockPos, blockState) > 0) {
-                increaseRequests.add(new LightUpdateRequest(request.blockPos, Config.getAbsorptionColor(level, request.blockPos), false, true, false));
+                increaseRequests.add(new LightUpdateRequest(request.blockPos, Config.getAbsorptionColor(level, request.blockPos, blockState), false, true, false));
             }
 
             // attenuation

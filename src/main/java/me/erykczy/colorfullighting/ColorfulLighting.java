@@ -3,6 +3,7 @@ package me.erykczy.colorfullighting;
 import com.mojang.logging.LogUtils;
 import me.erykczy.colorfullighting.accessors.MinecraftWrapper;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
+import me.erykczy.colorfullighting.common.ColorfulLightingConfig;
 import me.erykczy.colorfullighting.common.accessors.ClientAccessor;
 import me.erykczy.colorfullighting.compat.oculus.OculusCompat;
 import me.erykczy.colorfullighting.event.ClientEventListener;
@@ -32,6 +33,8 @@ public class ColorfulLighting
 
     public ColorfulLighting(FMLJavaModLoadingContext context)
     {
+        context.registerConfig(net.minecraftforge.fml.config.ModConfig.Type.CLIENT, ColorfulLightingConfig.SPEC);
+
         DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> new DistExecutor.SafeRunnable() {
             @Override
             public void run() {
@@ -47,9 +50,11 @@ public class ColorfulLighting
     public static void onClientSetup(FMLClientSetupEvent event) {
         clientAccessor = new MinecraftWrapper(Minecraft.getInstance());
         ColoredLightEngine.create(clientAccessor);
+        ColoredLightEngine.getInstance().setEnabled(ColorfulLightingConfig.ENABLED.get());
     }
 
     public static void onLoadingComplete(FMLLoadCompleteEvent event) {
+        ColoredLightEngine.getInstance().onPacksInitialized();
         if (ModList.get().isLoaded("rubidium") || ModList.get().isLoaded("embeddium") || ModList.get().isLoaded("sodium")) {
             LOGGER.info("Sodium/Embeddium detected!");
         }
