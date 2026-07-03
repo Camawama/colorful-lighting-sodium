@@ -1,6 +1,5 @@
 package me.erykczy.colorfullighting.resourcemanager;
 
-import com.electronwill.nightconfig.core.file.CommentedFileConfig;
 import com.mojang.datafixers.util.Pair;
 import me.erykczy.colorfullighting.ColorfulLighting;
 import net.minecraft.SharedConstants;
@@ -17,7 +16,6 @@ import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.loading.FMLLoader;
-import net.minecraftforge.fml.loading.FMLPaths;
 import net.minecraftforge.forgespi.language.IModFileInfo;
 import net.minecraftforge.forgespi.language.IModInfo;
 
@@ -73,11 +71,14 @@ public class CoreShaderRegistration {
     }
 
     /**
-     * Pre-selects (or deselects) the core shader pack in the options' saved pack list so the
-     * initial resource load already matches the engine's enabled state. This event fires from
-     * ClientModLoader.begin, after Options is constructed but before Minecraft calls
-     * options.loadSelectedResourcePacks, so the id seeded here is picked up by the very first
-     * resource load and updateShaderPack() has nothing to reload at the title screen.
+     * Pre-selects the core shader pack in the options' saved pack list so the initial resource
+     * load already includes it. This event fires from ClientModLoader.begin, after Options is
+     * constructed but before Minecraft calls options.loadSelectedResourcePacks, so the id seeded
+     * here is picked up by the very first resource load and updateShaderPack() has nothing to
+     * reload at the title screen.
+     * The pack is selected unconditionally (even when the engine is disabled): the patched
+     * shaders must always be active to decode chunk meshes baked in the colored vertex format;
+     * they render vanilla lighting when the engine is off via u_ColoredLightingEnabled.
      * Note: fixed-position packs are never written back by Options.updateResourcePacks, so this
      * has to run every boot; it cannot rely on a previous session having persisted the selection.
      */
@@ -85,33 +86,9 @@ public class CoreShaderRegistration {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft == null || minecraft.options == null) return;
         List<String> selectedIds = minecraft.options.resourcePacks;
-        if (isEngineEnabledInConfig()) {
-            if (!selectedIds.contains(ColorfulLighting.CORE_SHADER_PACK_ID)) {
-                selectedIds.add(ColorfulLighting.CORE_SHADER_PACK_ID);
-            }
-        } else {
-            selectedIds.remove(ColorfulLighting.CORE_SHADER_PACK_ID);
+        if (!selectedIds.contains(ColorfulLighting.CORE_SHADER_PACK_ID)) {
+            selectedIds.add(ColorfulLighting.CORE_SHADER_PACK_ID);
         }
-    }
-
-    /**
-     * The Forge CLIENT config is not loaded yet when AddPackFindersEvent fires (that happens
-     * mid-initial-reload in ModLoader.loadMods), so ColorfulLightingConfig.ENABLED.get() would
-     * throw here. Read the toml directly instead; a missing file or key means the default (true).
-     */
-    private static boolean isEngineEnabledInConfig() {
-        try {
-            Path configPath = FMLPaths.CONFIGDIR.get().resolve(ColorfulLighting.MOD_ID + "-client.toml");
-            if (!Files.exists(configPath)) return true;
-            try (CommentedFileConfig config = CommentedFileConfig.of(configPath)) {
-                config.load();
-                Object value = config.get("enabled");
-                if (value instanceof Boolean enabled) return enabled;
-            }
-        } catch (Exception e) {
-            ColorfulLighting.LOGGER.warn("Could not read config before the initial resource load, assuming colored lighting is enabled", e);
-        }
-        return true;
     }
 
     private static Pack.Info createInfoForLatest(Component description, boolean hidden) {

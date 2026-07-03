@@ -87,11 +87,47 @@ public class ColoredLightFlywheelStorage {
         collectSection(section);
     }
 
+    /**
+     * Recollects every tracked section. Used when the engine is toggled: onLightUpdate (the
+     * normal refresh path) is gated on the engine being enabled, so without this the GPU
+     * buffers would keep the last collected colored light forever after a disable.
+     */
+    public void recollectAllTracked() {
+        if (deleted) return;
+        for (long section : section2ArenaIndex.keySet().toLongArray()) {
+            collectSection(section);
+        }
+    }
+
     public void uploadChangedSections(StagingBuffer staging) {
         if (deleted) return;
         sectionsGPUBuffer.ensureCapacity(capacity());
         for (int i = changed.nextSetBit(0); i >= 0; i = changed.nextSetBit(i + 1)) {
             staging.enqueueCopy(arena.indexToPointer(i), SECTION_SIZE_BYTES, sectionsGPUBuffer.handle(), i * SECTION_SIZE_BYTES);
+        }
+        changed.clear();
+    }
+
+    /**
+     * Upload path for the instancing backend, which has no StagingBuffer (that is an
+     * indirect-backend construct). The target buffer is immutable storage allocated with
+     * flags=0 (no GL_DYNAMIC_STORAGE_BIT), so glNamedBufferSubData into it is illegal and
+     * silently no-ops, leaving uninitialized VRAM. Buffer-to-buffer copies are always
+     * permitted though, so stage each section through a scratch buffer and copy.
+     */
+    public void uploadChangedSectionsDirect() {
+        if (deleted) return;
+        if (changed.isEmpty()) return;
+        sectionsGPUBuffer.ensureCapacity(capacity());
+
+        int scratch = GL46.glCreateBuffers();
+        try {
+            for (int i = changed.nextSetBit(0); i >= 0; i = changed.nextSetBit(i + 1)) {
+                GL46.glNamedBufferData(scratch, MemoryUtil.memByteBuffer(arena.indexToPointer(i), SECTION_SIZE_BYTES), GL46.GL_STREAM_COPY);
+                GL46.glCopyNamedBufferSubData(scratch, sectionsGPUBuffer.handle(), 0, (long) i * SECTION_SIZE_BYTES, SECTION_SIZE_BYTES);
+            }
+        } finally {
+            GL46.glDeleteBuffers(scratch);
         }
         changed.clear();
     }

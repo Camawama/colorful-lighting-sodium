@@ -1,5 +1,6 @@
 package me.erykczy.colorfullighting.mixin.compat.sodium;
 
+import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.Config;
 import me.erykczy.colorfullighting.compat.sodium.ChunkShaderInterfaceExtension;
 import me.jellysquid.mods.sodium.client.gl.device.CommandList;
@@ -29,6 +30,9 @@ public abstract class DefaultChunkRendererMixin {
         ChunkShaderInterface shader = activeProgram.getInterface();
         
         if (shader instanceof ChunkShaderInterfaceExtension extension) {
+            ColoredLightEngine engine = ColoredLightEngine.getInstance();
+            extension.setColoredLightingEnabled(engine != null && engine.isEnabled());
+
             ClientLevel level = Minecraft.getInstance().level;
             if (level != null) {
                 // getStarBrightness is 1.0 at midnight, 0.0 at noon.

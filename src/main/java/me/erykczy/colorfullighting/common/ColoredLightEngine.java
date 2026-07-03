@@ -56,7 +56,8 @@ public class ColoredLightEngine {
     private LightPropagator lightPropagator;
     private Thread lightPropagatorThread;
     
-    private boolean enabled = true;
+    // volatile: read from Sodium chunk-build worker threads and the light propagator thread
+    private volatile boolean enabled = true;
     private boolean packsInitialized = false;
 
     private static final String CORE_SHADER_PACK_ID = ColorfulLighting.CORE_SHADER_PACK_ID;
@@ -83,6 +84,13 @@ public class ColoredLightEngine {
             ColorfulLightingConfig.save();
             reset();
             updateShaderPack();
+
+            // Flywheel keeps colored light in its own GPU buffers, refreshed only through
+            // onLightUpdate (which is gated on 'enabled'). Recollect everything it tracks so
+            // the buffers immediately reflect the new state instead of freezing stale light.
+            if (net.minecraftforge.fml.ModList.get().isLoaded("flywheel") && FlywheelCompat.isAvailable()) {
+                FlywheelCompat.getInstance().flywheelColoredLightStorage.recollectAllTracked();
+            }
         }
     }
     
@@ -99,16 +107,15 @@ public class ColoredLightEngine {
         if (!packsInitialized) return;
         Minecraft mc = Minecraft.getInstance();
         PackRepository repo = mc.getResourcePackRepository();
-        if (enabled) {
-            if (repo.getPack(CORE_SHADER_PACK_ID) != null && !repo.getSelectedIds().contains(CORE_SHADER_PACK_ID)) {
-                repo.addPack(CORE_SHADER_PACK_ID);
-                mc.reloadResourcePacks();
-            }
-        } else {
-            if (repo.getPack(CORE_SHADER_PACK_ID) != null && repo.getSelectedIds().contains(CORE_SHADER_PACK_ID)) {
-                repo.removePack(CORE_SHADER_PACK_ID);
-                mc.reloadResourcePacks();
-            }
+        // The pack stays installed even while the engine is disabled. Chunk meshes built while
+        // the engine was on carry light data in the packed colored vertex format, and Sodium
+        // only rebuilds sections progressively — the stock shaders misdecode those stale
+        // vertices as garbage (often full-bright) light. The patched shaders understand both
+        // formats and render plain vanilla lighting when u_ColoredLightingEnabled is 0, so
+        // toggling needs no shader swap (and therefore no resource reload) at all.
+        if (repo.getPack(CORE_SHADER_PACK_ID) != null && !repo.getSelectedIds().contains(CORE_SHADER_PACK_ID)) {
+            repo.addPack(CORE_SHADER_PACK_ID);
+            mc.reloadResourcePacks();
         }
     }
 

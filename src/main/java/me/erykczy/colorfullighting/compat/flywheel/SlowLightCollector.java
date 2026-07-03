@@ -14,6 +14,12 @@ public class SlowLightCollector {
     }
 
     protected void collectLightData(long ptr, long section) {
+        // When the engine is disabled, leave the section zeroed (alpha nibble 0): the flywheel
+        // shaders fall back to the vanilla per-instance lightmap for entries without the colored
+        // magic bits. Writing packed black instead would override vanilla block light with
+        // darkness on everything flywheel renders.
+        if (!ColoredLightEngine.getInstance().isEnabled()) return;
+
         var blockPos = new BlockPos.MutableBlockPos();
         int xMin = SectionPos.sectionToBlockCoord(SectionPos.x(section));
         int yMin = SectionPos.sectionToBlockCoord(SectionPos.y(section));

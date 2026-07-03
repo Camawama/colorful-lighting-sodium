@@ -20,6 +20,7 @@ out float v_FragDistance;
 uniform int u_FogShape;
 uniform vec3 u_RegionOffset;
 uniform float u_NightVibrancy;
+uniform float u_ColoredLightingEnabled;
 
 uniform sampler2D u_LightTex; // The light map texture sampler
 
@@ -45,6 +46,11 @@ vec4 _sample_lightmap(sampler2D lightMap, ivec2 uv) {
         uint green8 = (packed_light >> 8) & 0xFFu;
         uint skyLight4 = (packed_light >> 16) & 0xFu;
         uint blue8 = (packed_light >> 20) & 0xFFu;
+        if (u_ColoredLightingEnabled < 0.5) {
+            // Engine disabled: render stale colored-format vertices as plain vanilla light
+            uint block8 = max(max(red8, green8), blue8);
+            return _sample_lightmap_vanilla(lightMap, ivec2(int(block8), int(skyLight4) << 4));
+        }
 
         vec3 sky = _sample_lightmap_vanilla(lightMap, ivec2(0, int(skyLight4) << 4)).xyz;
         vec3 block = vec3(
@@ -67,6 +73,11 @@ vec4 _sample_lightmap(sampler2D lightMap, ivec2 uv) {
         uint red4 = (packed_light >> 5) & 0xFu;
         uint green4 = (packed_light >> 9) & 0xFu;
         uint blue3 = (packed_light >> 13) & 0x7u;
+        if (u_ColoredLightingEnabled < 0.5) {
+            // Engine disabled: render stale colored-format vertices as plain vanilla light
+            uint block4 = max(max(red4, green4), (blue3 * 15u) / 7u);
+            return _sample_lightmap_vanilla(lightMap, ivec2(int(block4) << 4, int(skyLight4) << 4));
+        }
 
         // Expand to 8-bit equivalent
         float red8 = float(red4) / 15.0;
