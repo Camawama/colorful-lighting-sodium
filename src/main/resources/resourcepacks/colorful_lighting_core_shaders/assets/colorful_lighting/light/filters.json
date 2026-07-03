@@ -33,181 +33,28 @@
   "minecraft:magenta_stained_glass_pane": "magenta",
   "minecraft:pink_stained_glass_pane": "pink",
 
-  "minecraft:oak_door": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;5"
-    },
-    "default": "white;15"
-  },
-
-  "minecraft:oak_trapdoor": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;5"
-    },
-    "default": "white;15"
-  },
-
-  "minecraft:spruce_door": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;12"
-    },
-    "default": "white;15"
-  },
-
-  "minecraft:spruce_trapdoor": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;12"
-    },
-    "default": "white;15"
-  },
-
-  "minecraft:birch_door": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;6"
-    },
-    "default": "white;15"
-  },
-
-  "minecraft:birch_trapdoor": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;5"
-    },
-    "default": "white;15"
-  },
-
-  "minecraft:jungle_door": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;5"
-    },
-    "default": "white;15"
-  },
-
-  "minecraft:jungle_trapdoor": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;5"
-    },
-    "default": "white;15"
-  },
-
-  "minecraft:dark_oak_door": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;12"
-    },
-    "default": "white;15"
-  },
-
-  "minecraft:dark_oak_trapdoor": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;12"
-    },
-    "default": "white;15"
-  },
-
-  "minecraft:mangrove_door": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;12"
-    },
-    "default": "white;15"
-  },
-
-  "minecraft:mangrove_trapdoor": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;5"
-    },
-    "default": "white;12"
-  },
-
-  "minecraft:cherry_door": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;6"
-    },
-    "default": "white;15"
-  },
-
-  "minecraft:cherry_trapdoor": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;5"
-    },
-    "default": "white;15"
-  },
-
-  "minecraft:bamboo_door": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;3"
-    },
-    "default": "white;15"
-  },
-
-  "minecraft:bamboo_trapdoor": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;5"
-    },
-    "default": "white;15"
-  },
-
-  "minecraft:crimson_door": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;12"
-    },
-    "default": "white;15"
-  },
-
-  "minecraft:crimson_trapdoor": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;5"
-    },
-    "default": "white;15"
-  },
-
-  "minecraft:warped_door": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;12"
-    },
-    "default": "white;15"
-  },
-
-  "minecraft:warped_trapdoor": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;5"
-    },
-    "default": "white;15"
-  },
-
-  "minecraft:iron_door": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;5"
-    },
-    "default": "white;15"
-  },
-
-  "minecraft:iron_trapdoor": {
-    "states": {
-      "open=true": "white;0",
-      "open=false": "white;5"
-    },
-    "default": "white;15"
-  },
+  "minecraft:oak_door": "white;5",
+  "minecraft:oak_trapdoor": "white;5",
+  "minecraft:spruce_door": "white;12",
+  "minecraft:spruce_trapdoor": "white;12",
+  "minecraft:birch_door": "white;6",
+  "minecraft:birch_trapdoor": "white;5",
+  "minecraft:jungle_door": "white;5",
+  "minecraft:jungle_trapdoor": "white;5",
+  "minecraft:dark_oak_door": "white;12",
+  "minecraft:dark_oak_trapdoor": "white;12",
+  "minecraft:mangrove_door": "white;12",
+  "minecraft:mangrove_trapdoor": "white;5",
+  "minecraft:cherry_door": "white;6",
+  "minecraft:cherry_trapdoor": "white;5",
+  "minecraft:bamboo_door": "white;3",
+  "minecraft:bamboo_trapdoor": "white;5",
+  "minecraft:crimson_door": "white;12",
+  "minecraft:crimson_trapdoor": "white;5",
+  "minecraft:warped_door": "white;12",
+  "minecraft:warped_trapdoor": "white;5",
+  "minecraft:iron_door": "white;5",
+  "minecraft:iron_trapdoor": "white;5",
 
   "minecraft:slime_block": "#36ff4d;7",
   "minecraft:honey_block": "#ff9100;7",

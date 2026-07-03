@@ -8,6 +8,7 @@ import me.erykczy.colorfullighting.common.accessors.PlayerAccessor;
 import me.erykczy.colorfullighting.common.util.ColorRGB4;
 import me.erykczy.colorfullighting.common.util.ColorRGB8;
 import me.erykczy.colorfullighting.common.util.MathExt;
+import me.erykczy.colorfullighting.common.util.ShapeOcclusion;
 import me.erykczy.colorfullighting.compat.flywheel.FlywheelCompat;
 import me.erykczy.colorfullighting.compat.sodium.SodiumCompat;
 import me.erykczy.colorfullighting.mixin.compat.sodium.SodiumWorldRendererAccessor;
@@ -122,6 +123,7 @@ public class ColoredLightEngine {
             ColorRGB4 lightColor = storage.getEntry(x, y, z);
             if (lightColor == null) {
                 lightColor = ColorRGB4.BLACK;
+
             }
 
             ColorRGB4 darknessColor = darknessStorage.getEntry(x, y, z);
@@ -974,6 +976,7 @@ public class ColoredLightEngine {
             boolean sourceStateExists = sourceState != null;
             BlockState sourceBlockState = sourceStateExists ? sourceState.getBlockState() : null;
             boolean sourceOccludes = sourceStateExists && sourceBlockState.useShapeForLightOcclusion();
+            boolean sourceDynamic = sourceStateExists && ShapeOcclusion.isDynamicShapeBlocker(sourceBlockState);
             ColorRGB4 sourceBaseTransmittance = sourceStateExists ? Config.getColoredLightTransmittance(level, request.blockPos, sourceState) : ColorRGB4.WHITE;
 
             for(var direction : Direction.values()) {
@@ -985,14 +988,18 @@ public class ColoredLightEngine {
                 // Start with vanilla light blocking
                 int lightBlocked = Math.max(1, neighbourState.getLightBlock(level, neighbourPos));
 
-                // Override with custom absorption if it's defined
-                int customAbsorption = Config.getLightAbsorption(level, neighbourPos, neighbourState);
-                
+                BlockState neighborBlockState = neighbourState.getBlockState();
+                boolean neighbourDynamic = ShapeOcclusion.isDynamicShapeBlocker(neighborBlockState);
+
+                // Override with custom absorption if it's defined.
+                // Doors/trapdoors are handled by the panel logic below instead: their filter must
+                // apply only across the panel face, not omnidirectionally.
+                int customAbsorption = neighbourDynamic ? -1 : Config.getLightAbsorption(level, neighbourPos, neighbourState);
+
                 boolean geometryOccludes = false;
                 if (sourceStateExists) {
-                    BlockState neighborBlockState = neighbourState.getBlockState();
                     boolean neighborOccludes = neighborBlockState.useShapeForLightOcclusion();
-                    
+
                     if (sourceOccludes || neighborOccludes) {
                         VoxelShape sourceFaceShape = sourceOccludes ? sourceBlockState.getFaceOcclusionShape(level.getLevel(), request.blockPos, direction) : Shapes.empty();
                         VoxelShape neighbourFaceShape = neighborOccludes ? neighborBlockState.getFaceOcclusionShape(level.getLevel(), neighbourPos, direction.getOpposite()) : Shapes.empty();
@@ -1009,13 +1016,37 @@ public class ColoredLightEngine {
                 } else if (geometryOccludes) {
                     lightBlocked = 15;
                 }
-                
-                // Calculate transmittance based on both source exit and destination entry
-                ColorRGB4 exitTransmittance = sourceBaseTransmittance;
-                if (!sourceBaseTransmittance.equals(ColorRGB4.WHITE)) {
-                    exitTransmittance = Config.getColoredLightTransmittance(level, request.blockPos, sourceState, direction);
+
+                // Door/trapdoor panels block only the one cell face they are flush against; the
+                // other faces of the cell stay fully open. Crossing a panel face costs the block's
+                // filter absorption (partial for doors with windows), or is opaque without a filter.
+                boolean sourcePanelBlocks = sourceDynamic && ShapeOcclusion.panelCoversFace(level.getLevel(), sourceBlockState, request.blockPos, direction);
+                boolean neighbourPanelBlocks = neighbourDynamic && ShapeOcclusion.panelCoversFace(level.getLevel(), neighborBlockState, neighbourPos, direction.getOpposite());
+                if (sourcePanelBlocks) {
+                    int panelAbsorption = Config.getLightAbsorption(level, request.blockPos, sourceState);
+                    lightBlocked = Math.max(lightBlocked, panelAbsorption >= 0 ? Math.max(1, panelAbsorption) : 15);
                 }
-                ColorRGB4 entryTransmittance = Config.getColoredLightTransmittance(level, neighbourPos, neighbourState, direction.getOpposite());
+                if (neighbourPanelBlocks) {
+                    int panelAbsorption = Config.getLightAbsorption(level, neighbourPos, neighbourState);
+                    lightBlocked = Math.max(lightBlocked, panelAbsorption >= 0 ? Math.max(1, panelAbsorption) : 15);
+                }
+
+                // Calculate transmittance based on both source exit and destination entry.
+                // A door/trapdoor tint likewise applies only to light crossing its panel face.
+                ColorRGB4 exitTransmittance;
+                if (sourceDynamic) {
+                    exitTransmittance = sourcePanelBlocks ? sourceBaseTransmittance : ColorRGB4.WHITE;
+                } else if (!sourceBaseTransmittance.equals(ColorRGB4.WHITE)) {
+                    exitTransmittance = Config.getColoredLightTransmittance(level, request.blockPos, sourceState, direction);
+                } else {
+                    exitTransmittance = sourceBaseTransmittance;
+                }
+                ColorRGB4 entryTransmittance;
+                if (neighbourDynamic) {
+                    entryTransmittance = neighbourPanelBlocks ? Config.getColoredLightTransmittance(level, neighbourPos, neighbourState) : ColorRGB4.WHITE;
+                } else {
+                    entryTransmittance = Config.getColoredLightTransmittance(level, neighbourPos, neighbourState, direction.getOpposite());
+                }
                 
                 ColorRGB4 coloredLightTransmittance = ColorRGB4.min(exitTransmittance, entryTransmittance);
                 
@@ -1064,6 +1095,7 @@ public class ColoredLightEngine {
             boolean sourceStateExists = sourceState != null;
             BlockState sourceBlockState = sourceStateExists ? sourceState.getBlockState() : null;
             boolean sourceOccludes = sourceStateExists && sourceBlockState.useShapeForLightOcclusion();
+            boolean sourceDynamic = sourceStateExists && ShapeOcclusion.isDynamicShapeBlocker(sourceBlockState);
 
             for(var direction : Direction.values()) {
                 BlockPos neighbourPos = request.blockPos.relative(direction);
@@ -1072,21 +1104,34 @@ public class ColoredLightEngine {
                 if(neighbourState == null) return false; // section might have got unloaded and propagation should stop
 
                 int lightBlocked = Math.max(1, neighbourState.getLightBlock(level, neighbourPos));
-                
+
+                BlockState neighborBlockState = neighbourState.getBlockState();
+                boolean neighbourDynamic = ShapeOcclusion.isDynamicShapeBlocker(neighborBlockState);
+
                 if (sourceStateExists) {
-                    BlockState neighborBlockState = neighbourState.getBlockState();
                     boolean neighborOccludes = neighborBlockState.useShapeForLightOcclusion();
-                    
+
                     if (sourceOccludes || neighborOccludes) {
                         VoxelShape sourceFaceShape = sourceOccludes ? sourceBlockState.getFaceOcclusionShape(level.getLevel(), request.blockPos, direction) : Shapes.empty();
                         VoxelShape neighbourFaceShape = neighborOccludes ? neighborBlockState.getFaceOcclusionShape(level.getLevel(), neighbourPos, direction.getOpposite()) : Shapes.empty();
-                        
+
                         if (Shapes.faceShapeOccludes(sourceFaceShape, neighbourFaceShape)) {
                             lightBlocked = 15;
                         }
                     }
                 }
-                
+
+                // Door/trapdoor panels block darkness across their covered face the same way they
+                // block light, using the same filter absorption so both stay consistent.
+                if (sourceDynamic && ShapeOcclusion.panelCoversFace(level.getLevel(), sourceBlockState, request.blockPos, direction)) {
+                    int panelAbsorption = Config.getLightAbsorption(level, request.blockPos, sourceState);
+                    lightBlocked = Math.max(lightBlocked, panelAbsorption >= 0 ? Math.max(1, panelAbsorption) : 15);
+                }
+                if (neighbourDynamic && ShapeOcclusion.panelCoversFace(level.getLevel(), neighborBlockState, neighbourPos, direction.getOpposite())) {
+                    int panelAbsorption = Config.getLightAbsorption(level, neighbourPos, neighbourState);
+                    lightBlocked = Math.max(lightBlocked, panelAbsorption >= 0 ? Math.max(1, panelAbsorption) : 15);
+                }
+
                 ColorRGB4 attenuated = attenuateLight(request.lightColor, lightBlocked);
                 // if no more color to propagate
                 if(attenuated.red4 == 0 && attenuated.green4 == 0 && attenuated.blue4 == 0) continue;
