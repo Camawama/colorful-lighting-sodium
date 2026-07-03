@@ -9,7 +9,6 @@ import com.google.gson.JsonObject;
 import com.google.gson.ToNumberPolicy;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
@@ -18,12 +17,23 @@ import org.slf4j.Logger;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class ConfigResourceManager implements ResourceManagerReloadListener {
     private static final Gson GSON = new GsonBuilder().setObjectToNumberStrategy(ToNumberPolicy.LONG_OR_DOUBLE).create();
     private static final Logger LOGGER = ColorfulLighting.LOGGER;
     private static final String BUILT_IN_LIGHT_RESOURCE_PATH = ColorfulLighting.BUILT_IN_LIGHT_RESOURCE_PATH;
+
+    private static final String EMITTERS_PATH = "light/emitters.json";
+    private static final String FILTERS_PATH = "light/filters.json";
+    private static final String ABSORBERS_PATH = "light/absorbers.json";
+    private static final String ENTITIES_PATH = "light/entities.json";
+    private static final String ITEMS_PATH = "light/items.json";
+    private static final String MOON_PHASES_PATH = "light/moon_phases.json";
+    private static final Set<String> CONFIG_PATHS = Set.of(
+            EMITTERS_PATH, FILTERS_PATH, ABSORBERS_PATH, ENTITIES_PATH, ITEMS_PATH, MOON_PHASES_PATH);
 
     @Override
     public void onResourceManagerReload(ResourceManager resourceManager) {
@@ -36,78 +46,29 @@ public class ConfigResourceManager implements ResourceManagerReloadListener {
 
         loadBuiltInLightConfigs(emitters, filters, absorbers, entityEmitters, itemEmitters, moonPhases);
 
-        resourceManager.listPacks().forEach((pack) -> {
-            for(String namespace : pack.getNamespaces(PackType.CLIENT_RESOURCES)) {
-                for(Resource resource : resourceManager.getResourceStack(ResourceLocation.tryBuild(namespace, "light/emitters.json"))) {
-                    try {
-                        JsonObject object = GSON.fromJson(resource.openAsReader(), JsonObject.class);
-                        if (object != null) {
-                            processEmitterEntries(object, resource.sourcePackId(), emitters);
-                        }
-                    }
-                    catch (Exception e) {
-                        LOGGER.warn("Failed to load light emitters from pack {}", resource.sourcePackId(), e);
-                    }
-                }
-
-                for(Resource resource : resourceManager.getResourceStack(ResourceLocation.tryBuild(namespace, "light/filters.json"))) {
-                    try {
-                        JsonObject object = GSON.fromJson(resource.openAsReader(), JsonObject.class);
-                        if (object != null) {
-                            processFilterEntries(object, resource.sourcePackId(), filters);
-                        }
-                    }
-                    catch (Exception e) {
-                        LOGGER.warn("Failed to load light color filters from pack {}", resource.sourcePackId(), e);
+        // Enumerate existing light configs in a single pass instead of probing every
+        // pack × namespace with getResourceStack: that probes the filesystem for six
+        // (almost always missing) files per namespace and re-parses stacks shared by
+        // packs declaring the same namespace, which adds 10+ seconds per reload in
+        // large modpacks.
+        Map<ResourceLocation, List<Resource>> lightConfigs =
+                resourceManager.listResourceStacks("light", location -> CONFIG_PATHS.contains(location.getPath()));
+        lightConfigs.forEach((location, stack) -> {
+            for (Resource resource : stack) {
+                try {
+                    JsonObject object = GSON.fromJson(resource.openAsReader(), JsonObject.class);
+                    if (object == null) continue;
+                    switch (location.getPath()) {
+                        case EMITTERS_PATH -> processEmitterEntries(object, resource.sourcePackId(), emitters);
+                        case FILTERS_PATH -> processFilterEntries(object, resource.sourcePackId(), filters);
+                        case ABSORBERS_PATH -> processAbsorberEntries(object, resource.sourcePackId(), absorbers);
+                        case ENTITIES_PATH -> processEntityEntries(object, resource.sourcePackId(), entityEmitters);
+                        case ITEMS_PATH -> processItemEntries(object, resource.sourcePackId(), itemEmitters);
+                        case MOON_PHASES_PATH -> processMoonPhaseEntries(object, resource.sourcePackId(), moonPhases);
                     }
                 }
-
-                for(Resource resource : resourceManager.getResourceStack(ResourceLocation.tryBuild(namespace, "light/absorbers.json"))) {
-                    try {
-                        JsonObject object = GSON.fromJson(resource.openAsReader(), JsonObject.class);
-                        if (object != null) {
-                            processAbsorberEntries(object, resource.sourcePackId(), absorbers);
-                        }
-                    }
-                    catch (Exception e) {
-                        LOGGER.warn("Failed to load light color absorbers from pack {}", resource.sourcePackId(), e);
-                    }
-                }
-
-                for(Resource resource : resourceManager.getResourceStack(ResourceLocation.tryBuild(namespace, "light/entities.json"))) {
-                    try {
-                        JsonObject object = GSON.fromJson(resource.openAsReader(), JsonObject.class);
-                        if (object != null) {
-                            processEntityEntries(object, resource.sourcePackId(), entityEmitters);
-                        }
-                    }
-                    catch (Exception e) {
-                        LOGGER.warn("Failed to load light entities from pack {}", resource.sourcePackId(), e);
-                    }
-                }
-
-                for(Resource resource : resourceManager.getResourceStack(ResourceLocation.tryBuild(namespace, "light/items.json"))) {
-                    try {
-                        JsonObject object = GSON.fromJson(resource.openAsReader(), JsonObject.class);
-                        if (object != null) {
-                            processItemEntries(object, resource.sourcePackId(), itemEmitters);
-                        }
-                    }
-                    catch (Exception e) {
-                        LOGGER.warn("Failed to load light items from pack {}", resource.sourcePackId(), e);
-                    }
-                }
-
-                for(Resource resource : resourceManager.getResourceStack(ResourceLocation.tryBuild(namespace, "light/moon_phases.json"))) {
-                    try {
-                        JsonObject object = GSON.fromJson(resource.openAsReader(), JsonObject.class);
-                        if (object != null) {
-                            processMoonPhaseEntries(object, resource.sourcePackId(), moonPhases);
-                        }
-                    }
-                    catch (Exception e) {
-                        LOGGER.warn("Failed to load moon phases from pack {}", resource.sourcePackId(), e);
-                    }
+                catch (Exception e) {
+                    LOGGER.warn("Failed to load light config {} from pack {}", location, resource.sourcePackId(), e);
                 }
             }
         });

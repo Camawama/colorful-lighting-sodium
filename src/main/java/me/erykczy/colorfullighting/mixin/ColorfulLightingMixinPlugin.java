@@ -5,17 +5,24 @@ import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;
 import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
 
 import java.io.InputStream;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public class ColorfulLightingMixinPlugin implements IMixinConfigPlugin {
+    // shouldApplyMixin runs once per mixin/target pair; cache the probes so a missing
+    // mod doesn't trigger repeated full-classpath resource lookups in large modpacks
+    private final Map<String, Boolean> classExistsCache = new HashMap<>();
 
     private boolean hasClass(String className) {
-        try (InputStream is = this.getClass().getClassLoader().getResourceAsStream(className.replace('.', '/') + ".class")) {
-            return is != null;
-        } catch (Exception e) {
-            return false;
-        }
+        return classExistsCache.computeIfAbsent(className, name -> {
+            try (InputStream is = this.getClass().getClassLoader().getResourceAsStream(name.replace('.', '/') + ".class")) {
+                return is != null;
+            } catch (Exception e) {
+                return false;
+            }
+        });
     }
 
     @Override

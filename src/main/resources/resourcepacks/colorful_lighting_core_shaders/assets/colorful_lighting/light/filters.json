@@ -33,6 +33,8 @@
   "minecraft:magenta_stained_glass_pane": "magenta",
   "minecraft:pink_stained_glass_pane": "pink",
 
+  "minecraft:acacia_door": "white;3",
+  "minecraft:acacia_trapdoor": "white;3",
   "minecraft:oak_door": "white;5",
   "minecraft:oak_trapdoor": "white;5",
   "minecraft:spruce_door": "white;12",
