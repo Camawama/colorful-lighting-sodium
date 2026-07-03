@@ -19,7 +19,6 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.block.DoorBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -1005,20 +1004,6 @@ public class ColoredLightEngine {
                         VoxelShape sourceFaceShape = sourceOccludes ? sourceBlockState.getFaceOcclusionShape(level.getLevel(), request.blockPos, direction) : Shapes.empty();
                         VoxelShape neighbourFaceShape = neighborOccludes ? neighborBlockState.getFaceOcclusionShape(level.getLevel(), neighbourPos, direction.getOpposite()) : Shapes.empty();
                         geometryOccludes = Shapes.faceShapeOccludes(sourceFaceShape, neighbourFaceShape);
-                    }
-                }
-
-                BlockState neighborBlockState = neighbourState.getBlockState();
-
-                // Check if neighbour is a door/trapdoor that should geometrically occlude light
-                if (neighborBlockState.hasProperty(DoorBlock.FACING) && neighborBlockState.hasProperty(DoorBlock.OPEN)) {
-                    Direction doorFacing = neighborBlockState.getValue(DoorBlock.FACING);
-                    boolean doorOpen = neighborBlockState.getValue(DoorBlock.OPEN);
-
-                    if (doorOpen && doorFacing.getClockWise().getAxis() == direction.getAxis()) {
-                        geometryOccludes = true;
-                    } else if (!doorOpen && doorFacing.getClockWise().getAxis() != direction.getAxis()) {
-                        geometryOccludes = true;
                     }
                 }
 
