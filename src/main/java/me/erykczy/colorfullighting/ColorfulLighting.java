@@ -62,6 +62,7 @@ public class ColorfulLighting
         if (ModList.get().isLoaded("oculus") || ModList.get().isLoaded("iris")) {
             OculusCompat.init();
             LOGGER.info("Iris/Oculus detected!");
+            me.erykczy.colorfullighting.compat.oculus.ShaderpackAutoPatcher.runOnStartup();
         }
         if(ModList.get().isLoaded("flywheel")) {
             FlywheelCompat.init();

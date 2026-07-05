@@ -24,7 +24,7 @@ To avoid performance issues, all of this light propagation is handled on a separ
 *   **Embeddium Support**: Embeddium is fully compatible and a REQUIREMENT.
 *   **Starlight Support**: Works seamlessly with Starlight.
 *   **True Darkness Support**: Compatible with True Darkness.
-*   **Oculus Support**: Most shader packs must be manually modified to support Colorful Lighting. By default, the Colored Light Engine is disabled when a shader is active.
+*   **Oculus Support**: Colorful Lighting now ships a shaderpack auto-patcher (similar to Euphoria Patches). On startup it scans your `shaderpacks` folder and creates a patched `<Pack> + ColorfulLighting` copy of every recognized pack — select that copy in the Oculus shader GUI and the Colored Light Engine stays enabled. Unpatched packs still disable the engine automatically. Run `/cl patchshaders` to re-scan without restarting, or set `autoPatchShaderpacks = false` in the client config to opt out.
 *   **Dynamic Light Mods**: Most Dynamic Light mods will simply not work. [Lively Lighting](https://github.com/Camawama/LivelyLighting) is the only known working Dynamic Lighting Mod compatible with Colorful Lighting.
 *   **Wakes: Reforged**: Works perfectly with wakes and tints them accordingly
 *   **Flywheel**: Flywheel rendered objects now render with colorful lighting since the Colorful Lighting 2.4.0 update (tested with flywheel 1.0.5).
@@ -159,7 +159,23 @@ Define a separate light intensity/vibrancy value for each moon phase.
 
 # ‼️ Working Shader Packs
 
-*   [https://github.com/Waterpicker/Super-Duper-Vanilla](https://github.com/Waterpicker/Super-Duper-Vanilla)
+*   [https://github.com/Waterpicker/Super-Duper-Vanilla](https://github.com/Waterpicker/Super-Duper-Vanilla) (patched by hand)
+
+The built-in auto-patcher additionally supports (tested against the versions listed):
+
+| Pack | Colored light quality |
+|---|---|
+| Complementary Reimagined r5.8.1 (incl. + Euphoria Patches 1.9.3) | Full — tint wired into block lighting |
+| Complementary Unbound r5.8.1 (incl. + Euphoria Patches 1.9.3) | Full — tint wired into block lighting |
+| rethinking-voxels r0.1-beta9 | Full (also has its own voxel colored light — consider using one or the other) |
+| AstraLex V93.0 | Full — tint wired into block lighting (disable its own "Colored Lighting" option) |
+| MakeUp Ultra Fast 9.5c | Approximate — weighted vertex-color tint |
+| Mellow v3.2 | Approximate — weighted vertex-color tint |
+| miniature 2.18.12 | Approximate — weighted vertex-color tint |
+| photon v1.3b | Approximate — weighted vertex-color tint (deferred pack) |
+| Bliss v2.1.2 | Approximate — weighted vertex-color tint (deferred pack) |
+
+Unknown packs that read the lightmap through standard `gl_MultiTexCoord1` patterns will still get the compatibility decode (correct light levels, no rainbow artifacts), just without the color tint.
 
 # ⚠️ Known Issues/Planned Fixes
 

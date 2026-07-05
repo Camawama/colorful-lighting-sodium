@@ -19,6 +19,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 public class ClientEventListener {
     private boolean wasShaderPackInUse = false;
+    private String lastShaderPackName = null;
 
     @SubscribeEvent
     public void onTick(TickEvent.ClientTickEvent event) {
@@ -27,11 +28,20 @@ public class ClientEventListener {
         // Check for Oculus shader state changes
         if (OculusCompat.isOculusLoaded()) {
             boolean isShaderPackInUse = OculusCompat.isShaderPackInUse();
-            if (isShaderPackInUse != wasShaderPackInUse) {
+            String packName = isShaderPackInUse ? OculusCompat.getCurrentShaderPackName() : null;
+            if (isShaderPackInUse != wasShaderPackInUse || !java.util.Objects.equals(packName, lastShaderPackName)) {
                 wasShaderPackInUse = isShaderPackInUse;
+                lastShaderPackName = packName;
                 if (isShaderPackInUse) {
-                    ColoredLightEngine.getInstance().setEnabled(false);
-                    ColorfulLighting.LOGGER.info("Oculus shader enabled, disabling colored lighting");
+                    // Packs carrying the Colorful Lighting patch marker decode the packed
+                    // lightmap format themselves, so the engine can stay on.
+                    boolean patched = OculusCompat.isShaderPackPatched(packName);
+                    ColoredLightEngine.getInstance().setEnabled(patched);
+                    if (patched) {
+                        ColorfulLighting.LOGGER.info("Oculus shader '{}' is Colorful Lighting patched, keeping colored lighting enabled", packName);
+                    } else {
+                        ColorfulLighting.LOGGER.info("Oculus shader '{}' enabled, disabling colored lighting (no Colorful Lighting patch found)", packName);
+                    }
                 } else {
                     ColoredLightEngine.getInstance().setEnabled(true);
                     ColorfulLighting.LOGGER.info("Oculus shader disabled, enabling colored lighting");
@@ -105,6 +115,20 @@ public class ClientEventListener {
                                         Minecraft.getInstance().levelRenderer.allChanged();
                                     }
                                     context.getSource().sendSuccess(() -> Component.literal("Reloading all colored lights..."), false);
+                                    return 1;
+                                })
+                        )
+                        .then(Commands.literal("patchshaders")
+                                .executes(context -> {
+                                    context.getSource().sendSuccess(() -> Component.literal("Patching shaderpacks for Colorful Lighting..."), false);
+                                    me.erykczy.colorfullighting.compat.oculus.ShaderpackAutoPatcher.runAsync(message -> {
+                                        var minecraft = Minecraft.getInstance();
+                                        minecraft.execute(() -> {
+                                            if (minecraft.player != null) {
+                                                minecraft.player.displayClientMessage(Component.literal(message), false);
+                                            }
+                                        });
+                                    });
                                     return 1;
                                 })
                         )
