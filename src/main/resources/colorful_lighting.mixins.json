@@ -38,7 +38,8 @@
     "compat.flywheel.InstancedLightMixin",
     "compat.create.ChainConveyorRendererMixin",
     "compat.create.AnimatedSceneElementBaseMixin",
-    "compat.create.ShadeSeparatingSuperByteBufferMixin"
+    "compat.create.ShadeSeparatingSuperByteBufferMixin",
+    "compat.dynamiclights.SodiumDynamicLightsMixin"
   ],
   "injectors": {
     "defaultRequire": 1

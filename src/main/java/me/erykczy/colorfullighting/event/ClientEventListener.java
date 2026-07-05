@@ -4,6 +4,7 @@ import com.mojang.brigadier.CommandDispatcher;
 import me.erykczy.colorfullighting.ColorfulLighting;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.ViewArea;
+import me.erykczy.colorfullighting.compat.dynamiclights.DynamicLightsCompat;
 import me.erykczy.colorfullighting.compat.oculus.OculusCompat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelRenderer;
@@ -24,6 +25,9 @@ public class ClientEventListener {
     @SubscribeEvent
     public void onTick(TickEvent.ClientTickEvent event) {
         if (event.phase == TickEvent.Phase.START) return;
+
+        // Snapshot dynamic light sources (SodiumDynamicLights) for this tick
+        DynamicLightsCompat.clientTick();
 
         // Check for Oculus shader state changes
         if (OculusCompat.isOculusLoaded()) {

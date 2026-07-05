@@ -5,6 +5,7 @@ import me.erykczy.colorfullighting.accessors.MinecraftWrapper;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.ColorfulLightingConfig;
 import me.erykczy.colorfullighting.common.accessors.ClientAccessor;
+import me.erykczy.colorfullighting.compat.dynamiclights.DynamicLightsCompat;
 import me.erykczy.colorfullighting.compat.oculus.OculusCompat;
 import me.erykczy.colorfullighting.event.ClientEventListener;
 import me.erykczy.colorfullighting.compat.create.CreateCompat;
@@ -72,5 +73,6 @@ public class ColorfulLighting
             CreateCompat.init();
             LOGGER.info("Create detected!");
         }
+        DynamicLightsCompat.init();
     }
 }

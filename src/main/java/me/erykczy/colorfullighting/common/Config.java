@@ -6,24 +6,16 @@ import me.erykczy.colorfullighting.common.accessors.BlockStateAccessor;
 import me.erykczy.colorfullighting.common.accessors.LevelAccessor;
 import me.erykczy.colorfullighting.common.util.ColorRGB4;
 import me.erykczy.colorfullighting.common.util.JsonHelper;
-import net.minecraft.client.Minecraft;
+import me.erykczy.colorfullighting.compat.dynamiclights.DynamicLightsCompat;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.phys.AABB;
-import net.minecraftforge.registries.ForgeRegistries;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 public class Config {
@@ -77,9 +69,11 @@ public class Config {
         ResourceKey<Block> blockResourceKey = blockState.getBlockKey();
 
         if(blockResourceKey != null) {
-            // Dynamic Lighting Integration
-            if (blockResourceKey.location().equals(ForgeRegistries.BLOCKS.getKey(Blocks.LIGHT))) {
-                ColorRGB4 dynamicColor = getDynamicColorFromNearbyEntities(pos);
+            // Light blocks placed by dynamic lighting mods (Lively Lighting) are colored by the
+            // nearby entity that caused them; client-lighting mods are handled by the entity
+            // tracking in DynamicLightsCompat instead
+            if (DynamicLightsCompat.isDynamicLightBlock(blockResourceKey.location())) {
+                ColorRGB4 dynamicColor = DynamicLightsCompat.getDynamicBlockLightColor(pos);
                 if (dynamicColor != null) {
                     return dynamicColor.mul(lightEmission);
                 }
@@ -96,47 +90,19 @@ public class Config {
         return defaultColor.mul(lightEmission);
     }
 
-    // Integration for Lively Lighting
-    private static ColorRGB4 getDynamicColorFromNearbyEntities(BlockPos lightBlockPos) {
-        if (Minecraft.getInstance().level == null) return null;
-        
-        // Search for entities within a small radius
-        AABB searchBox = new AABB(lightBlockPos).inflate(2.0);
-        List<Entity> nearbyEntities = Minecraft.getInstance().level.getEntitiesOfClass(Entity.class, searchBox);
+    @Nullable
+    public static ColorEmitter getEntityEmitter(ResourceLocation entityId) {
+        return entityEmitters.get(entityId);
+    }
 
-        for (Entity entity : nearbyEntities) {
-            if (entity instanceof Player player) {
-                // Check Main Hand
-                ItemStack mainHand = player.getMainHandItem();
-                ResourceLocation mainHandKey = ForgeRegistries.ITEMS.getKey(mainHand.getItem());
-                if (mainHandKey != null) {
-                    BlockEmitterConfig config = colorEmitters.get(mainHandKey);
-                    if (config != null) return config.defaultEmitter.color();
-                }
-                
-                // Check Off Hand
-                ItemStack offHand = player.getOffhandItem();
-                ResourceLocation offHandKey = ForgeRegistries.ITEMS.getKey(offHand.getItem());
-                if (offHandKey != null) {
-                    BlockEmitterConfig config = colorEmitters.get(offHandKey);
-                    if (config != null) return config.defaultEmitter.color();
-                }
-            } else if (entity instanceof ItemEntity itemEntity) {
-                ItemStack itemStack = itemEntity.getItem();
-                ResourceLocation itemKey = ForgeRegistries.ITEMS.getKey(itemStack.getItem());
-                if (itemKey != null) {
-                    BlockEmitterConfig config = colorEmitters.get(itemKey);
-                    if (config != null) return config.defaultEmitter.color();
-                }
-            }
+    @Nullable
+    public static ColorEmitter getItemEmitter(ResourceLocation itemId) {
+        return itemEmitters.get(itemId);
+    }
 
-            ResourceLocation entityKey = ForgeRegistries.ENTITY_TYPES.getKey(entity.getType());
-            if (entityKey != null) {
-                ColorEmitter config = entityEmitters.get(entityKey);
-                if (config != null) return config.color();
-            }
-        }
-        return null;
+    @Nullable
+    public static BlockEmitterConfig getBlockEmitterConfig(ResourceLocation blockId) {
+        return colorEmitters.get(blockId);
     }
 
     public static ColorRGB4 getLightColor(@NotNull BlockStateAccessor blockState) {

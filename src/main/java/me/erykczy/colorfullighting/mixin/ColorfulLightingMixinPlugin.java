@@ -44,6 +44,10 @@ public class ColorfulLightingMixinPlugin implements IMixinConfigPlugin {
             // Ensure Create 0.6+ is installed before applying create mixins
             return hasClass("net.createmod.catnip.render.ShadeSeparatingSuperByteBuffer");
         }
+        if (mixinClassName.contains(".dynamiclights.")) {
+            // Ensure SodiumDynamicLights (DynamicLights Reforged) is installed
+            return hasClass("toni.sodiumdynamiclights.SodiumDynamicLights");
+        }
         return true;
     }
 

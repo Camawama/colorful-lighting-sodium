@@ -9,6 +9,7 @@ import me.erykczy.colorfullighting.common.util.ColorRGB4;
 import me.erykczy.colorfullighting.common.util.ColorRGB8;
 import me.erykczy.colorfullighting.common.util.MathExt;
 import me.erykczy.colorfullighting.common.util.ShapeOcclusion;
+import me.erykczy.colorfullighting.compat.dynamiclights.DynamicLightsCompat;
 import me.erykczy.colorfullighting.compat.flywheel.FlywheelCompat;
 import me.erykczy.colorfullighting.compat.sodium.SodiumCompat;
 import me.erykczy.colorfullighting.mixin.compat.sodium.SodiumWorldRendererAccessor;
@@ -126,28 +127,34 @@ public class ColoredLightEngine {
     public ColorRGB4 sampleLightColor(BlockPos pos) { return sampleLightColor(pos.getX(), pos.getY(), pos.getZ()); }
     public ColorRGB4 sampleLightColor(int x, int y, int z) {
         if (!enabled) return ColorRGB4.fromRGB4(0, 0, 0);
+        ColorRGB4 lightColor;
+        ColorRGB4 darknessColor;
         synchronized (storageLock) {
-            ColorRGB4 lightColor = storage.getEntry(x, y, z);
+            lightColor = storage.getEntry(x, y, z);
             if (lightColor == null) {
                 lightColor = ColorRGB4.BLACK;
 
             }
 
-            ColorRGB4 darknessColor = darknessStorage.getEntry(x, y, z);
+            darknessColor = darknessStorage.getEntry(x, y, z);
             if (darknessColor == null) {
                 darknessColor = ColorRGB4.BLACK;
             }
-
-            if (lightColor == ColorRGB4.BLACK && darknessColor == ColorRGB4.BLACK) {
-                return ColorRGB4.BLACK;
-            }
-
-            return ColorRGB4.fromRGB4(
-                    Math.max(0, lightColor.red4 - darknessColor.red4),
-                    Math.max(0, lightColor.green4 - darknessColor.green4),
-                    Math.max(0, lightColor.blue4 - darknessColor.blue4)
-            );
         }
+
+        // held/dropped-item light from renderer-based dynamic lighting mods (no-op without sources);
+        // applied before the darkness subtraction so darkness absorbers dampen it like any other light
+        lightColor = DynamicLightsCompat.maxWithDynamicLight(x, y, z, lightColor);
+
+        if (lightColor == ColorRGB4.BLACK && darknessColor == ColorRGB4.BLACK) {
+            return ColorRGB4.BLACK;
+        }
+
+        return ColorRGB4.fromRGB4(
+                Math.max(0, lightColor.red4 - darknessColor.red4),
+                Math.max(0, lightColor.green4 - darknessColor.green4),
+                Math.max(0, lightColor.blue4 - darknessColor.blue4)
+        );
     }
     /**
      * Mixes light color from blocks neighbouring given position using trilinear interpolation.
