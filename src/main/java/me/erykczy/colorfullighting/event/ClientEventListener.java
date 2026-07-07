@@ -40,7 +40,7 @@ public class ClientEventListener {
                     // Packs carrying the Colorful Lighting patch marker decode the packed
                     // lightmap format themselves, so the engine can stay on.
                     boolean patched = OculusCompat.isShaderPackPatched(packName);
-                    ColoredLightEngine.getInstance().setEnabled(patched);
+                    ColoredLightEngine.getInstance().setEnabled(true);
                     if (patched) {
                         ColorfulLighting.LOGGER.info("Oculus shader '{}' is Colorful Lighting patched, keeping colored lighting enabled", packName);
                     } else {

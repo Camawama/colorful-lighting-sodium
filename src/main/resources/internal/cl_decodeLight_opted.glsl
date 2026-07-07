@@ -1,12 +1,12 @@
-varying vec3 colorful_lighting_color;
+vec3 cl_tint = vec3(1.0);
 
-vec4 colorful_lighting_decodeLight(vec4 cl_raw) {
+vec4 cl_decodeLight(vec4 cl_raw) {
     float cl_x = cl_raw.x;
     float cl_y = cl_raw.y;
     if (cl_x < 0.0) cl_x += 65536.0;
     if (cl_y < 0.0) cl_y += 65536.0;
     if (cl_y < 61440.0) {
-        colorful_lighting_color = vec3(1.0);
+        cl_tint = vec3(1.0);
         return cl_raw;
     }
 
@@ -17,7 +17,7 @@ vec4 colorful_lighting_decodeLight(vec4 cl_raw) {
     float cl_r = cl_x - cl_g * 256.0;
     float cl_m = max(cl_r, max(cl_g, cl_b));
 
-    colorful_lighting_color = vec3(cl_r, cl_g, cl_b) / 256.0;
+    cl_tint = vec3(cl_r, cl_g, cl_b) / 256.0;
 
     return vec4(cl_m * 0.94117647 + 8.0, cl_sky4 * 15 + 0.5, cl_raw.z, cl_raw.w);
 }
