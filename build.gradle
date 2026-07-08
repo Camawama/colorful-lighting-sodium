@@ -134,6 +134,8 @@ dependencies {
 
     implementation fg.deobf("org.andrew:paco:1.0") // Table Top Craft
     implementation fg.deobf("curse.maven:swampier-swamps-632591:4578599")
+
+    implementation "curse.maven:euphoria-patches-915902:8177591"
 }
 
 tasks.named('processResources', ProcessResources).configure {

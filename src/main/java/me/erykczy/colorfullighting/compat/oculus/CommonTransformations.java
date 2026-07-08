@@ -13,6 +13,7 @@ import io.github.douira.glsl_transformer.ast.transform.ASTInjectionPoint;
 import io.github.douira.glsl_transformer.ast.transform.ASTParser;
 import io.github.douira.glsl_transformer.parser.ParseShape;
 import me.erykczy.colorfullighting.accessors.iris.CustomShaderProperties;
+import me.erykczy.colorfullighting.compat.oculus.specific.ShaderSpecificPatcher;
 import me.erykczy.colorfullighting.mixin.compat.iris.ShaderPackAccessor;
 import net.irisshaders.iris.Iris;
 import net.irisshaders.iris.pipeline.transform.Patch;
@@ -92,8 +93,31 @@ public class CommonTransformations {
 		if (status == 0) return; // incompatible, skip
 		if (status == 4) return; // full custom compat, skip
 		
+		boolean isShaderPackInUse = OculusCompat.isShaderPackInUse();
+		String packName = isShaderPackInUse ? OculusCompat.getCurrentShaderPackName() : null;
+		if (OculusCompat.isShaderLegacyPatched(packName)) return;
+		
 		if (status == 3) {
-			// TODO: inject opted-in helpers
+			if (type == PatchShaderType.VERTEX) {
+				TranslationUnit unit = ASTParser._getInternalInstance().parseTranslationUnit(
+						root,
+						Resources.DECODE_LIGHT_FULL
+				);
+				
+				for (int i = unit.getChildren().size() - 1; i >= 0; i--) {
+					tree.injectNode(ASTInjectionPoint.BEFORE_ALL, unit.getChildren().get(i));
+				}
+			} else if (type == PatchShaderType.FRAGMENT) {
+				TranslationUnit unit = ASTParser._getInternalInstance().parseTranslationUnit(
+						root,
+						Resources.BLEND_LIGHT_FULL
+				);
+				
+				for (int i = unit.getChildren().size() - 1; i >= 0; i--) {
+					ExternalDeclaration declr = unit.getChildren().get(i);
+					tree.injectNode(ASTInjectionPoint.BEFORE_FUNCTIONS, declr);
+				}
+			}
 		} else {
 			if (type == PatchShaderType.FRAGMENT) {
 				// https://github.com/djefrey/Colorwheel/blob/4b83830bb8d9e3dcb11825011166e0407a7d93fb/common/src/main/java/dev/djefrey/colorwheel/compile/transform/ClrwlTransformPatcher.java#L223-L232
@@ -170,6 +194,14 @@ public class CommonTransformations {
 						t,
 						"gl_MultiTexCoord1",
 						"colorful_lighting_decodeLight(gl_MultiTexCoord1)"
+				);
+			}
+			
+			if (status == 1) {
+				ShaderSpecificPatcher.runAll(
+						t, tree,
+						root, parameters,
+						core, type
 				);
 			}
 		}

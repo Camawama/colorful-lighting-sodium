@@ -20,7 +20,8 @@ public class FixCauseException {
 					value = "INVOKE",
 					target = "Lcom/mojang/blaze3d/platform/GlStateManager;glGetShaderInfoLog(II)Ljava/lang/String;"
 			)},
-			locals = LocalCapture.CAPTURE_FAILHARD
+			locals = LocalCapture.CAPTURE_FAILHARD,
+			cancellable = true
 	)
 	private static void iris$causeException(Program.Type arg, String string, InputStream inputStream, String string2, GlslPreprocessor arg2, CallbackInfoReturnable<Integer> cir, String string3, int i) {
 		cir.cancel();

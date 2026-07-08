@@ -96,9 +96,7 @@ public class OculusCompat {
 			return status.orElse(1) != 0;
 		}
 		
-		// legacy patcher check
-		if (packName == null || packName.isBlank()) return false;
-		return patchedPackCache.computeIfAbsent(packName, OculusCompat::checkPackPatched);
+		return isShaderLegacyPatched(packName);
 	}
 	
 	/**
@@ -122,5 +120,11 @@ public class OculusCompat {
 		} catch (Exception ignored) {
 		}
 		return false;
+	}
+	
+	public static boolean isShaderLegacyPatched(String packName) {
+		if (packName == null || packName.isBlank()) return false;
+		return patchedPackCache.computeIfAbsent(packName, OculusCompat::checkPackPatched);
+		
 	}
 }

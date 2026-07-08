@@ -11,7 +11,7 @@ vec4 cl_sampleSky(sampler2D lm, vec2 lmcoord) {
 }
 
 vec3 cl_sampleColor(sampler2D lm, vec3 tintColor) {
-    vec3 sampleColor = clamp(cl_lighting_color, vec3(0.5 / 16.0), vec3(15.5 / 16.0));
+    vec3 sampleColor = clamp(tintColor, vec3(0.5 / 16.0), vec3(15.5 / 16.0));
     // the "vanilla" implementation of colorful lighting samples the block lighting per-channel
     return vec3(
         texture2D(lm, vec2(sampleColor.r, 0)).r,
@@ -20,9 +20,9 @@ vec3 cl_sampleColor(sampler2D lm, vec3 tintColor) {
     );
 }
 
-vec4 cl_blendLight(sampler2D lm, vec2 lmcoord) {
+vec4 cl_blendLight(sampler2D lm, vec2 lmcoord, vec3 tintColor) {
     vec4 sky = cl_sampleSky(lm, lmcoord);
-    vec3 block = cl_sampleColor(lm, lmcoord);
+    vec3 block = cl_sampleColor(lm, tintColor);
 
     float wash = max(0.1, 1.0 - max(sky.r, max(sky.g, sky.b)));
     return vec4(sky.rgb + block * wash, 1.0);

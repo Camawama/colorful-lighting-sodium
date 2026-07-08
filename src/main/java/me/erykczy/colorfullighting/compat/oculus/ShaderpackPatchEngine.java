@@ -137,6 +137,7 @@ public final class ShaderpackPatchEngine {
             variable.float.cl_starRaw = clamp(1.0 - (cl_dayT * 2.0 + 0.25), 0.0, 1.0)
             variable.float.cl_moonVib = 1.0 - 0.55 * abs(moonPhase - 4.0) * 0.25
             uniform.float.cl_skyWash = clamp((0.15 + 0.85 * cl_dayF) * 3.0 * (1.0 - cl_starRaw * cl_starRaw * 0.5 * cl_moonVib), 0.0, 1.0)
+            colorful_lighting.compat_status=4
             # <<< Colorful Lighting auto-patch <<<
             """;
 
