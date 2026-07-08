@@ -18,7 +18,7 @@ public abstract class JsonHelper {
 
     public static ColorRGB4 getColor4FromVanilla(String string) {
         if (string.equals("vanilla")) {
-            return ColorRGB4.fromRGB8(230, 229, 227);
+            return ColorRGB4.fromRGB8(230, 225, 218);
         } else {
             return null;
         }
