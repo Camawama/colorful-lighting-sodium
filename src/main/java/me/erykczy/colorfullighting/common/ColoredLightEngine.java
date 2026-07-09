@@ -46,8 +46,10 @@ public class ColoredLightEngine {
     private final ConcurrentLinkedQueue<BlockRequests> blockUpdateIncreaseRequests = new ConcurrentLinkedQueue<>(); // those nearest to the player will be executed first
     private final ConcurrentLinkedQueue<LightUpdateRequest> darknessUpdateDecreaseRequests = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<BlockRequests> darknessUpdateIncreaseRequests = new ConcurrentLinkedQueue<>();
-    private final ConcurrentLinkedQueue<ChunkPos> chunksWaitingForPropagation = new ConcurrentLinkedQueue<>(); // those nearest to the player will be executed first
-    private final ConcurrentLinkedQueue<ChunkPos> chunksWaitingForDarknessPropagation = new ConcurrentLinkedQueue<>();
+    // Sets, not queues: ConcurrentLinkedQueue.remove is O(n) and ran once per propagated chunk.
+    // Ordering now comes from LightPropagator.ChunkOrder instead of rescanning the collection.
+    private final Set<ChunkPos> chunksWaitingForPropagation = ConcurrentHashMap.newKeySet();
+    private final Set<ChunkPos> chunksWaitingForDarknessPropagation = ConcurrentHashMap.newKeySet();
     private final Set<Long> dirtySections = new HashSet<>();
     private final Set<Long> sectionsToRebuildLater = ConcurrentHashMap.newKeySet();
 
@@ -63,7 +65,22 @@ public class ColoredLightEngine {
 
     private static final String CORE_SHADER_PACK_ID = ColorfulLighting.CORE_SHADER_PACK_ID;
 
-    private Frustum frustum;
+    /** How long a computed chunk ordering stays usable before it is rebuilt. */
+    private static final long CHUNK_ORDER_TTL_NANOS = 100_000_000L; // 100 ms
+
+    private static final long IDLE_SLEEP_MILLIS = 10L;
+    private static final long MIN_BLOCKED_SLEEP_MILLIS = 5L;
+    /**
+     * Deliberately short. The chunk queue is normally stuck forever - the outermost ring of the view
+     * area needs neighbouring chunks that never load - so the propagator sits in the backed-off branch
+     * for the whole session. A block update arriving mid-sleep waits that sleep out, so a long backoff
+     * would make every placed torch light up late. 20ms is under half a tick and still removes three
+     * quarters of the wakeups.
+     */
+    private static final long MAX_BLOCKED_SLEEP_MILLIS = 20L;
+
+    // volatile: written on the render thread each frame, read on the light propagator thread
+    private volatile Frustum frustum;
 
     private static ColoredLightEngine instance;
     public static ColoredLightEngine getInstance() {
@@ -399,7 +416,10 @@ public class ColoredLightEngine {
             lightPropagatorThread = new Thread(lightPropagator, "CL-LightPropagator");
             lightPropagatorThread.setPriority(Thread.MIN_PRIORITY);
             lightPropagatorThread.start();
-            ColorfulLighting.LOGGER.info("Colored light engine reset");
+            // Log the setting actually in force: an invalid or clobbered config value is corrected
+            // silently by Forge, so the file on disk is not evidence of what the engine is using.
+            ColorfulLighting.LOGGER.info("Colored light engine reset (lightUpdateSpeed={})",
+                    ColorfulLightingConfig.lightUpdateSpeed());
         } else {
             ColorfulLighting.LOGGER.info("Colored light engine disabled");
         }
@@ -425,6 +445,18 @@ public class ColoredLightEngine {
         private final Lock lightChangesReadyLock = new ReentrantLock();
         private final Lock darknessChangesReadyLock = new ReentrantLock();
         private volatile boolean running;
+
+        private final ChunkOrder lightChunkOrder = new ChunkOrder();
+        private final ChunkOrder darknessChunkOrder = new ChunkOrder();
+
+        /** Direct measurement of a drain: terrain makes profiler frame times a poor proxy for throughput. */
+        private long drainStartNanos;
+        private long lastChunkNanos;
+        private int drainChunks;
+
+        /** Backoff for a queue that cannot progress; see the blocked branch in run(). */
+        private long blockedSleepMillis = MIN_BLOCKED_SLEEP_MILLIS;
+        private int lastChunksRemaining = -1;
 
         public boolean hasReadyLightChanges() {
             return !this.lightChangesReady.isEmpty();
@@ -458,9 +490,56 @@ public class ColoredLightEngine {
                 boolean hasDarknessWork = !darknessUpdateDecreaseRequests.isEmpty() || !darknessUpdateIncreaseRequests.isEmpty() || !chunksWaitingForDarknessPropagation.isEmpty();
                 boolean hasWork = hasLightWork || hasDarknessWork;
 
+                // Re-read every pass so changing the config takes effect without a restart.
+                ColorfulLightingConfig.LightUpdateSpeed speed = ColorfulLightingConfig.lightUpdateSpeed();
+
+                // Track the CHUNK queue only. hasWork also covers single-block updates, and in the
+                // Nether flowing lava and fire fire checkBlock constantly, so hasWork can essentially
+                // never go false - the chunk fill-in would finish and the drain would never close.
+                // Report a drain when the chunk queue empties OR when no chunk has propagated for 2s.
+                // The latter matters: chunks whose neighbours never load stay queued forever, so an
+                // "empty queue" is not a condition that can be relied on to ever occur.
+                int chunksRemaining = chunksWaitingForPropagation.size();
+                if (chunksRemaining != lastChunksRemaining) {
+                    lastChunksRemaining = chunksRemaining;
+                    blockedSleepMillis = MIN_BLOCKED_SLEEP_MILLIS; // queue changed: something may be ready now
+                }
+                if (chunksRemaining > 0 && drainStartNanos == 0L) {
+                    drainStartNanos = System.nanoTime();
+                    lastChunkNanos = drainStartNanos;
+                }
+                if (drainStartNanos != 0L && drainChunks > 0) {
+                    boolean finished = chunksRemaining == 0;
+                    boolean stalled = System.nanoTime() - lastChunkNanos > 2_000_000_000L;
+                    if (finished || stalled) {
+                        long elapsedMillis = Math.max(1L, (lastChunkNanos - drainStartNanos) / 1_000_000L);
+                        ColorfulLighting.LOGGER.info(
+                                "Colored light drain: {} chunks in {} ms ({} chunks/s), {} still queued [{}], lightUpdateSpeed={}",
+                                drainChunks, elapsedMillis,
+                                String.format("%.1f", drainChunks * 1000.0 / elapsedMillis),
+                                chunksRemaining, finished ? "finished" : "stalled", speed);
+                        drainStartNanos = 0L;
+                        drainChunks = 0;
+                    }
+                }
+
+                long passStartNanos = System.nanoTime();
+                boolean progressed = false;
                 if (hasWork) {
-                    if (hasLightWork) propagateLight();
-                    if (hasDarknessWork) propagateDarkness();
+                    // Keep propagating for a budget instead of sleeping 1ms after every single chunk:
+                    // profiling put ~16% of this thread inside Thread.sleep while work was queued.
+                    long deadline = System.nanoTime() + speed.budgetNanos();
+                    boolean progressedThisPass;
+                    do {
+                        progressedThisPass = false;
+                        if (hasLightWork) progressedThisPass |= propagateLight();
+                        if (hasDarknessWork) progressedThisPass |= propagateDarkness();
+                        progressed |= progressedThisPass;
+
+                        hasLightWork = !blockUpdateDecreaseRequests.isEmpty() || !blockUpdateIncreaseRequests.isEmpty() || !chunksWaitingForPropagation.isEmpty();
+                        hasDarknessWork = !darknessUpdateDecreaseRequests.isEmpty() || !darknessUpdateIncreaseRequests.isEmpty() || !chunksWaitingForDarknessPropagation.isEmpty();
+                        // stop early when nothing moved: the queue is waiting on chunks to load
+                    } while (running && progressedThisPass && (hasLightWork || hasDarknessWork) && System.nanoTime() < deadline);
                 } else {
                     // If idle, check if we have sections to rebuild from explosions
                     if (!sectionsToRebuildLater.isEmpty()) {
@@ -476,11 +555,48 @@ public class ColoredLightEngine {
                     Minecraft.getInstance().execute(ColoredLightEngine.this::onLightUpdate);
                 }
 
-                try {
-                    // Sleep to prevent busy-waiting, sleep longer if there was no work
-                    Thread.sleep(hasWork ? 1L : 10L);
-                } catch (InterruptedException e) {
-                    running = false;
+                if (hasWork && progressed) {
+                    // Work remains. Pausing here is what lightUpdateSpeed controls: every finished chunk
+                    // makes the renderer rebuild and re-upload its mesh, so spreading passes out trades
+                    // fill-in speed for a smoother framerate. The pause scales with the work actually
+                    // done, because a pass cannot stop mid-chunk and one Nether chunk dwarfs any fixed
+                    // budget - a constant pause therefore throttles almost nothing.
+                    blockedSleepMillis = MIN_BLOCKED_SLEEP_MILLIS;
+                    double pauseFactor = speed.pauseFactor();
+                    if (pauseFactor <= 0.0) {
+                        Thread.yield();
+                    } else {
+                        long workedMillis = (System.nanoTime() - passStartNanos) / 1_000_000L;
+                        long pauseMillis = Math.min(200L, Math.max(1L, (long) (workedMillis * pauseFactor)));
+                        try {
+                            Thread.sleep(pauseMillis);
+                        } catch (InterruptedException e) {
+                            running = false;
+                        }
+                    }
+                } else {
+                    long sleepMillis;
+                    if (!hasWork) {
+                        blockedSleepMillis = MIN_BLOCKED_SLEEP_MILLIS;
+                        sleepMillis = IDLE_SLEEP_MILLIS;
+                    } else if (!blockUpdateIncreaseRequests.isEmpty() || !blockUpdateDecreaseRequests.isEmpty()
+                            || !darknessUpdateIncreaseRequests.isEmpty() || !darknessUpdateDecreaseRequests.isEmpty()) {
+                        // A placed torch must light up immediately: never back off on block updates.
+                        blockedSleepMillis = MIN_BLOCKED_SLEEP_MILLIS;
+                        sleepMillis = MIN_BLOCKED_SLEEP_MILLIS;
+                    } else {
+                        // Only chunks remain and none of them can propagate, because their neighbours
+                        // are not loaded and may never be: the outermost ring of the view area needs
+                        // chunks one step beyond it. Without a backoff the propagator would wake every
+                        // 5ms for the rest of the session, walk the whole chunk order, and find nothing.
+                        sleepMillis = blockedSleepMillis;
+                        blockedSleepMillis = Math.min(MAX_BLOCKED_SLEEP_MILLIS, blockedSleepMillis * 2L);
+                    }
+                    try {
+                        Thread.sleep(sleepMillis);
+                    } catch (InterruptedException e) {
+                        running = false;
+                    }
                 }
             }
         }
@@ -676,90 +792,77 @@ public class ColoredLightEngine {
         }
 
         private record NearestChunkResult(ChunkPos chunkPos, int distanceBlocks) {}
+        /**
+         * A cached ordering of the chunks still awaiting propagation: frustum-visible first, then
+         * nearest to the player.
+         *
+         * <p>The nearest chunk used to be found by scanning the entire waiting collection — testing
+         * nine neighbours for availability and allocating an AABB for a frustum test — once for every
+         * chunk propagated. That is O(n) per chunk and O(n^2) to drain the queue; profiling put the
+         * two scans at ~20% of this thread during a Nether dimension change.
+         *
+         * <p>The order is computed once and reused. It is rebuilt when the player crosses a chunk
+         * boundary, when it is exhausted, or after a short TTL so camera movement still re-prioritises.
+         * Priority is advisory, so a slightly stale ordering costs nothing but ordering.
+         */
+        private final class ChunkOrder {
+            private final ArrayList<ChunkPos> order = new ArrayList<>();
+            private int cursor;
+            private long rebuiltAtNanos = Long.MIN_VALUE;
+            private ChunkPos rebuiltCenter;
+
+            NearestChunkResult next(LevelAccessor level, PlayerAccessor player, Set<ChunkPos> waiting) {
+                if (waiting.isEmpty()) return null;
+                ChunkPos center = player.getChunkPos();
+                long now = System.nanoTime();
+                // Deliberately not rebuilding on cursor exhaustion: when every remaining chunk is
+                // still loading, that would rebuild on every poll and reinstate the O(n)-per-poll cost.
+                if (!center.equals(rebuiltCenter) || now - rebuiltAtNanos > CHUNK_ORDER_TTL_NANOS) {
+                    rebuild(level, center, waiting, now);
+                }
+
+                while (cursor < order.size()) {
+                    ChunkPos chunkPos = order.get(cursor++);
+                    if (!waiting.contains(chunkPos)) continue; // already propagated, or left the view area
+                    if (!level.hasChunkAndNeighbours(chunkPos)) continue; // block state data not available yet
+                    return new NearestChunkResult(chunkPos, chunkPos.getChessboardDistance(center) * 16);
+                }
+                return null;
+            }
+
+            private void rebuild(LevelAccessor level, ChunkPos center, Set<ChunkPos> waiting, long now) {
+                order.clear();
+                cursor = 0;
+                rebuiltAtNanos = now;
+                rebuiltCenter = center;
+
+                Frustum currentFrustum = frustum;
+                int minY = level.getLevel().getMinBuildHeight();
+                int maxY = level.getLevel().getMaxBuildHeight();
+
+                List<ChunkPos> visible = new ArrayList<>();
+                List<ChunkPos> hidden = new ArrayList<>();
+                for (ChunkPos chunkPos : waiting) {
+                    boolean inView = currentFrustum != null && currentFrustum.isVisible(new AABB(
+                            chunkPos.getMinBlockX(), minY, chunkPos.getMinBlockZ(),
+                            chunkPos.getMaxBlockX() + 1, maxY, chunkPos.getMaxBlockZ() + 1));
+                    (inView ? visible : hidden).add(chunkPos);
+                }
+
+                Comparator<ChunkPos> byDistance = Comparator.comparingInt(c -> c.getChessboardDistance(center));
+                visible.sort(byDistance);
+                hidden.sort(byDistance);
+                order.addAll(visible); // anything the player can see outranks anything they cannot
+                order.addAll(hidden);
+            }
+        }
+
         private NearestChunkResult getNearestWaitingChunk(LevelAccessor level, PlayerAccessor player) {
-            // find chunk nearest player
-            var iterator = chunksWaitingForPropagation.iterator();
-            int minDistance = Integer.MAX_VALUE;
-            ChunkPos nearestChunkPos = null;
-
-            if (frustum != null) {
-                List<ChunkPos> visibleChunks = new ArrayList<>();
-                while (iterator.hasNext()) {
-                    ChunkPos chunkPos = iterator.next();
-                    if (!level.hasChunkAndNeighbours(chunkPos)) continue;
-
-                    AABB chunkBox = new AABB(chunkPos.getMinBlockX(), level.getLevel().getMinBuildHeight(), chunkPos.getMinBlockZ(), chunkPos.getMaxBlockX() + 1, level.getLevel().getMaxBuildHeight(), chunkPos.getMaxBlockZ() + 1);
-                    if (frustum.isVisible(chunkBox)) {
-                        visibleChunks.add(chunkPos);
-                    }
-                }
-
-                if (!visibleChunks.isEmpty()) {
-                    for (ChunkPos chunkPos : visibleChunks) {
-                        int distance = chunkPos.getChessboardDistance(player.getChunkPos());
-                        if (distance < minDistance) {
-                            minDistance = distance;
-                            nearestChunkPos = chunkPos;
-                        }
-                    }
-                    return nearestChunkPos == null ? null : new NearestChunkResult(nearestChunkPos, minDistance * 16);
-                }
-            }
-
-            iterator = chunksWaitingForPropagation.iterator(); // Reset iterator
-            while (iterator.hasNext()) {
-                ChunkPos chunkPos = iterator.next();
-                if(!level.hasChunkAndNeighbours(chunkPos)) continue; // chunk and neighbours must have available block state data
-                int distance = chunkPos.getChessboardDistance(player.getChunkPos());
-                if (distance < minDistance) {
-                    minDistance = distance;
-                    nearestChunkPos = chunkPos;
-                }
-            }
-            return nearestChunkPos == null ? null : new NearestChunkResult(nearestChunkPos, minDistance * 16); // distanceBlocks is in blocks
+            return lightChunkOrder.next(level, player, chunksWaitingForPropagation);
         }
 
         private NearestChunkResult getNearestWaitingDarknessChunk(LevelAccessor level, PlayerAccessor player) {
-            // find chunk nearest player
-            var iterator = chunksWaitingForDarknessPropagation.iterator();
-            int minDistance = Integer.MAX_VALUE;
-            ChunkPos nearestChunkPos = null;
-
-            if (frustum != null) {
-                List<ChunkPos> visibleChunks = new ArrayList<>();
-                while (iterator.hasNext()) {
-                    ChunkPos chunkPos = iterator.next();
-                    if (!level.hasChunkAndNeighbours(chunkPos)) continue;
-
-                    AABB chunkBox = new AABB(chunkPos.getMinBlockX(), level.getLevel().getMinBuildHeight(), chunkPos.getMinBlockZ(), chunkPos.getMaxBlockX() + 1, level.getLevel().getMaxBuildHeight(), chunkPos.getMaxBlockZ() + 1);
-                    if (frustum.isVisible(chunkBox)) {
-                        visibleChunks.add(chunkPos);
-                    }
-                }
-
-                if (!visibleChunks.isEmpty()) {
-                    for (ChunkPos chunkPos : visibleChunks) {
-                        int distance = chunkPos.getChessboardDistance(player.getChunkPos());
-                        if (distance < minDistance) {
-                            minDistance = distance;
-                            nearestChunkPos = chunkPos;
-                        }
-                    }
-                    return nearestChunkPos == null ? null : new NearestChunkResult(nearestChunkPos, minDistance * 16);
-                }
-            }
-
-            iterator = chunksWaitingForDarknessPropagation.iterator(); // Reset iterator
-            while (iterator.hasNext()) {
-                ChunkPos chunkPos = iterator.next();
-                if(!level.hasChunkAndNeighbours(chunkPos)) continue; // chunk and neighbours must have available block state data
-                int distance = chunkPos.getChessboardDistance(player.getChunkPos());
-                if (distance < minDistance) {
-                    minDistance = distance;
-                    nearestChunkPos = chunkPos;
-                }
-            }
-            return nearestChunkPos == null ? null : new NearestChunkResult(nearestChunkPos, minDistance * 16); // distanceBlocks is in blocks
+            return darknessChunkOrder.next(level, player, chunksWaitingForDarknessPropagation);
         }
 
         /**
@@ -858,14 +961,17 @@ public class ColoredLightEngine {
         /**
          * propagate light in the nearest waiting chunk, handle block light updates
          */
-        private void propagateLight() {
+        /** @return true when this pass actually did work; false means the queue is blocked (chunks still loading) */
+        private boolean propagateLight() {
             LevelAccessor level = clientAccessor.getLevel();
-            if(level == null) return;
+            if(level == null) return false;
             PlayerAccessor player = clientAccessor.getPlayer();
-            if(player == null) return;
+            if(player == null) return false;
+            boolean progressed = false;
 
             // decrease requests are always executed
             if(!blockUpdateDecreaseRequests.isEmpty()) {
+                progressed = true;
                 Queue<LightUpdateRequest> newIncreaseRequests = new LinkedList<>();
                 propagateDecreases(level, blockUpdateDecreaseRequests, newIncreaseRequests);
                 propagateIncreases(level, newIncreaseRequests);
@@ -889,22 +995,30 @@ public class ColoredLightEngine {
                 propagateIncreases(level, increaseRequests);
                 // new chunks' light propagation is not synchronized with main thread
                 applyChangesDirectly();
+                progressed = true;
+                drainChunks++;
+                lastChunkNanos = System.nanoTime();
             }
             else if(nearestBlockRequests != null) {
                 blockUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate);
                 propagateIncreases(level, nearestBlockRequests.blockUpdate.increaseRequests);
                 markChangesReady();
+                progressed = true;
             }
+            return progressed;
         }
 
-        private void propagateDarkness() {
+        /** @return true when this pass actually did work; false means the queue is blocked (chunks still loading) */
+        private boolean propagateDarkness() {
             LevelAccessor level = clientAccessor.getLevel();
-            if(level == null) return;
+            if(level == null) return false;
             PlayerAccessor player = clientAccessor.getPlayer();
-            if(player == null) return;
+            if(player == null) return false;
+            boolean progressed = false;
 
             // decrease requests are always executed
             if(!darknessUpdateDecreaseRequests.isEmpty()) {
+                progressed = true;
                 Queue<LightUpdateRequest> newIncreaseRequests = new LinkedList<>();
                 propagateDarknessDecreases(level, darknessUpdateDecreaseRequests, newIncreaseRequests);
                 propagateDarknessIncreases(level, newIncreaseRequests);
@@ -928,12 +1042,15 @@ public class ColoredLightEngine {
                 propagateDarknessIncreases(level, increaseRequests);
                 // new chunks' darkness propagation is not synchronized with main thread
                 applyChangesDirectly();
+                progressed = true;
             }
             else if(nearestBlockRequests != null) {
                 darknessUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate);
                 propagateDarknessIncreases(level, nearestBlockRequests.blockUpdate.increaseRequests);
                 markChangesReady();
+                progressed = true;
             }
+            return progressed;
         }
 
         /**

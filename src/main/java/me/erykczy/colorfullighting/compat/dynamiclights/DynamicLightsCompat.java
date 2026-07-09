@@ -17,6 +17,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import me.erykczy.colorfullighting.common.config.VariantList;
 import net.minecraft.nbt.CompoundTag;
@@ -26,6 +27,7 @@ import net.minecraftforge.registries.ForgeRegistries;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -64,12 +66,18 @@ public final class DynamicLightsCompat {
     private static final double DYNAMIC_BLOCK_COLOR_RADIUS_SQUARED = 4.5 * 4.5;
 
     /** Light-emitting blocks placed by dynamic lighting mods, colored by the entity that caused them. */
-    private static final Set<ResourceLocation> DYNAMIC_LIGHT_BLOCKS = Set.of(
+    private static final Set<ResourceLocation> DYNAMIC_LIGHT_BLOCK_IDS = Set.of(
             new ResourceLocation("minecraft", "light"),
             new ResourceLocation("dynamiclights", "lit_air"),
             new ResourceLocation("dynamiclights", "lit_cave_air"),
             new ResourceLocation("dynamiclights", "lit_water")
     );
+    /**
+     * Resolved to Block instances once at load complete. isDynamicLightBlock runs for every light
+     * source the propagator visits, so it must not hash a ResourceLocation. Blocks belonging to
+     * absent mods simply never resolve.
+     */
+    private static volatile Set<Block> dynamicLightBlocks = Collections.emptySet();
 
     private record DynamicSource(double x, double y, double z, int luminance, ColorRGB4 color) {}
     private static final DynamicSource[] NO_SOURCES = new DynamicSource[0];
@@ -101,6 +109,13 @@ public final class DynamicLightsCompat {
     private DynamicLightsCompat() {}
 
     public static void init() {
+        Set<Block> resolved = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (ResourceLocation id : DYNAMIC_LIGHT_BLOCK_IDS) {
+            Block block = ForgeRegistries.BLOCKS.getValue(id);
+            if (block != null && block != Blocks.AIR) resolved.add(block);
+        }
+        dynamicLightBlocks = resolved;
+
         if (ModList.get().isLoaded("torcy")) {
             trackEntities = true;
             ColorfulLighting.LOGGER.info("Torcy detected!");
@@ -285,8 +300,9 @@ public final class DynamicLightsCompat {
         return ColorRGB4.fromRGB4(r, g, b);
     }
 
-    public static boolean isDynamicLightBlock(ResourceLocation blockId) {
-        return DYNAMIC_LIGHT_BLOCKS.contains(blockId);
+    public static boolean isDynamicLightBlock(Block block) {
+        Set<Block> blocks = dynamicLightBlocks;
+        return !blocks.isEmpty() && blocks.contains(block);
     }
 
     /**
@@ -338,11 +354,8 @@ public final class DynamicLightsCompat {
             return color != null ? color : Config.defaultColor;
         }
         if (source instanceof BlockEntity blockEntity) {
-            ResourceLocation blockId = ForgeRegistries.BLOCKS.getKey(blockEntity.getBlockState().getBlock());
-            if (blockId != null) {
-                VariantList<Config.ColorEmitter> config = Config.getBlockEmitterConfig(blockId);
-                if (config != null && config.getDefault() != null) return config.getDefault().color();
-            }
+            VariantList<Config.ColorEmitter> config = Config.getBlockEmitterConfig(blockEntity.getBlockState().getBlock());
+            if (config != null && config.getDefault() != null) return config.getDefault().color();
         }
         return Config.defaultColor;
     }
@@ -380,7 +393,7 @@ public final class DynamicLightsCompat {
             if (bestColor != null) return bestColor;
         }
 
-        if (entity.isOnFire()) return Config.getLightColor(Blocks.FIRE.builtInRegistryHolder().key());
+        if (entity.isOnFire()) return Config.getLightColor(Blocks.FIRE);
         return null;
     }
 
@@ -430,7 +443,7 @@ public final class DynamicLightsCompat {
         if (stack.getItem() instanceof BlockItem blockItem && blockItem.getBlock().defaultBlockState().getLightEmission() > 0) {
             ResourceLocation blockId = ForgeRegistries.BLOCKS.getKey(blockItem.getBlock());
             if (blockId != null && !blockId.equals(itemId)) {
-                VariantList<Config.ColorEmitter> config = Config.getBlockEmitterConfig(blockId);
+                VariantList<Config.ColorEmitter> config = Config.getBlockEmitterConfig(blockItem.getBlock());
                 if (config != null && config.getDefault() != null) return config.getDefault().color();
             }
             return Config.defaultColor; // emits light but has no configured color
@@ -453,12 +466,9 @@ public final class DynamicLightsCompat {
         // otherwise a held block glows like the same block placed in the world: an emitters.json
         // brightness override if present, else the block's vanilla emission (glowstone item == 15)
         if (stack.getItem() instanceof BlockItem blockItem) {
-            ResourceLocation blockId = ForgeRegistries.BLOCKS.getKey(blockItem.getBlock());
-            if (blockId != null) {
-                VariantList<Config.ColorEmitter> config = Config.getBlockEmitterConfig(blockId);
-                if (config != null && config.getDefault() != null && config.getDefault().overriddenBrightness4() >= 0) {
-                    return config.getDefault().overriddenBrightness4();
-                }
+            VariantList<Config.ColorEmitter> config = Config.getBlockEmitterConfig(blockItem.getBlock());
+            if (config != null && config.getDefault() != null && config.getDefault().overriddenBrightness4() >= 0) {
+                return config.getDefault().overriddenBrightness4();
             }
             int emission = blockItem.getBlock().defaultBlockState().getLightEmission();
             if (emission > 0) return emission;

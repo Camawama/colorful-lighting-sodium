@@ -257,6 +257,46 @@ Define a separate light intensity/vibrancy value for each moon phase.
 }
 ```
 
+# ⚙️ Client Config
+
+`config/colorful_lighting-client.toml`
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `enabled` | `true` | Master switch for colored lighting. |
+| `autoPatchShaderpacks` | `true` | Create patched copies of shaderpacks that decode colored lighting (requires Oculus). |
+| `lightUpdateSpeed` | `FASTEST` | How quickly colored light fills in after chunks load. |
+
+## lightUpdateSpeed
+
+Colored light is not sent by the server — it is recalculated on your machine, on a background thread,
+*after* a chunk has already loaded and rendered. Every chunk the propagator finishes makes the
+renderer rebuild and re-upload that chunk's mesh. Finishing chunks faster fills the light in sooner
+but concentrates those uploads, which is what can stutter when you walk into an area full of light
+sources (a Nether portal is the worst case: changing dimension discards all colored light, and lava
+means nearly every chunk is packed with emitters).
+
+| Value | Pauses for | Roughly | Effect |
+| --- | --- | --- | --- |
+| `FASTEST` | nothing | 100% speed | Default. Fills in as fast as the CPU allows. |
+| `FAST` | 1/4 of the time it worked | ~80% speed | Slight throttle. |
+| `BALANCED` | as long as it worked | ~50% speed | Spreads mesh rebuilds out. |
+| `GENTLE` | 3x as long as it worked | ~25% speed | Lightest touch; noticeably slower fill-in. |
+
+The pause scales with the work actually done. A propagation pass cannot stop in the middle of a
+chunk, and one Nether chunk costs far more than any fixed pause would offset — so a constant pause
+throttles almost nothing. Pausing for a *multiple of the work* gives a predictable duty cycle.
+
+The log line `Colored light drain: N chunks in M ms (X chunks/s, lightUpdateSpeed=...)` reports the
+measured throughput each time the light finishes filling in, so you can see what a setting actually
+does on your machine.
+
+> **Change this with the game closed.** Forge validates the config on load and silently rewrites
+> invalid values back to the default (the value needs quotes: `lightUpdateSpeed = "GENTLE"`), and
+> editing the file while the game is running can race its config watcher. The log line
+> `Colored light engine reset (lightUpdateSpeed=...)` reports the value actually in force — trust
+> that over the file.
+
 # ‼️ Working Shader Packs
 
 *   [https://github.com/Waterpicker/Super-Duper-Vanilla](https://github.com/Waterpicker/Super-Duper-Vanilla) (patched by hand)
