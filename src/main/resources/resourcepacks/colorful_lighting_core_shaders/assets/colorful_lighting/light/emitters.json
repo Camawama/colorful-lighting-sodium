@@ -78,11 +78,11 @@
 	"minecraft:end_portal": "white;0",
 	"minecraft:end_gateway": "white;0",
 	"minecraft:end_portal_frame": "white",
-	"minecraft:nether_portal": "purple",
+	"minecraft:nether_portal": "#d080ff",
 
-	"minecraft:ochre_froglight": "yellow",
-	"minecraft:pearlescent_froglight": "magenta",
-	"minecraft:verdant_froglight": "green",
+	"minecraft:ochre_froglight": "#fff1bf",
+	"minecraft:pearlescent_froglight": "#ffbff9",
+	"minecraft:verdant_froglight": "#dbffbf",
 
 	"minecraft:azalea": "green;5",
 	"minecraft:big_dripleaf": {
@@ -207,8 +207,8 @@
 	"minecraft:end_rod": "white",
 	"minecraft:fire": "#ff894d",
 	"minecraft:lantern": "#fff3a7",
-	"minecraft:lava": "orange",
-	"minecraft:lava_cauldron": "orange",
+	"minecraft:lava": "#ff5900",
+	"minecraft:lava_cauldron": "#ff5900",
 	"minecraft:respawn_anchor": {
 		"states": {
 			"charges=4": "purple;F",
@@ -221,16 +221,16 @@
 	},
 	"minecraft:soul_campfire": {
 		"states": {
-			"lit=true": "#90fbff",
+			"lit=true": "#e6feff",
 			"lit=false": "#00aaaa;1"
 		},
-		"default": "#90fbff"
+		"default": "#e6feff"
 	},
-	"minecraft:soul_fire": "#90fbff",
-	"minecraft:soul_lantern": "#90fbff",
-	"minecraft:soul_torch": "#90fbff",
-	"minecraft:soul_wall_torch": "#90fbff",
+	"minecraft:soul_fire": "#e6feff",
+	"minecraft:soul_lantern": "#e6feff",
+	"minecraft:soul_torch": "#e6feff",
+	"minecraft:soul_wall_torch": "#e6feff",
 	"minecraft:torch": "vanilla",
 	"minecraft:wall_torch": "vanilla",
-	"minecraft:crying_obsidian": "purple"
+	"minecraft:crying_obsidian": "#9800ba"
 }

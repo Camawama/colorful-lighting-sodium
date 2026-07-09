@@ -1,4 +1,14 @@
 {
   "minecraft:creeper": "green",
-  "minecraft:blaze": "orange"
+  "minecraft:blaze": "orange",
+  "minecraft:dragon_fireball": "purple",
+  "minecraft:allay": "cyan",
+  "minecraft:end_crystal": "magenta",
+  "minecraft:fireball": "orange",
+  "minecraft:firework_rocket": "white",
+  "minecraft:experience_bottle": "lime",
+  "minecraft:experience_orb": "lime",
+  "minecraft:spectral_arrow": "yellow",
+  "minecraft:glow_squid": "cyan",
+  "minecraft:vex": "gray"
 }

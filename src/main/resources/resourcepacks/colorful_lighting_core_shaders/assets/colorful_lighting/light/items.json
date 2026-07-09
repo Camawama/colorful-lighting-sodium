@@ -1,3 +1,16 @@
 {
-  "minecraft:lava_bucket": "orange"
+  "minecraft:lava_bucket": "orange",
+  "minecraft:ender_eye": "purple;8",
+  "minecraft:ender_pearl": "purple;8",
+  "minecraft:glow_item_frame": "vanilla;9",
+  "minecraft:experience_bottle": "lime;8",
+  "minecraft:dragon_breath": "magenta;4",
+  "minecraft:nether_star": "white;15",
+  "minecraft:glow_ink_sac": "cyan;10",
+  "minecraft:chorus_fruit": "purple;4",
+  "minecraft:enchanted_golden_apple": "vanilla;5",
+  "minecraft:spectral_arrow": "yellow;8",
+  "minecraft:totem_of_undying": "vanilla;9",
+  "minecraft:recovery_compass": "cyan;4",
+  "minecraft:blaze_powder": "orange;5"
 }

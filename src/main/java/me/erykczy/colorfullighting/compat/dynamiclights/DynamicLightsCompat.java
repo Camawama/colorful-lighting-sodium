@@ -359,13 +359,32 @@ public final class DynamicLightsCompat {
 
     private static int getStackLuminance(ItemStack stack) {
         if (stack.isEmpty()) return 0;
+        ResourceLocation itemId = ForgeRegistries.ITEMS.getKey(stack.getItem());
+
+        // an items.json brightness overrides everything, so a held item can differ from its block
+        // (e.g. glowstone block stays 15 while the held glowstone item is configured to 2)
+        Config.ColorEmitter itemEmitter = itemId == null ? null : Config.getItemEmitter(itemId);
+        if (itemEmitter != null && itemEmitter.overriddenBrightness4() >= 0) {
+            return itemEmitter.overriddenBrightness4();
+        }
+
+        // otherwise a held block glows like the same block placed in the world: an emitters.json
+        // brightness override if present, else the block's vanilla emission (glowstone item == 15)
         if (stack.getItem() instanceof BlockItem blockItem) {
+            ResourceLocation blockId = ForgeRegistries.BLOCKS.getKey(blockItem.getBlock());
+            if (blockId != null) {
+                Config.BlockEmitterConfig config = Config.getBlockEmitterConfig(blockId);
+                if (config != null && config.defaultEmitter != null && config.defaultEmitter.overriddenBrightness4() >= 0) {
+                    return config.defaultEmitter.overriddenBrightness4();
+                }
+            }
             int emission = blockItem.getBlock().defaultBlockState().getLightEmission();
             if (emission > 0) return emission;
         }
-        // non-block items (lava bucket, ...) have no block emission; a configured color marks them luminous
-        ResourceLocation itemId = ForgeRegistries.ITEMS.getKey(stack.getItem());
-        if (itemId != null && (Config.getItemEmitter(itemId) != null || Config.getBlockEmitterConfig(itemId) != null)) return 8;
+
+        // non-block items (lava bucket, ...) have no block emission; a configured color marks them
+        // luminous, and with no explicit brightness they fall back to a mid-range level
+        if (itemEmitter != null || (itemId != null && Config.getBlockEmitterConfig(itemId) != null)) return 8;
         return 0;
     }
 }
