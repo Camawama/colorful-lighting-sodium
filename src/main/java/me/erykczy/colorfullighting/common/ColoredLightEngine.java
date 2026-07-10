@@ -18,6 +18,7 @@ import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
+import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
@@ -29,6 +30,7 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -40,7 +42,21 @@ public class ColoredLightEngine {
     private ClientAccessor clientAccessor;
     private final ColoredLightStorage storage = new ColoredLightStorage();
     private final ColoredLightStorage darknessStorage = new ColoredLightStorage();
+    /**
+     * Guards writers against each other only. Sampling never takes it: the storages are concurrent maps
+     * of volatile-published sections, so readers race with the propagator by design and lose at worst a
+     * single frame of colour on a block that is already queued for a re-mesh. Taking this lock per sample
+     * serialised all ten Sodium chunk-build workers behind one monitor.
+     */
     private final Object storageLock = new Object();
+    /**
+     * Bumped after sections are added to or removed from either storage. Sampling threads cache the
+     * section they last touched and discard that cache when this moves, so a section swapped out from
+     * under a reader is never read for more than one sample. Bumped from both the client thread
+     * (updateViewArea) and the propagator thread (performRegionRebuild), hence atomic.
+     */
+    private final AtomicInteger structureVersion = new AtomicInteger();
+    private final ThreadLocal<SectionCursor> sectionCursor = ThreadLocal.withInitial(SectionCursor::new);
     private ViewArea viewArea = new ViewArea();
     private final ConcurrentLinkedQueue<LightUpdateRequest> blockUpdateDecreaseRequests = new ConcurrentLinkedQueue<>(); // those first added will be executed first (this order is required by decrease propagation algorithm)
     private final ConcurrentLinkedQueue<BlockRequests> blockUpdateIncreaseRequests = new ConcurrentLinkedQueue<>(); // those nearest to the player will be executed first
@@ -50,6 +66,12 @@ public class ColoredLightEngine {
     // Ordering now comes from LightPropagator.ChunkOrder instead of rescanning the collection.
     private final Set<ChunkPos> chunksWaitingForPropagation = ConcurrentHashMap.newKeySet();
     private final Set<ChunkPos> chunksWaitingForDarknessPropagation = ConcurrentHashMap.newKeySet();
+    /**
+     * Chunks already queued for this view area. Replaces the old "skip anything in the previous inner
+     * area" rule, which could never re-queue a chunk that was skipped because the server had not sent
+     * its neighbours yet. Client thread only (updateViewArea and reset).
+     */
+    private final Set<ChunkPos> queuedChunks = new HashSet<>();
     private final Set<Long> dirtySections = new HashSet<>();
     private final Set<Long> sectionsToRebuildLater = ConcurrentHashMap.newKeySet();
 
@@ -68,14 +90,25 @@ public class ColoredLightEngine {
     /** How long a computed chunk ordering stays usable before it is rebuilt. */
     private static final long CHUNK_ORDER_TTL_NANOS = 100_000_000L; // 100 ms
 
+    /**
+     * Only report drains at least this large. Moving queues a strip of chunks every second or so, and
+     * logging each one buries the log; the rate is meaningless for a handful of chunks anyway, since
+     * the timer includes however long the queue waited on chunk data rather than time spent working.
+     */
+    private static final int DRAIN_LOG_MIN_CHUNKS = 256;
+
     private static final long IDLE_SLEEP_MILLIS = 10L;
     private static final long MIN_BLOCKED_SLEEP_MILLIS = 5L;
     /**
-     * Deliberately short. The chunk queue is normally stuck forever - the outermost ring of the view
-     * area needs neighbouring chunks that never load - so the propagator sits in the backed-off branch
-     * for the whole session. A block update arriving mid-sleep waits that sleep out, so a long backoff
-     * would make every placed torch light up late. 20ms is under half a tick and still removes three
-     * quarters of the wakeups.
+     * Deliberately short. The chunk queue never empties: ViewArea is a square, but since 1.18 the server
+     * only sends chunks inside a disc (see ChunkMap.isChunkInRange). Chunks in the square-but-not-disc
+     * corners, and their inward neighbours, can never have all eight neighbours loaded, so they stay
+     * queued for the whole session and the propagator lives in the backed-off branch. Measured at render
+     * distance 24: 336 of the 2209 queued chunks are permanently unpropagatable.
+     *
+     * <p>A block update arriving mid-sleep waits that sleep out, so a long backoff would make every
+     * placed torch light up late. 20ms is under half a tick and still removes three quarters of the
+     * wakeups.
      */
     private static final long MAX_BLOCKED_SLEEP_MILLIS = 20L;
 
@@ -141,37 +174,59 @@ public class ColoredLightEngine {
         this.frustum = frustum;
     }
 
+    /**
+     * Per-thread memo of the last section sampled. Sodium walks a chunk build in section order and takes
+     * roughly ten samples per block face, nearly all of them landing in the section already cached here,
+     * so this turns two concurrent-map lookups per sample into two per section.
+     */
+    private static final class SectionCursor {
+        private long sectionPos = Long.MIN_VALUE;
+        private int version = -1;
+        private ColoredLightSection light;
+        private ColoredLightSection darkness;
+    }
+
     public ColorRGB4 sampleLightColor(BlockPos pos) { return sampleLightColor(pos.getX(), pos.getY(), pos.getZ()); }
     public ColorRGB4 sampleLightColor(int x, int y, int z) {
-        if (!enabled) return ColorRGB4.fromRGB4(0, 0, 0);
-        ColorRGB4 lightColor;
-        ColorRGB4 darknessColor;
-        synchronized (storageLock) {
-            lightColor = storage.getEntry(x, y, z);
-            if (lightColor == null) {
-                lightColor = ColorRGB4.BLACK;
+        int packed = sampleLightColorPacked(x, y, z);
+        if (packed == 0) return ColorRGB4.BLACK;
+        return ColorRGB4.fromRGB4((packed >>> 8) & 0x0F, (packed >>> 4) & 0x0F, packed & 0x0F);
+    }
 
-            }
+    /**
+     * Allocation-free equivalent of {@link #sampleLightColor(int, int, int)}.
+     *
+     * @return light minus darkness as a packed 12-bit {@code r << 8 | g << 4 | b}.
+     */
+    public int sampleLightColorPacked(int x, int y, int z) {
+        if (!enabled) return 0;
 
-            darknessColor = darknessStorage.getEntry(x, y, z);
-            if (darknessColor == null) {
-                darknessColor = ColorRGB4.BLACK;
-            }
+        long sectionPos = SectionPos.asLong(x >> 4, y >> 4, z >> 4);
+        int version = this.structureVersion.get();
+
+        SectionCursor cursor = sectionCursor.get();
+        if (cursor.sectionPos != sectionPos || cursor.version != version) {
+            cursor.light = storage.getSection(sectionPos);
+            cursor.darkness = darknessStorage.getSection(sectionPos);
+            cursor.sectionPos = sectionPos;
+            cursor.version = version;
         }
+
+        int colorIndex = ColoredLightSection.getColorIndex(x & 15, y & 15, z & 15);
+        int light = cursor.light == null ? 0 : cursor.light.getPacked(colorIndex);
+        int darkness = cursor.darkness == null ? 0 : cursor.darkness.getPacked(colorIndex);
 
         // held/dropped-item light from renderer-based dynamic lighting mods (no-op without sources);
         // applied before the darkness subtraction so darkness absorbers dampen it like any other light
-        lightColor = DynamicLightsCompat.maxWithDynamicLight(x, y, z, lightColor);
+        light = DynamicLightsCompat.maxWithDynamicLightPacked(x, y, z, light);
 
-        if (lightColor == ColorRGB4.BLACK && darknessColor == ColorRGB4.BLACK) {
-            return ColorRGB4.BLACK;
-        }
+        if (light == 0 || light == darkness) return 0;
+        if (darkness == 0) return light;
 
-        return ColorRGB4.fromRGB4(
-                Math.max(0, lightColor.red4 - darknessColor.red4),
-                Math.max(0, lightColor.green4 - darknessColor.green4),
-                Math.max(0, lightColor.blue4 - darknessColor.blue4)
-        );
+        int red = Math.max(0, ((light >>> 8) & 0x0F) - ((darkness >>> 8) & 0x0F));
+        int green = Math.max(0, ((light >>> 4) & 0x0F) - ((darkness >>> 4) & 0x0F));
+        int blue = Math.max(0, (light & 0x0F) - (darkness & 0x0F));
+        return red << 8 | green << 4 | blue;
     }
     /**
      * Mixes light color from blocks neighbouring given position using trilinear interpolation.
@@ -207,6 +262,29 @@ public class ColoredLightEngine {
     }
 
 
+    /**
+     * Whether every neighbour of this chunk is one the server will send, so the chunk can eventually
+     * propagate.
+     *
+     * <p>ViewArea is a square, but since 1.18 the server sends chunks inside a disc
+     * ({@link ChunkMap#isChunkInRange}). Propagating a chunk needs all eight of its neighbours loaded,
+     * so chunks near the square's corners could never propagate: they sat in the queue for the entire
+     * session, kept it permanently non-empty, and were re-sorted by every ChunkOrder rebuild. Measured
+     * at render distance 24, 336 of the 2209 queued chunks were unpropagatable.
+     *
+     * <p>Callers pass the client's effective render distance. When a server's view distance is larger
+     * this is conservative and skips a sliver at the square's corners - chunks the renderer culls by
+     * euclidean distance anyway, so nothing visible is lost.
+     */
+    private static boolean canEverPropagate(int centerX, int centerZ, int viewDistance, int x, int z) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            for (int dz = -1; dz <= 1; ++dz) {
+                if (!ChunkMap.isChunkInRange(x + dx, z + dz, centerX, centerZ, viewDistance)) return false;
+            }
+        }
+        return true;
+    }
+
     public void updateViewArea(ViewArea newArea) {
         if (!enabled) return;
         LevelAccessor level = clientAccessor.getLevel();
@@ -221,6 +299,7 @@ public class ColoredLightEngine {
         darknessUpdateDecreaseRequests.removeIf(blockUpdate -> !newArea.containsBlockInner(blockUpdate.blockPos));
         chunksWaitingForPropagation.removeIf(chunkPos -> !newArea.containsInner(chunkPos.x, chunkPos.z));
         chunksWaitingForDarknessPropagation.removeIf(chunkPos -> !newArea.containsInner(chunkPos.x, chunkPos.z));
+        queuedChunks.removeIf(chunkPos -> !newArea.containsInner(chunkPos.x, chunkPos.z));
         // remove sections from storage
         synchronized (storageLock) {
             for(int x = viewArea.minX; x <= viewArea.maxX; ++x) {
@@ -234,28 +313,35 @@ public class ColoredLightEngine {
                 }
             }
         }
+        structureVersion.incrementAndGet();
 
         // load sections
         // add sections to storage and queue chunks for propagation
+        // ViewArea is centred on the player and spans +/- the effective render distance.
+        int centerX = (newArea.minX + newArea.maxX) / 2;
+        int centerZ = (newArea.minZ + newArea.maxZ) / 2;
+        int viewDistance = (newArea.maxX - newArea.minX) / 2;
         synchronized (storageLock) {
             for(int x = newArea.minX; x <= newArea.maxX; ++x) {
                 for(int z = newArea.minZ; z <= newArea.maxZ; ++z) {
-                    if(viewArea.containsInner(x, z)) continue; // old area already contains propagated section
-                    boolean viewAreaContainsOuter = viewArea.contains(x, z);
-                    if(!viewAreaContainsOuter) {
+                    if(!viewArea.contains(x, z)) { // section data is not carried over from the old area
                         for(int y = level.getMinSectionY(); y <= level.getMaxSectionY(); y++) {
                             long pos = SectionPos.asLong(x, y, z);
                             storage.addSection(pos);
                             darknessStorage.addSection(pos);
                         }
                     }
-                    if(newArea.containsInner(x, z)) {
-                        chunksWaitingForPropagation.add(new ChunkPos(x, z));
-                        chunksWaitingForDarknessPropagation.add(new ChunkPos(x, z));
+                    if(newArea.containsInner(x, z) && canEverPropagate(centerX, centerZ, viewDistance, x, z)) {
+                        ChunkPos chunkPos = new ChunkPos(x, z);
+                        if(queuedChunks.add(chunkPos)) { // not already queued or propagated for this area
+                            chunksWaitingForPropagation.add(chunkPos);
+                            chunksWaitingForDarknessPropagation.add(chunkPos);
+                        }
                     }
                 }
             }
         }
+        structureVersion.incrementAndGet();
         viewArea = newArea;
     }
 
@@ -281,10 +367,7 @@ public class ColoredLightEngine {
     }
 
     private void handleBlockUpdate(LevelAccessor level, Queue<LightUpdateRequest> increaseRequests, Queue<LightUpdateRequest> decreaseRequests, BlockPos blockPos) {
-        ColorRGB4 lightColor;
-        synchronized (storageLock) {
-            lightColor = storage.getEntry(blockPos);
-        }
+        ColorRGB4 lightColor = storage.getEntry(blockPos);
         if (lightColor == null) lightColor = ColorRGB4.fromRGB4(0,0,0);
 
         if(lightColor.red4 == 0 && lightColor.green4 == 0 && lightColor.blue4 == 0)
@@ -299,10 +382,7 @@ public class ColoredLightEngine {
     }
 
     private void handleDarknessUpdate(LevelAccessor level, Queue<LightUpdateRequest> increaseRequests, Queue<LightUpdateRequest> decreaseRequests, BlockPos blockPos) {
-        ColorRGB4 darknessColor;
-        synchronized (storageLock) {
-            darknessColor = darknessStorage.getEntry(blockPos);
-        }
+        ColorRGB4 darknessColor = darknessStorage.getEntry(blockPos);
         if (darknessColor == null) darknessColor = ColorRGB4.fromRGB4(0,0,0);
 
         if(darknessColor.red4 == 0 && darknessColor.green4 == 0 && darknessColor.blue4 == 0)
@@ -319,10 +399,7 @@ public class ColoredLightEngine {
     private void requestLightPullIn(Queue<LightUpdateRequest> increaseRequests, BlockPos blockPos) {
         for(var direction : Direction.values()) {
             BlockPos neighbourPos = blockPos.relative(direction);
-            ColorRGB4 neighbourLight;
-            synchronized (storageLock) {
-                neighbourLight = storage.getEntry(neighbourPos);
-            }
+            ColorRGB4 neighbourLight = storage.getEntry(neighbourPos);
             if(neighbourLight == null) continue;
 
             if(neighbourLight.red4 == 0 && neighbourLight.green4 == 0 && neighbourLight.blue4 == 0) continue;
@@ -333,10 +410,7 @@ public class ColoredLightEngine {
     private void requestDarknessPullIn(Queue<LightUpdateRequest> increaseRequests, BlockPos blockPos) {
         for(var direction : Direction.values()) {
             BlockPos neighbourPos = blockPos.relative(direction);
-            ColorRGB4 neighbourDarkness;
-            synchronized (storageLock) {
-                neighbourDarkness = darknessStorage.getEntry(neighbourPos);
-            }
+            ColorRGB4 neighbourDarkness = darknessStorage.getEntry(neighbourPos);
             if(neighbourDarkness == null) continue;
 
             if(neighbourDarkness.red4 == 0 && neighbourDarkness.green4 == 0 && neighbourDarkness.blue4 == 0) continue;
@@ -400,6 +474,7 @@ public class ColoredLightEngine {
         }
         storage.clear();
         darknessStorage.clear();
+        structureVersion.incrementAndGet();
         viewArea = new ViewArea();
         dirtySections.clear();
         blockUpdateIncreaseRequests.clear();
@@ -408,6 +483,7 @@ public class ColoredLightEngine {
         darknessUpdateDecreaseRequests.clear();
         chunksWaitingForPropagation.clear();
         chunksWaitingForDarknessPropagation.clear();
+        queuedChunks.clear();
         delayedChunkUpdates.clear();
         pendingDelayedUpdates.clear();
         
@@ -497,8 +573,9 @@ public class ColoredLightEngine {
                 // Nether flowing lava and fire fire checkBlock constantly, so hasWork can essentially
                 // never go false - the chunk fill-in would finish and the drain would never close.
                 // Report a drain when the chunk queue empties OR when no chunk has propagated for 2s.
-                // The latter matters: chunks whose neighbours never load stay queued forever, so an
-                // "empty queue" is not a condition that can be relied on to ever occur.
+                // The latter matters: the queue never empties, because the corners of this square view
+                // area fall outside the disc of chunks the server actually sends. Waiting for an empty
+                // queue would mean never reporting at all.
                 int chunksRemaining = chunksWaitingForPropagation.size();
                 if (chunksRemaining != lastChunksRemaining) {
                     lastChunksRemaining = chunksRemaining;
@@ -512,12 +589,14 @@ public class ColoredLightEngine {
                     boolean finished = chunksRemaining == 0;
                     boolean stalled = System.nanoTime() - lastChunkNanos > 2_000_000_000L;
                     if (finished || stalled) {
-                        long elapsedMillis = Math.max(1L, (lastChunkNanos - drainStartNanos) / 1_000_000L);
-                        ColorfulLighting.LOGGER.info(
-                                "Colored light drain: {} chunks in {} ms ({} chunks/s), {} still queued [{}], lightUpdateSpeed={}",
-                                drainChunks, elapsedMillis,
-                                String.format("%.1f", drainChunks * 1000.0 / elapsedMillis),
-                                chunksRemaining, finished ? "finished" : "stalled", speed);
+                        if (drainChunks >= DRAIN_LOG_MIN_CHUNKS) {
+                            long elapsedMillis = Math.max(1L, (lastChunkNanos - drainStartNanos) / 1_000_000L);
+                            ColorfulLighting.LOGGER.info(
+                                    "Colored light drain: {} chunks in {} ms ({} chunks/s), {} still queued [{}], lightUpdateSpeed={}",
+                                    drainChunks, elapsedMillis,
+                                    String.format("%.1f", drainChunks * 1000.0 / elapsedMillis),
+                                    chunksRemaining, finished ? "finished" : "stalled", speed);
+                        }
                         drainStartNanos = 0L;
                         drainChunks = 0;
                     }
@@ -585,10 +664,11 @@ public class ColoredLightEngine {
                         blockedSleepMillis = MIN_BLOCKED_SLEEP_MILLIS;
                         sleepMillis = MIN_BLOCKED_SLEEP_MILLIS;
                     } else {
-                        // Only chunks remain and none of them can propagate, because their neighbours
-                        // are not loaded and may never be: the outermost ring of the view area needs
-                        // chunks one step beyond it. Without a backoff the propagator would wake every
-                        // 5ms for the rest of the session, walk the whole chunk order, and find nothing.
+                        // Only chunks remain and none can propagate: the ones left are outside the disc
+                        // of chunks the server sends, or neighbour one that is, so they will never have a
+                        // full 3x3 of loaded neighbours. Without a backoff the propagator would wake every
+                        // 5ms for the rest of the session, walk the chunk order, and find nothing. The
+                        // queue-size check above resets the backoff as soon as anything changes.
                         sleepMillis = blockedSleepMillis;
                         blockedSleepMillis = Math.min(MAX_BLOCKED_SLEEP_MILLIS, blockedSleepMillis * 2L);
                     }
@@ -619,10 +699,8 @@ public class ColoredLightEngine {
             
             ColorRGB4 ready = lightChangesReady.get(blockPos);
             if (ready != null) return ready;
-            
-            synchronized (storageLock) {
-                return storage.getEntry(blockPos);
-            }
+
+            return storage.getEntry(blockPos);
         }
 
         public ColorRGB4 getLatestDarknessColor(BlockPos blockPos) {
@@ -632,9 +710,7 @@ public class ColoredLightEngine {
             ColorRGB4 ready = darknessChangesReady.get(blockPos);
             if (ready != null) return ready;
 
-            synchronized (storageLock) {
-                return darknessStorage.getEntry(blockPos);
-            }
+            return darknessStorage.getEntry(blockPos);
         }
 
         private void performRegionRebuild(ChunkPos centerChunk) {
@@ -693,6 +769,7 @@ public class ColoredLightEngine {
                     }
                 }
             }
+            structureVersion.incrementAndGet();
 
             Queue<LightUpdateRequest> increaseRequests = new LinkedList<>();
             Queue<LightUpdateRequest> darknessIncreaseRequests = new LinkedList<>();

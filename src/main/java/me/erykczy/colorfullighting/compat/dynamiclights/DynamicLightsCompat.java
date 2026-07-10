@@ -278,11 +278,22 @@ public final class DynamicLightsCompat {
      * sources at the given block. No-op while nothing is tracked. Thread-safe.
      */
     public static ColorRGB4 maxWithDynamicLight(int blockX, int blockY, int blockZ, ColorRGB4 base) {
+        int packed = base.red4 << 8 | base.green4 << 4 | base.blue4;
+        int result = maxWithDynamicLightPacked(blockX, blockY, blockZ, packed);
+        if (result == packed) return base;
+        return ColorRGB4.fromRGB4((result >>> 8) & 0x0F, (result >>> 4) & 0x0F, result & 0x0F);
+    }
+
+    /**
+     * Allocation-free equivalent of {@link #maxWithDynamicLight}, taking and returning a packed 12-bit
+     * {@code r << 8 | g << 4 | b}. Sits on the chunk-build hot path, so it must not allocate.
+     */
+    public static int maxWithDynamicLightPacked(int blockX, int blockY, int blockZ, int base) {
         DynamicSource[] sources = entitySources;
         if (sources.length == 0) return base;
 
         double x = blockX + 0.5, y = blockY + 0.5, z = blockZ + 0.5;
-        int r = base.red4, g = base.green4, b = base.blue4;
+        int r = (base >>> 8) & 0x0F, g = (base >>> 4) & 0x0F, b = base & 0x0F;
         for (DynamicSource source : sources) {
             double dx = x - source.x, dy = y - source.y, dz = z - source.z;
             double distanceSquared = dx * dx + dy * dy + dz * dz;
@@ -296,8 +307,7 @@ public final class DynamicLightsCompat {
             g = Math.max(g, Math.round(source.color.green4 * scale));
             b = Math.max(b, Math.round(source.color.blue4 * scale));
         }
-        if (r == base.red4 && g == base.green4 && b == base.blue4) return base;
-        return ColorRGB4.fromRGB4(r, g, b);
+        return r << 8 | g << 4 | b;
     }
 
     public static boolean isDynamicLightBlock(Block block) {
