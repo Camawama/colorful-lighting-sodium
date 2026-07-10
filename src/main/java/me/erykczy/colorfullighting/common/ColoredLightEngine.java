@@ -27,6 +27,8 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -72,7 +74,11 @@ public class ColoredLightEngine {
      * its neighbours yet. Client thread only (updateViewArea and reset).
      */
     private final Set<ChunkPos> queuedChunks = new HashSet<>();
-    private final Set<Long> dirtySections = new HashSet<>();
+    /**
+     * Primitive: this fills and drains fast enough during chunk loading that boxing a Long per section
+     * showed up on the render thread.
+     */
+    private final LongOpenHashSet dirtySections = new LongOpenHashSet();
     private final Set<Long> sectionsToRebuildLater = ConcurrentHashMap.newKeySet();
 
     private final ConcurrentLinkedQueue<DelayedChunkUpdate> delayedChunkUpdates = new ConcurrentLinkedQueue<>();
@@ -179,11 +185,20 @@ public class ColoredLightEngine {
      * roughly ten samples per block face, nearly all of them landing in the section already cached here,
      * so this turns two concurrent-map lookups per sample into two per section.
      */
-    private static final class SectionCursor {
+    public static final class SectionCursor {
         private long sectionPos = Long.MIN_VALUE;
         private int version = -1;
         private ColoredLightSection light;
         private ColoredLightSection darkness;
+    }
+
+    /**
+     * Fetch once and pass to {@link #sampleLightColorPacked(SectionCursor, int, int, int)} for a run of
+     * nearby samples. The returned cursor belongs to the calling thread and must not outlive the call
+     * that acquired it or cross to another thread.
+     */
+    public SectionCursor acquireCursor() {
+        return sectionCursor.get();
     }
 
     public ColorRGB4 sampleLightColor(BlockPos pos) { return sampleLightColor(pos.getX(), pos.getY(), pos.getZ()); }
@@ -193,18 +208,23 @@ public class ColoredLightEngine {
         return ColorRGB4.fromRGB4((packed >>> 8) & 0x0F, (packed >>> 4) & 0x0F, packed & 0x0F);
     }
 
+    public int sampleLightColorPacked(int x, int y, int z) {
+        return sampleLightColorPacked(sectionCursor.get(), x, y, z);
+    }
+
     /**
      * Allocation-free equivalent of {@link #sampleLightColor(int, int, int)}.
      *
+     * @param cursor from {@link #acquireCursor()}, so a caller taking many samples pays one ThreadLocal
+     *               lookup rather than one per sample.
      * @return light minus darkness as a packed 12-bit {@code r << 8 | g << 4 | b}.
      */
-    public int sampleLightColorPacked(int x, int y, int z) {
+    public int sampleLightColorPacked(SectionCursor cursor, int x, int y, int z) {
         if (!enabled) return 0;
 
         long sectionPos = SectionPos.asLong(x >> 4, y >> 4, z >> 4);
         int version = this.structureVersion.get();
 
-        SectionCursor cursor = sectionCursor.get();
         if (cursor.sectionPos != sectionPos || cursor.version != version) {
             cursor.light = storage.getSection(sectionPos);
             cursor.darkness = darknessStorage.getSection(sectionPos);
@@ -425,28 +445,35 @@ public class ColoredLightEngine {
 
         lightPropagator.applyReadyChanges();
 
-        Set<Long> sectionsToUpdate;
+        long[] sectionsToUpdate;
         synchronized (dirtySections) {
             if (dirtySections.isEmpty()) {
                 return;
             }
-            sectionsToUpdate = new HashSet<>(dirtySections);
+            sectionsToUpdate = dirtySections.toLongArray();
             dirtySections.clear();
         }
 
-        for (Long dirtySection : sectionsToUpdate) {
-            SectionPos sectionPos = SectionPos.of(dirtySection);
-            level.setSectionDirty(sectionPos.x(), sectionPos.y(), sectionPos.z());
+        // Hoisted out of the loop below: it runs once per dirty section per frame, and flying through
+        // fresh terrain makes that thousands of iterations. ModList.isLoaded hashes a string every call.
+        SodiumWorldRendererAccessor sodiumRenderer = null;
+        if (SodiumCompat.isSodiumLoaded() && Minecraft.getInstance().levelRenderer instanceof SodiumWorldRendererAccessor accessor) {
+            sodiumRenderer = accessor;
+        }
+        boolean flywheelTracking = net.minecraftforge.fml.ModList.get().isLoaded("flywheel") && FlywheelCompat.isAvailable();
+
+        for (long dirtySection : sectionsToUpdate) {
+            int sectionX = SectionPos.x(dirtySection);
+            int sectionY = SectionPos.y(dirtySection);
+            int sectionZ = SectionPos.z(dirtySection);
+            level.setSectionDirty(sectionX, sectionY, sectionZ);
 
             // Force Sodium rebuild if present
-            if (SodiumCompat.isSodiumLoaded()) {
-                var renderer = Minecraft.getInstance().levelRenderer;
-                if (renderer instanceof SodiumWorldRendererAccessor sodiumRenderer) {
-                    sodiumRenderer.scheduleRebuild(sectionPos.x(), sectionPos.y(), sectionPos.z(), true);
-                }
+            if (sodiumRenderer != null) {
+                sodiumRenderer.scheduleRebuild(sectionX, sectionY, sectionZ, true);
             }
 
-            if (net.minecraftforge.fml.ModList.get().isLoaded("flywheel") && FlywheelCompat.isAvailable()) {
+            if (flywheelTracking) {
                 FlywheelCompat.getInstance().flywheelColoredLightStorage.recollectSectionIfTracked(dirtySection);
             }
         }
@@ -520,6 +547,13 @@ public class ColoredLightEngine {
         private final ConcurrentHashMap<BlockPos, ColorRGB4> darknessChangesReady = new ConcurrentHashMap<>();
         private final Lock lightChangesReadyLock = new ReentrantLock();
         private final Lock darknessChangesReadyLock = new ReentrantLock();
+        /**
+         * Sections touched by the matching ready batch, computed on this thread when the batch is published
+         * rather than on the render thread when it is applied. Each guarded by the lock of its batch, so a
+         * section mark is never visible to the renderer before the storage write it belongs to.
+         */
+        private final LongOpenHashSet lightReadyDirtySections = new LongOpenHashSet();
+        private final LongOpenHashSet darknessReadyDirtySections = new LongOpenHashSet();
         private volatile boolean running;
 
         private final ChunkOrder lightChunkOrder = new ChunkOrder();
@@ -950,15 +984,14 @@ public class ColoredLightEngine {
             try {
                 if (!lightChangesReady.isEmpty()) {
                     synchronized (storageLock) {
-                        synchronized (dirtySections) {
-                            for (var entry : lightChangesReady.entrySet()) {
-                                storage.setEntryUnsafe(entry.getKey(), entry.getValue());
-                                SectionPos.aroundAndAtBlockPos(entry.getKey(), dirtySections::add);
-                            }
+                        for (var entry : lightChangesReady.entrySet()) {
+                            storage.setEntryUnsafe(entry.getKey(), entry.getValue());
                         }
                     }
                     lightChangesReady.clear();
                 }
+                // After the writes above, so the renderer never rebuilds a section before its colours land.
+                publishDirtySections(lightReadyDirtySections);
             } finally {
                 lightChangesReadyLock.unlock();
             }
@@ -967,18 +1000,29 @@ public class ColoredLightEngine {
             try {
                 if (!darknessChangesReady.isEmpty()) {
                     synchronized (storageLock) {
-                        synchronized (dirtySections) {
-                            for (var entry : darknessChangesReady.entrySet()) {
-                                darknessStorage.setEntryUnsafe(entry.getKey(), entry.getValue());
-                                SectionPos.aroundAndAtBlockPos(entry.getKey(), dirtySections::add);
-                            }
+                        for (var entry : darknessChangesReady.entrySet()) {
+                            darknessStorage.setEntryUnsafe(entry.getKey(), entry.getValue());
                         }
                     }
                     darknessChangesReady.clear();
                 }
+                publishDirtySections(darknessReadyDirtySections);
             } finally {
                 darknessChangesReadyLock.unlock();
             }
+        }
+
+        /**
+         * Caller must hold the lock guarding {@code batchDirtySections}. May hold more sections than the
+         * batch that was just applied, because performRegionRebuild drops ready entries without dropping
+         * their marks; a redundant section rebuild is harmless, a missing one is not.
+         */
+        private void publishDirtySections(LongOpenHashSet batchDirtySections) {
+            if (batchDirtySections.isEmpty()) return;
+            synchronized (dirtySections) {
+                dirtySections.addAll(batchDirtySections);
+            }
+            batchDirtySections.clear();
         }
 
         /**
@@ -988,7 +1032,9 @@ public class ColoredLightEngine {
             if (!lightChangesInProgress.isEmpty()) {
                 lightChangesReadyLock.lock();
                 try {
-                    lightChangesReady.putAll(lightChangesInProgress);
+                    for (var entry : lightChangesInProgress.entrySet()) {
+                        markReady(lightChangesReady, lightReadyDirtySections, entry.getKey(), entry.getValue());
+                    }
                 } finally {
                     lightChangesReadyLock.unlock();
                 }
@@ -998,7 +1044,9 @@ public class ColoredLightEngine {
             if (!darknessChangesInProgress.isEmpty()) {
                 darknessChangesReadyLock.lock();
                 try {
-                    darknessChangesReady.putAll(darknessChangesInProgress);
+                    for (var entry : darknessChangesInProgress.entrySet()) {
+                        markReady(darknessChangesReady, darknessReadyDirtySections, entry.getKey(), entry.getValue());
+                    }
                 } finally {
                     darknessChangesReadyLock.unlock();
                 }
@@ -1007,31 +1055,52 @@ public class ColoredLightEngine {
         }
 
         /**
+         * Propagation relaxes the same block many times, so a block reaches the ready batch again and again.
+         * Only its first arrival needs the sections around it marked — every later one would recompute marks
+         * the batch already holds. Caller must hold the lock guarding both collections.
+         */
+        private void markReady(Map<BlockPos, ColorRGB4> ready, LongOpenHashSet readyDirty, BlockPos blockPos, ColorRGB4 color) {
+            if (ready.put(blockPos, color) == null) {
+                SectionPos.aroundAndAtBlockPos(blockPos, readyDirty::add);
+            }
+        }
+
+
+        /**
          * apply light changes in progress directly to storage
          */
         private void applyChangesDirectly() {
             if (!lightChangesInProgress.isEmpty()) {
                 synchronized (storageLock) {
-                    synchronized (dirtySections) {
-                        for (var entry : lightChangesInProgress.entrySet()) {
-                            storage.setEntryUnsafe(entry.getKey(), entry.getValue());
-                            SectionPos.aroundAndAtBlockPos(entry.getKey(), dirtySections::add);
-                        }
+                    for (var entry : lightChangesInProgress.entrySet()) {
+                        storage.setEntryUnsafe(entry.getKey(), entry.getValue());
                     }
                 }
+                markDirty(lightChangesInProgress.keySet());
                 lightChangesInProgress.clear();
             }
 
             if (!darknessChangesInProgress.isEmpty()) {
                 synchronized (storageLock) {
-                    synchronized (dirtySections) {
-                        for (var entry : darknessChangesInProgress.entrySet()) {
-                            darknessStorage.setEntryUnsafe(entry.getKey(), entry.getValue());
-                            SectionPos.aroundAndAtBlockPos(entry.getKey(), dirtySections::add);
-                        }
+                    for (var entry : darknessChangesInProgress.entrySet()) {
+                        darknessStorage.setEntryUnsafe(entry.getKey(), entry.getValue());
                     }
                 }
+                markDirty(darknessChangesInProgress.keySet());
                 darknessChangesInProgress.clear();
+            }
+        }
+
+        /**
+         * Marks straight into the accumulated set rather than into a per-batch one: sections repeat heavily
+         * across batches, and an add that hits an existing entry is far cheaper than growing a fresh set.
+         * Runs on the propagator thread, after the storage writes the marks refer to.
+         */
+        private void markDirty(Set<BlockPos> changedBlocks) {
+            synchronized (dirtySections) {
+                for (BlockPos blockPos : changedBlocks) {
+                    SectionPos.aroundAndAtBlockPos(blockPos, dirtySections::add);
+                }
             }
         }
 

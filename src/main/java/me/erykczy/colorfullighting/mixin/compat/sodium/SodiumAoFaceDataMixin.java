@@ -44,7 +44,7 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
      * common path: the emissive branch is the only one that needs a BlockPos or a BlockState.
      */
     @Unique
-    private int getBaseColoredLight(LightDataAccess cache, int x, int y, int z) {
+    private int getBaseColoredLight(LightDataAccess cache, ColoredLightEngine.SectionCursor cursor, int x, int y, int z) {
         ColoredLightEngine engine = ColoredLightEngine.getInstance();
         int word = cache.get(x, y, z);
 
@@ -71,14 +71,14 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
                 }
             }
         }
-        return SodiumPackedLightData.packDataFromRGB4(skyLight, engine.sampleLightColorPacked(x, y, z));
+        return SodiumPackedLightData.packDataFromRGB4(skyLight, engine.sampleLightColorPacked(cursor, x, y, z));
     }
 
     @Unique
-    private int getFilteredNeighborLight(LightDataAccess cache, int x, int y, int z) {
+    private int getFilteredNeighborLight(LightDataAccess cache, ColoredLightEngine.SectionCursor cursor, int x, int y, int z) {
         // Removed aggressive filtering logic to fix sharp lines at block edges.
         // This allows the corner light to properly blend with neighbors, even if they are bright light sources.
-        return getBaseColoredLight(cache, x, y, z);
+        return getBaseColoredLight(cache, cursor, x, y, z);
     }
 
     @Unique
@@ -193,6 +193,9 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
         final int y = pos.getY();
         final int z = pos.getZ();
 
+        // One ThreadLocal lookup for the ten samples below, instead of one each.
+        final ColoredLightEngine.SectionCursor cursor = ColoredLightEngine.getInstance().acquireCursor();
+
         final int adjX;
         final int adjY;
         final int adjZ;
@@ -212,47 +215,47 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
         Direction[] faces = NEIGHBOR_FACES[direction.get3DDataValue()];
 
         final int e0 = cache.get(adjX, adjY, adjZ, faces[0]);
-        final int e0lm = getFilteredNeighborLight(cache, adjX + faces[0].getStepX(), adjY + faces[0].getStepY(), adjZ + faces[0].getStepZ());
+        final int e0lm = getFilteredNeighborLight(cache, cursor, adjX + faces[0].getStepX(), adjY + faces[0].getStepY(), adjZ + faces[0].getStepZ());
         final boolean e0op = LightDataAccess.unpackOP(e0);
 
         final int e1 = cache.get(adjX, adjY, adjZ, faces[1]);
-        final int e1lm = getFilteredNeighborLight(cache, adjX + faces[1].getStepX(), adjY + faces[1].getStepY(), adjZ + faces[1].getStepZ());
+        final int e1lm = getFilteredNeighborLight(cache, cursor, adjX + faces[1].getStepX(), adjY + faces[1].getStepY(), adjZ + faces[1].getStepZ());
         final boolean e1op = LightDataAccess.unpackOP(e1);
 
         final int e2 = cache.get(adjX, adjY, adjZ, faces[2]);
-        final int e2lm = getFilteredNeighborLight(cache, adjX + faces[2].getStepX(), adjY + faces[2].getStepY(), adjZ + faces[2].getStepZ());
+        final int e2lm = getFilteredNeighborLight(cache, cursor, adjX + faces[2].getStepX(), adjY + faces[2].getStepY(), adjZ + faces[2].getStepZ());
         final boolean e2op = LightDataAccess.unpackOP(e2);
 
         final int e3 = cache.get(adjX, adjY, adjZ, faces[3]);
-        final int e3lm = getFilteredNeighborLight(cache, adjX + faces[3].getStepX(), adjY + faces[3].getStepY(), adjZ + faces[3].getStepZ());
+        final int e3lm = getFilteredNeighborLight(cache, cursor, adjX + faces[3].getStepX(), adjY + faces[3].getStepY(), adjZ + faces[3].getStepZ());
         final boolean e3op = LightDataAccess.unpackOP(e3);
 
         final int c0lm;
         if (e2op && e0op) {
             c0lm = e0lm;
         } else {
-            c0lm = getFilteredNeighborLight(cache, adjX + faces[0].getStepX() + faces[2].getStepX(), adjY + faces[0].getStepY() + faces[2].getStepY(), adjZ + faces[0].getStepZ() + faces[2].getStepZ());
+            c0lm = getFilteredNeighborLight(cache, cursor, adjX + faces[0].getStepX() + faces[2].getStepX(), adjY + faces[0].getStepY() + faces[2].getStepY(), adjZ + faces[0].getStepZ() + faces[2].getStepZ());
         }
 
         final int c1lm;
         if (e3op && e0op) {
             c1lm = e0lm;
         } else {
-            c1lm = getFilteredNeighborLight(cache, adjX + faces[0].getStepX() + faces[3].getStepX(), adjY + faces[0].getStepY() + faces[3].getStepY(), adjZ + faces[0].getStepZ() + faces[3].getStepZ());
+            c1lm = getFilteredNeighborLight(cache, cursor, adjX + faces[0].getStepX() + faces[3].getStepX(), adjY + faces[0].getStepY() + faces[3].getStepY(), adjZ + faces[0].getStepZ() + faces[3].getStepZ());
         }
 
         final int c2lm;
         if (e2op && e1op) {
             c2lm = e1lm;
         } else {
-            c2lm = getFilteredNeighborLight(cache, adjX + faces[1].getStepX() + faces[2].getStepX(), adjY + faces[1].getStepY() + faces[2].getStepY(), adjZ + faces[1].getStepZ() + faces[2].getStepZ());
+            c2lm = getFilteredNeighborLight(cache, cursor, adjX + faces[1].getStepX() + faces[2].getStepX(), adjY + faces[1].getStepY() + faces[2].getStepY(), adjZ + faces[1].getStepZ() + faces[2].getStepZ());
         }
 
         final int c3lm;
         if (e3op && e1op) {
             c3lm = e1lm;
         } else {
-            c3lm = getFilteredNeighborLight(cache, adjX + faces[1].getStepX() + faces[3].getStepX(), adjY + faces[1].getStepY() + faces[3].getStepY(), adjZ + faces[1].getStepZ() + faces[3].getStepZ());
+            c3lm = getFilteredNeighborLight(cache, cursor, adjX + faces[1].getStepX() + faces[3].getStepX(), adjY + faces[1].getStepY() + faces[3].getStepY(), adjZ + faces[1].getStepZ() + faces[3].getStepZ());
         }
 
         int[] cb = this.lm;
@@ -260,9 +263,9 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
         final int calm;
 
         if (offset && LightDataAccess.unpackFO(adjWord)) {
-            calm = getFilteredNeighborLight(cache, x, y, z);
+            calm = getFilteredNeighborLight(cache, cursor, x, y, z);
         } else {
-            calm = getFilteredNeighborLight(cache, adjX, adjY, adjZ);
+            calm = getFilteredNeighborLight(cache, cursor, adjX, adjY, adjZ);
         }
 
         cb[0] = blend(e3lm, e0lm, c1lm, calm);
