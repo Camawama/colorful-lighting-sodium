@@ -131,14 +131,19 @@ Define what light color entities emit (REQUIRES [LIVELY LIGHTING](https://github
 
 ## items.json
 
-Define what light color held items emit (REQUIRES [LIVELY LIGHTING](https://github.com/Camawama/LivelyLighting)).
+Define what light color held items emit (REQUIRES a dynamic light mod such as [LIVELY LIGHTING](https://github.com/Camawama/LivelyLighting)).
 
 ```
 {
-    "minecraft:torch": "#00FF00",     // color in hex
-    "minecraft:lava_bucket": "orange" // dye name
+    "minecraft:torch": "#00FF00",       // color in hex
+    "minecraft:lava_bucket": "orange",  // dye name
+    "minecraft:glowstone": "yellow;2"   // override light level after ';' (hex 0..F); held glowstone glows at 2 even though the block stays 15
 }
 ```
+
+Without an explicit level, a held block glows at its block's light level (glowstone item = 15) and other items glow at a mid-range level. The `;level` override takes precedence for both.
+
+> Note: with Lively Lighting the light level is chosen by Lively Lighting itself; the `;level` override applies to the client-side dynamic light mods (SodiumDynamicLights, Torcy, AtomicStryker's Dynamic Lights).
 
 ## moon_phases.json
 

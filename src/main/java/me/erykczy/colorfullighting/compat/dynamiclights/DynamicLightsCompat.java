@@ -17,10 +17,8 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.phys.AABB;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.registries.ForgeRegistries;
 import org.jetbrains.annotations.Nullable;
@@ -60,6 +58,8 @@ public final class DynamicLightsCompat {
     private static final int REBUILD_RANGE = 8;
     /** A tracked source must move this far (squared) before its surroundings are remeshed. */
     private static final double REBUILD_MOVE_THRESHOLD_SQUARED = 0.5 * 0.5;
+    /** A colored entity within this distance of a dynamic light block lends it its color. */
+    private static final double DYNAMIC_BLOCK_COLOR_RADIUS_SQUARED = 4.5 * 4.5;
 
     /** Light-emitting blocks placed by dynamic lighting mods, colored by the entity that caused them. */
     private static final Set<ResourceLocation> DYNAMIC_LIGHT_BLOCKS = Set.of(
@@ -73,6 +73,14 @@ public final class DynamicLightsCompat {
     private static final DynamicSource[] NO_SOURCES = new DynamicSource[0];
     // written on the client thread each tick, read from chunk-build worker threads
     private static volatile DynamicSource[] entitySources = NO_SOURCES;
+
+    private record ColorSource(double x, double y, double z, ColorRGB4 color) {}
+    private static final ColorSource[] NO_COLOR_SOURCES = new ColorSource[0];
+    // colored entities snapshotted each client tick, read from the light-propagator thread to color
+    // dynamic light blocks without ever touching the live (non-thread-safe) entity lists off-thread
+    private static volatile ColorSource[] blockColorSources = NO_COLOR_SOURCES;
+    // set once dynamic light blocks are known to exist, so vanilla worlds skip the per-tick color scan
+    private static volatile boolean trackBlockColors;
 
     private static SodiumDynamicLightsHook sdlHook;
     private static boolean trackEntities;
@@ -108,12 +116,13 @@ public final class DynamicLightsCompat {
      * chunk-build threads never touches live collections. Called once per client tick.
      */
     public static void clientTick() {
-        if (sdlHook == null && !trackEntities) return;
+        if (sdlHook == null && !trackEntities && !trackBlockColors) return;
 
         ColoredLightEngine engine = ColoredLightEngine.getInstance();
         ClientLevel level = Minecraft.getInstance().level;
         if (engine == null || !engine.isEnabled() || level == null) {
             entitySources = NO_SOURCES;
+            blockColorSources = NO_COLOR_SOURCES;
             trackedAnchors = new HashMap<>();
             return;
         }
@@ -130,10 +139,15 @@ public final class DynamicLightsCompat {
                 ));
             }
         }
+        // colored entities are only needed to color dynamic light blocks; skip the scan otherwise
+        List<ColorSource> colors = (trackEntities || trackBlockColors) ? new ArrayList<>() : null;
         if (trackEntities) {
-            collectTrackedEntities(level, sources);
+            collectTrackedEntities(level, sources, colors);
+        } else if (colors != null) {
+            collectBlockColors(level, colors);
         }
         entitySources = sources.isEmpty() ? NO_SOURCES : sources.toArray(NO_SOURCES);
+        blockColorSources = (colors == null || colors.isEmpty()) ? NO_COLOR_SOURCES : colors.toArray(NO_COLOR_SOURCES);
     }
 
     /**
@@ -141,17 +155,22 @@ public final class DynamicLightsCompat {
      * appeared, changed, moved or vanished — client-lighting mods leave no light data or chunk
      * updates behind for the engine to react to, so this drives both the light and its updates.
      */
-    private static void collectTrackedEntities(ClientLevel level, List<DynamicSource> sources) {
+    private static void collectTrackedEntities(ClientLevel level, List<DynamicSource> sources, @Nullable List<ColorSource> colors) {
         Map<Integer, DynamicSource> anchors = new HashMap<>();
         Set<Long> sectionsToRebuild = null;
 
         for (Entity entity : level.entitiesForRendering()) {
             if (entity.isSpectator()) continue;
+
+            ColorRGB4 resolved = resolveEntityColor(entity);
+            if (resolved != null && colors != null) {
+                colors.add(new ColorSource(entity.getX(), entity.getY(), entity.getZ(), resolved));
+            }
+
             int luminance = getEntityLuminance(entity);
             if (luminance <= 0) continue;
 
-            ColorRGB4 color = resolveEntityColor(entity);
-            if (color == null) color = Config.defaultColor;
+            ColorRGB4 color = resolved != null ? resolved : Config.defaultColor;
             DynamicSource source = new DynamicSource(entity.getX(), entity.getEyeY(), entity.getZ(), luminance, color);
             sources.add(source);
 
@@ -174,6 +193,18 @@ public final class DynamicLightsCompat {
 
         trackedAnchors = anchors;
         scheduleRebuilds(sectionsToRebuild);
+    }
+
+    /**
+     * Snapshots colored entities for coloring dynamic light blocks placed by server-side mods
+     * (Lively Lighting), without the tracking/remesh work that client-lighting mods need.
+     */
+    private static void collectBlockColors(ClientLevel level, List<ColorSource> colors) {
+        for (Entity entity : level.entitiesForRendering()) {
+            if (entity.isSpectator()) continue;
+            ColorRGB4 color = resolveEntityColor(entity);
+            if (color != null) colors.add(new ColorSource(entity.getX(), entity.getY(), entity.getZ(), color));
+        }
     }
 
     private static boolean movedFar(DynamicSource anchor, DynamicSource now) {
@@ -251,18 +282,23 @@ public final class DynamicLightsCompat {
      */
     @Nullable
     public static ColorRGB4 getDynamicBlockLightColor(BlockPos lightBlockPos) {
-        Level level = Minecraft.getInstance().level;
-        if (level == null) return null;
+        // Runs on the light-propagator thread, so it must never touch the live entity lists: read the
+        // per-tick snapshot instead. Seeing a dynamic light block also arms the colored-entity scan,
+        // which stays off for vanilla worlds that never place these blocks.
+        ColorSource[] sources = blockColorSources;
+        if (sources.length == 0) {
+            trackBlockColors = true;
+            return null;
+        }
 
-        List<Entity> nearbyEntities = level.getEntitiesOfClass(Entity.class, new AABB(lightBlockPos).inflate(3.0));
+        double x = lightBlockPos.getX() + 0.5, y = lightBlockPos.getY() + 0.5, z = lightBlockPos.getZ() + 0.5;
         ColorRGB4 bestColor = null;
-        double bestDistanceSquared = Double.MAX_VALUE;
-        for (Entity entity : nearbyEntities) {
-            double distanceSquared = entity.distanceToSqr(lightBlockPos.getX() + 0.5, lightBlockPos.getY() + 0.5, lightBlockPos.getZ() + 0.5);
+        double bestDistanceSquared = DYNAMIC_BLOCK_COLOR_RADIUS_SQUARED;
+        for (ColorSource source : sources) {
+            double dx = x - source.x, dy = y - source.y, dz = z - source.z;
+            double distanceSquared = dx * dx + dy * dy + dz * dz;
             if (distanceSquared >= bestDistanceSquared) continue;
-            ColorRGB4 color = resolveEntityColor(entity);
-            if (color == null) continue;
-            bestColor = color;
+            bestColor = source.color;
             bestDistanceSquared = distanceSquared;
         }
         return bestColor;
@@ -359,13 +395,32 @@ public final class DynamicLightsCompat {
 
     private static int getStackLuminance(ItemStack stack) {
         if (stack.isEmpty()) return 0;
+        ResourceLocation itemId = ForgeRegistries.ITEMS.getKey(stack.getItem());
+
+        // an items.json brightness overrides everything, so a held item can differ from its block
+        // (e.g. glowstone block stays 15 while the held glowstone item is configured to 2)
+        Config.ColorEmitter itemEmitter = itemId == null ? null : Config.getItemEmitter(itemId);
+        if (itemEmitter != null && itemEmitter.overriddenBrightness4() >= 0) {
+            return itemEmitter.overriddenBrightness4();
+        }
+
+        // otherwise a held block glows like the same block placed in the world: an emitters.json
+        // brightness override if present, else the block's vanilla emission (glowstone item == 15)
         if (stack.getItem() instanceof BlockItem blockItem) {
+            ResourceLocation blockId = ForgeRegistries.BLOCKS.getKey(blockItem.getBlock());
+            if (blockId != null) {
+                Config.BlockEmitterConfig config = Config.getBlockEmitterConfig(blockId);
+                if (config != null && config.defaultEmitter != null && config.defaultEmitter.overriddenBrightness4() >= 0) {
+                    return config.defaultEmitter.overriddenBrightness4();
+                }
+            }
             int emission = blockItem.getBlock().defaultBlockState().getLightEmission();
             if (emission > 0) return emission;
         }
-        // non-block items (lava bucket, ...) have no block emission; a configured color marks them luminous
-        ResourceLocation itemId = ForgeRegistries.ITEMS.getKey(stack.getItem());
-        if (itemId != null && (Config.getItemEmitter(itemId) != null || Config.getBlockEmitterConfig(itemId) != null)) return 8;
+
+        // non-block items (lava bucket, ...) have no block emission; a configured color marks them
+        // luminous, and with no explicit brightness they fall back to a mid-range level
+        if (itemEmitter != null || (itemId != null && Config.getBlockEmitterConfig(itemId) != null)) return 8;
         return 0;
     }
 }
