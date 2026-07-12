@@ -14,9 +14,9 @@ vec3 cl_sampleColor(sampler2D lm, vec3 tintColor) {
     vec3 sampleColor = clamp(tintColor, vec3(0.5 / 16.0), vec3(15.5 / 16.0));
     // the "vanilla" implementation of colorful lighting samples the block lighting per-channel
     return vec3(
-        texture2D(lm, vec2(sampleColor.r, 0)).r,
-        texture2D(lm, vec2(sampleColor.g, 0)).r,
-        texture2D(lm, vec2(sampleColor.b, 0)).r
+        texture2D(lm, vec2(sampleColor.r, 1/16.0)).r,
+        texture2D(lm, vec2(sampleColor.g, 1/16.0)).r,
+        texture2D(lm, vec2(sampleColor.b, 1/16.0)).r
     );
 }
 

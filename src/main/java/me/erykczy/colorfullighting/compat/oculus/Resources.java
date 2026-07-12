@@ -9,7 +9,9 @@ public class Resources {
 	public static final String BLEND_LIGHT_INTERNAL;
 	public static final String BLEND_LIGHT_FULL;
 	
-	private static String readStream(InputStream is) throws IOException {
+	public static final String LIGHT_DATA_FULL;
+	
+	public static String readStream(InputStream is) throws IOException {
 		String str = new String(is.readAllBytes());
 		try {
 			is.close();
@@ -25,6 +27,7 @@ public class Resources {
 			DECODE_LIGHT_FULL = readStream(cl.getResourceAsStream("internal/cl_decodeLight_opted.glsl"));
 			BLEND_LIGHT_INTERNAL = readStream(cl.getResourceAsStream("internal/cl_blendLight.glsl"));
 			BLEND_LIGHT_FULL = readStream(cl.getResourceAsStream("internal/cl_blendLight_opted.glsl"));
+			LIGHT_DATA_FULL = readStream(cl.getResourceAsStream("internal/cl_light_data.glsl"));
 		} catch (Throwable err) {
 			throw new RuntimeException(err);
 		}

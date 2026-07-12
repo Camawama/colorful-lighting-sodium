@@ -1,10 +1,8 @@
 package me.erykczy.colorfullighting.mixin.compat.iris;
 
-import me.erykczy.colorfullighting.accessors.iris.CustomShaderProperties;
+import me.erykczy.colorfullighting.common.accessors.iris.CustomShaderProperties;
 import net.irisshaders.iris.helpers.OptionalBoolean;
-import net.irisshaders.iris.shaderpack.option.ShaderPackOptions;
 import net.irisshaders.iris.shaderpack.properties.ShaderProperties;
-import org.checkerframework.checker.units.qual.A;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;

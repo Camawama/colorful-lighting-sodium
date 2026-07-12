@@ -9,11 +9,10 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.zip.ZipFile;
 
-import me.erykczy.colorfullighting.accessors.iris.CustomShaderProperties;
+import me.erykczy.colorfullighting.common.accessors.iris.CustomShaderProperties;
 import me.erykczy.colorfullighting.mixin.compat.iris.ShaderPackAccessor;
 import net.irisshaders.iris.Iris;
 import net.irisshaders.iris.shaderpack.ShaderPack;
-import net.irisshaders.iris.shaderpack.option.ShaderPackOptions;
 import net.irisshaders.iris.shaderpack.properties.ShaderProperties;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.loading.FMLPaths;

@@ -12,7 +12,7 @@ import io.github.douira.glsl_transformer.ast.query.match.HintedMatcher;
 import io.github.douira.glsl_transformer.ast.transform.ASTInjectionPoint;
 import io.github.douira.glsl_transformer.ast.transform.ASTParser;
 import io.github.douira.glsl_transformer.parser.ParseShape;
-import me.erykczy.colorfullighting.accessors.iris.CustomShaderProperties;
+import me.erykczy.colorfullighting.common.accessors.iris.CustomShaderProperties;
 import me.erykczy.colorfullighting.compat.oculus.specific.ShaderSpecificPatcher;
 import me.erykczy.colorfullighting.mixin.compat.iris.ShaderPackAccessor;
 import net.irisshaders.iris.Iris;
@@ -21,9 +21,7 @@ import net.irisshaders.iris.pipeline.transform.PatchShaderType;
 import net.irisshaders.iris.pipeline.transform.parameter.Parameters;
 import net.irisshaders.iris.shaderpack.properties.ShaderProperties;
 import net.irisshaders.iris.shaderpack.texture.TextureStage;
-import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.w3c.dom.Text;
 
 import java.util.Map;
 import java.util.OptionalInt;
@@ -81,9 +79,6 @@ public class CommonTransformations {
 		Patch patch = parameters.patch;
 		PatchShaderType type = parameters.type;
 		
-		if (!stage.equals(TextureStage.GBUFFERS_AND_SHADOW))
-			return;
-		
 		// TODO: this is ugly, and I'd like to change it, but it should work...
 		//       it's just ugly is all
 		ShaderProperties properties = ((ShaderPackAccessor) Iris.getCurrentPack().get()).getShaderProperties();
@@ -96,6 +91,18 @@ public class CommonTransformations {
 		boolean isShaderPackInUse = OculusCompat.isShaderPackInUse();
 		String packName = isShaderPackInUse ? OculusCompat.getCurrentShaderPackName() : null;
 		if (OculusCompat.isShaderLegacyPatched(packName)) return;
+		
+		if (!stage.equals(TextureStage.GBUFFERS_AND_SHADOW)) {
+			if (status == 1) {
+				ShaderSpecificPatcher.runAll(
+						t, tree,
+						root, parameters,
+						core, type
+				);
+			}
+			
+			return;
+		}
 		
 		if (status == 3) {
 			if (type == PatchShaderType.VERTEX) {
@@ -117,6 +124,16 @@ public class CommonTransformations {
 					ExternalDeclaration declr = unit.getChildren().get(i);
 					tree.injectNode(ASTInjectionPoint.BEFORE_FUNCTIONS, declr);
 				}
+			}
+			
+			TranslationUnit unit = ASTParser._getInternalInstance().parseTranslationUnit(
+					root,
+					Resources.BLEND_LIGHT_FULL
+			);
+			
+			for (int i = unit.getChildren().size() - 1; i >= 0; i--) {
+				ExternalDeclaration declr = unit.getChildren().get(i);
+				tree.injectNode(ASTInjectionPoint.BEFORE_FUNCTIONS, declr);
 			}
 		} else {
 			if (type == PatchShaderType.FRAGMENT) {
@@ -179,22 +196,22 @@ public class CommonTransformations {
 					}
 				}
 				
-				if (!found) return;
-				
-				TranslationUnit unit = ASTParser._getInternalInstance().parseTranslationUnit(
-						root,
-						Resources.DECODE_LIGHT_INTERNAL
-				);
-				
-				for (int i = unit.getChildren().size() - 1; i >= 0; i--) {
-					tree.injectNode(ASTInjectionPoint.BEFORE_FUNCTIONS, unit.getChildren().get(i));
+				if (found) {
+					TranslationUnit unit = ASTParser._getInternalInstance().parseTranslationUnit(
+							root,
+							Resources.DECODE_LIGHT_INTERNAL
+					);
+					
+					for (int i = unit.getChildren().size() - 1; i >= 0; i--) {
+						tree.injectNode(ASTInjectionPoint.BEFORE_FUNCTIONS, unit.getChildren().get(i));
+					}
+					
+					root.replaceReferenceExpressions(
+							t,
+							"gl_MultiTexCoord1",
+							"colorful_lighting_decodeLight(gl_MultiTexCoord1)"
+					);
 				}
-				
-				root.replaceReferenceExpressions(
-						t,
-						"gl_MultiTexCoord1",
-						"colorful_lighting_decodeLight(gl_MultiTexCoord1)"
-				);
 			}
 			
 			if (status == 1) {

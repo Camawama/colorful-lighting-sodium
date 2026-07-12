@@ -43,9 +43,11 @@
     "compat.iris.IrisMacroInjection",
 	"compat.iris.CommonTransformerMixin",
 	"compat.iris.ShaderPropertiesMixin",
+	"compat.iris.ShaderPackMixin",
 	"compat.iris.ShaderPackAccessor",
 	"compat.iris.debug.PaCoShaderLoadHook",
-	"compat.iris.debug.GlShaderMixin"
+	"compat.iris.debug.GlShaderMixin",
+	"compat.iris.debug.FixCauseException"
   ],
   "injectors": {
     "defaultRequire": 1
