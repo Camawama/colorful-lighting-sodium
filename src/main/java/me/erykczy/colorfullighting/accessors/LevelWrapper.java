@@ -3,6 +3,7 @@ package me.erykczy.colorfullighting.accessors;
 import me.erykczy.colorfullighting.common.Config;
 import me.erykczy.colorfullighting.common.accessors.BlockStateAccessor;
 import me.erykczy.colorfullighting.common.accessors.LevelAccessor;
+import me.erykczy.colorfullighting.compat.valkyrienskies.VsCompat;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.core.BlockPos;
@@ -45,7 +46,10 @@ public class LevelWrapper implements LevelAccessor {
 
     @Override
     public boolean hasChunk(ChunkPos chunkPos) {
-        return level.getChunkSource().hasChunk(chunkPos.x, chunkPos.z);
+        if (level.getChunkSource().hasChunk(chunkPos.x, chunkPos.z)) return true;
+        // Shipyard chunks that hold no ship blocks are never sent to the client: missing there
+        // means empty, not "still loading", so propagation may treat them as loaded air.
+        return VsCompat.isKnownEmptyShipChunk(chunkPos.x, chunkPos.z);
     }
 
     @Override
@@ -83,10 +87,15 @@ public class LevelWrapper implements LevelAccessor {
         );
     }
 
+    private static final BlockStateAccessor AIR_STATE = new BlockStateWrapper(net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+
     @Override
     public BlockStateAccessor getBlockState(BlockPos pos) {
         var chunk = level.getChunkSource().getChunk(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ()), ChunkStatus.FULL, false);
         if(chunk == null) {
+            // see hasChunk: an absent block-less shipyard chunk is known to be air
+            if (VsCompat.isKnownEmptyShipChunk(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ())))
+                return AIR_STATE;
             return null;
         }
         var section = chunk.getSection(chunk.getSectionIndex(pos.getY()));

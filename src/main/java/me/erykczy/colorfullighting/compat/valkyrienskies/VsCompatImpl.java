@@ -1,0 +1,125 @@
+package me.erykczy.colorfullighting.compat.valkyrienskies;
+
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import me.erykczy.colorfullighting.common.ColoredLightEngine;
+import me.erykczy.colorfullighting.common.ViewArea;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.world.level.ChunkPos;
+import org.valkyrienskies.core.api.ships.Ship;
+
+import java.lang.reflect.Method;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * The only class that touches Valkyrien Skies types; VsCompat loads it lazily once VS is known to
+ * be installed.
+ *
+ * <p>The ship world is reached through reflection because the declared return type of
+ * VSGameUtilsKt.getShipObjectWorld has changed across VS releases (ClientShipWorldCore in older
+ * builds, VsiClientShipWorld in 2.4.9+) and the return type is part of the call's linkage —
+ * binding to either at compile time would NoSuchMethodError on the other. Ships themselves are
+ * used through the stable {@code org.valkyrienskies.core.api} types.
+ */
+final class VsCompatImpl {
+    private static Method getShipObjectWorld;
+    private static Method getLoadedShips;
+    private static Class<?> loadedShipsOwner;
+
+    /** Per-ship state from the previous tick, so unchanged ships are not re-snapshotted. */
+    private static final Map<Long, TrackedShip> tracked = new HashMap<>();
+
+    /** Cheap change signature: the region only needs rebuilding when one of these moves. */
+    private record ShipShape(int minX, int minY, int minZ, int maxX, int maxY, int maxZ, int activeChunkCount) {}
+    private record TrackedShip(ShipShape shape, VsCompat.ShipSnapshot snapshot, ColoredLightEngine.LightRegion region) {}
+
+    private VsCompatImpl() {}
+
+    static void tick() throws ReflectiveOperationException {
+        ClientLevel level = Minecraft.getInstance().level;
+        ColoredLightEngine engine = ColoredLightEngine.getInstance();
+        if (level == null || engine == null) {
+            if (!tracked.isEmpty()) {
+                tracked.clear();
+                VsCompat.publish(new VsCompat.ShipSnapshot[0]);
+            }
+            return;
+        }
+
+        if (getShipObjectWorld == null) {
+            getShipObjectWorld = Class.forName("org.valkyrienskies.mod.common.VSGameUtilsKt")
+                    .getMethod("getShipObjectWorld", ClientLevel.class);
+        }
+        Object shipWorld = getShipObjectWorld.invoke(null, level);
+        Collection<?> ships;
+        if (shipWorld == null) {
+            ships = List.of();
+        } else {
+            if (getLoadedShips == null || loadedShipsOwner != shipWorld.getClass()) {
+                loadedShipsOwner = shipWorld.getClass();
+                getLoadedShips = loadedShipsOwner.getMethod("getLoadedShips");
+            }
+            // QueryableShipData extends java.util.Collection in every VS version
+            ships = (Collection<?>) getLoadedShips.invoke(shipWorld);
+        }
+
+        boolean snapshotChanged = false;
+        Set<Long> seen = new HashSet<>();
+        for (Object obj : ships) {
+            if (!(obj instanceof Ship ship)) continue;
+            var aabb = ship.getShipAABB();
+            var activeChunksSet = ship.getActiveChunksSet();
+            if (aabb == null || activeChunksSet == null || activeChunksSet.getSize() == 0) continue; // no blocks yet
+            long id = ship.getId();
+            seen.add(id);
+
+            ShipShape shape = new ShipShape(aabb.minX(), aabb.minY(), aabb.minZ(),
+                    aabb.maxX(), aabb.maxY(), aabb.maxZ(), activeChunksSet.getSize());
+            TrackedShip previous = tracked.get(id);
+            if (previous != null && previous.shape().equals(shape)) continue;
+
+            // Collect the chunks that hold ship blocks, and their bounds. The region spans both the
+            // AABB's chunks and the active set's (they should agree, but the AABB's max-bound
+            // convention is not worth trusting) plus a 1-chunk border, mirroring ViewArea's border.
+            LongOpenHashSet activeChunks = new LongOpenHashSet();
+            Set<ChunkPos> chunksToQueue = new HashSet<>();
+            int[] bounds = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE}; // minX, minZ, maxX, maxZ
+            activeChunksSet.forEach((x, z) -> {
+                activeChunks.add(ChunkPos.asLong(x, z));
+                chunksToQueue.add(new ChunkPos(x, z));
+                bounds[0] = Math.min(bounds[0], x);
+                bounds[1] = Math.min(bounds[1], z);
+                bounds[2] = Math.max(bounds[2], x);
+                bounds[3] = Math.max(bounds[3], z);
+            });
+            ViewArea area = new ViewArea(
+                    Math.min(bounds[0], aabb.minX() >> 4) - 1,
+                    Math.min(bounds[1], aabb.minZ() >> 4) - 1,
+                    Math.max(bounds[2], aabb.maxX() >> 4) + 1,
+                    Math.max(bounds[3], aabb.maxZ() >> 4) + 1
+            );
+            tracked.put(id, new TrackedShip(shape,
+                    new VsCompat.ShipSnapshot(area, activeChunks),
+                    new ColoredLightEngine.LightRegion(area, chunksToQueue)));
+            snapshotChanged = true;
+        }
+        if (tracked.keySet().retainAll(seen)) snapshotChanged = true;
+
+        if (snapshotChanged) {
+            // Publish before syncing the engine: once sections exist, propagation may immediately
+            // consult isKnownEmptyShipChunk from the propagator thread.
+            VsCompat.publish(tracked.values().stream().map(TrackedShip::snapshot).toArray(VsCompat.ShipSnapshot[]::new));
+        }
+
+        Map<Long, ColoredLightEngine.LightRegion> desired = new HashMap<>();
+        for (Map.Entry<Long, TrackedShip> entry : tracked.entrySet()) {
+            desired.put(entry.getKey(), entry.getValue().region());
+        }
+        engine.syncExtraRegions(desired);
+    }
+}

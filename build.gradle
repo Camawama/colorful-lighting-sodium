@@ -67,6 +67,18 @@ repositories {
     maven { url = "https://maven.createmod.net" }
     maven { url = "https://maven.ithundxr.dev/mirror" }
     maven {
+        url = "https://maven.valkyrienskies.org"
+        content {
+            includeGroupByRegex "org\\.valkyrienskies.*"
+        }
+    }
+    maven {
+        url = "https://thedarkcolour.github.io/KotlinForForge/"
+        content {
+            includeGroup "thedarkcolour"
+        }
+    }
+    maven {
         url "https://cursemaven.com"
         content {
             includeGroup "curse.maven"
@@ -96,6 +108,14 @@ dependencies {
     compileOnly fg.deobf("curse.maven:oculus-581495:6020952")
     compileOnly fg.deobf("curse.maven:architectury-api-419699:5137938")
     compileOnly fg.deobf("maven.modrinth:distanthorizonsapi:j15Y57xi")
+
+    // Valkyrien Skies 2 (optional at runtime; detected via ModList).
+    // Raw jar, not fg.deobf: we only reference VS's own (unobfuscated) API classes, and
+    // deobfing would drag VS's optional-integration transitives through ForgeGradle.
+    compileOnly("org.valkyrienskies:valkyrienskies-120-forge:2.4.9") {
+        transitive = false
+    }
+    compileOnly "org.valkyrienskies.core:api:+"
 
     // RUNTIME ONLY
     //runtimeOnly fg.deobf("curse.maven:cloth-config-348521:5729105")

@@ -73,6 +73,10 @@ public class ColorfulLighting
             CreateCompat.init();
             LOGGER.info("Create detected!");
         }
+        if(ModList.get().isLoaded("valkyrienskies")) {
+            me.erykczy.colorfullighting.compat.valkyrienskies.VsCompat.init();
+            LOGGER.info("Valkyrien Skies detected!");
+        }
         DynamicLightsCompat.init();
     }
 }
