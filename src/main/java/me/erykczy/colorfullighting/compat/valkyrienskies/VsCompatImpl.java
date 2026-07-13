@@ -40,6 +40,19 @@ final class VsCompatImpl {
 
     private VsCompatImpl() {}
 
+    /**
+     * The top three rows of the affine transform, laid out the way
+     * {@link VsCompat.ShipMirror#apply} expects. Copied out so the published mirror never holds a
+     * live VS matrix that physics could mutate under a reader thread.
+     */
+    private static double[] affineRows(org.joml.Matrix4dc m) {
+        return new double[]{
+                m.m00(), m.m10(), m.m20(), m.m30(),
+                m.m01(), m.m11(), m.m21(), m.m31(),
+                m.m02(), m.m12(), m.m22(), m.m32()
+        };
+    }
+
     static void tick() throws ReflectiveOperationException {
         ClientLevel level = Minecraft.getInstance().level;
         ColoredLightEngine engine = ColoredLightEngine.getInstance();
@@ -48,6 +61,7 @@ final class VsCompatImpl {
                 tracked.clear();
                 VsCompat.publish(new VsCompat.ShipSnapshot[0]);
             }
+            VsCompat.publishMirrors(new VsCompat.ShipMirror[0]);
             return;
         }
 
@@ -70,6 +84,7 @@ final class VsCompatImpl {
 
         boolean snapshotChanged = false;
         Set<Long> seen = new HashSet<>();
+        List<VsCompat.ShipMirror> mirrors = new java.util.ArrayList<>();
         for (Object obj : ships) {
             if (!(obj instanceof Ship ship)) continue;
             var aabb = ship.getShipAABB();
@@ -77,6 +92,16 @@ final class VsCompatImpl {
             if (aabb == null || activeChunksSet == null || activeChunksSet.getSize() == 0) continue; // no blocks yet
             long id = ship.getId();
             seen.add(id);
+
+            // The coordinate mirror is republished every tick — the region below only cares about
+            // the shipyard chunk footprint, but the transform changes whenever the ship moves.
+            var worldAabb = ship.getWorldAABB();
+            if (worldAabb != null) mirrors.add(new VsCompat.ShipMirror(
+                    aabb.minX(), aabb.minY(), aabb.minZ(),
+                    aabb.maxX() + 1, aabb.maxY() + 1, aabb.maxZ() + 1,
+                    worldAabb.minX(), worldAabb.minY(), worldAabb.minZ(),
+                    worldAabb.maxX(), worldAabb.maxY(), worldAabb.maxZ(),
+                    affineRows(ship.getShipToWorld()), affineRows(ship.getWorldToShip())));
 
             ShipShape shape = new ShipShape(aabb.minX(), aabb.minY(), aabb.minZ(),
                     aabb.maxX(), aabb.maxY(), aabb.maxZ(), activeChunksSet.getSize());
@@ -109,6 +134,8 @@ final class VsCompatImpl {
             snapshotChanged = true;
         }
         if (tracked.keySet().retainAll(seen)) snapshotChanged = true;
+
+        VsCompat.publishMirrors(mirrors.toArray(new VsCompat.ShipMirror[0]));
 
         if (snapshotChanged) {
             // Publish before syncing the engine: once sections exist, propagation may immediately

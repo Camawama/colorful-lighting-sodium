@@ -6,6 +6,7 @@ import me.erykczy.colorfullighting.common.Config;
 import me.erykczy.colorfullighting.common.accessors.LevelAccessor;
 import me.erykczy.colorfullighting.common.util.ColorRGB4;
 import me.erykczy.colorfullighting.compat.sodium.SodiumCompat;
+import me.erykczy.colorfullighting.compat.valkyrienskies.VsCompat;
 import me.erykczy.colorfullighting.mixin.compat.sodium.SodiumWorldRendererAccessor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -42,7 +43,12 @@ import java.util.Set;
  *   <li><b>Light blocks</b>: Lively Lighting (server-only) places minecraft:light blocks, which the
  *       colored engine already propagates; this class only supplies their color, inferred from the
  *       nearby entity that caused them. minecraft:light placed by any other mod and the
- *       dynamiclights:lit_* blocks shipped in AtomicStryker's 1.20.1 jar are colored the same way.</li>
+ *       dynamiclights:lit_* blocks shipped in AtomicStryker's 1.20.1 jar are colored the same way.
+ *       Lively Lighting also projects light across the Valkyrien Skies world/ship boundary (held
+ *       lights onto ships, ship lamps into the world, world lamps onto passing ships, ship to
+ *       ship); those blocks resolve their color through ship-mirrored entity sources
+ *       ({@link #addColorSource}) or the stored light at the block's mirrored position
+ *       ({@link #sampleShipMirrorHue}).</li>
  *   <li><b>Client lighting</b>: the client-only mods light the world around luminous entities without
  *       persistent light data the engine could read, so the colored pipeline recreates their light:
  *       luminous entities (held/equipped/dropped light items, burning entities) are tracked each
@@ -70,6 +76,19 @@ public final class DynamicLightsCompat {
      * With the old 4.5 radius those blocks resolved no entity and fell back to white.
      */
     private static final double DYNAMIC_BLOCK_COLOR_RADIUS_SQUARED = 8.0 * 8.0;
+    /**
+     * A colored entity this close to a Valkyrien Skies ship's world bounds also gets a color source
+     * at its shipyard-space mirror position. Lively Lighting anchors a held light's block IN the
+     * shipyard (up to the light's level ≈ 15 blocks from the holder), so without the mirror those
+     * anchors could never resolve the entity and fell back to white.
+     */
+    private static final double ENTITY_SHIP_MIRROR_RANGE = 16.0;
+    /**
+     * A dynamic light block this close to a ship's world bounds samples the ship's stored colored
+     * light at its shipyard mirror (see {@link #sampleShipMirrorHue}). Ship-lamp projections land
+     * inside the ship's world bounds, at most ~2 blocks of anchor displacement outside them.
+     */
+    private static final double BLOCK_SHIP_MIRROR_RANGE = 8.0;
 
     /** Light-emitting blocks placed by dynamic lighting mods, colored by the entity that caused them. */
     private static final Set<ResourceLocation> DYNAMIC_LIGHT_BLOCK_IDS = Set.of(
@@ -198,7 +217,7 @@ public final class DynamicLightsCompat {
 
             ColorRGB4 resolved = resolveEntityColor(entity);
             if (resolved != null && colors != null) {
-                colors.add(new ColorSource(entity.getX(), entity.getY(), entity.getZ(), resolved));
+                addColorSource(colors, entity, resolved);
             }
 
             int luminance = getEntityLuminance(entity);
@@ -237,7 +256,30 @@ public final class DynamicLightsCompat {
         for (Entity entity : level.entitiesForRendering()) {
             if (entity.isSpectator()) continue;
             ColorRGB4 color = resolveEntityColor(entity);
-            if (color != null) colors.add(new ColorSource(entity.getX(), entity.getY(), entity.getZ(), color));
+            if (color != null) addColorSource(colors, entity, color);
+        }
+    }
+
+    /**
+     * Records a colored entity for this tick — at its own position, and, when Valkyrien Skies ships
+     * are around, at its mirror position in the other coordinate space: Lively Lighting projects
+     * light across the world/ship boundary (a held torch anchors a light block in the shipyard, an
+     * item frame mounted on a ship projects one out into the world), and those blocks can only
+     * resolve their causing entity through a source in their own space.
+     */
+    private static void addColorSource(List<ColorSource> colors, Entity entity, ColorRGB4 color) {
+        double x = entity.getX(), y = entity.getY(), z = entity.getZ();
+        colors.add(new ColorSource(x, y, z, color));
+        if (!VsCompat.hasShipMirrors()) return;
+
+        double[] world = VsCompat.shipyardToWorld(x, y, z);
+        if (world != null) {
+            // shipyard resident (item frame on a ship): mirror out into the world
+            colors.add(new ColorSource(world[0], world[1], world[2], color));
+        } else {
+            // world entity near a ship: mirror into each such ship's shipyard
+            VsCompat.forEachShipyardMirror(x, y, z, ENTITY_SHIP_MIRROR_RANGE,
+                    (mx, my, mz) -> colors.add(new ColorSource(mx, my, mz, color)));
         }
     }
 
@@ -323,7 +365,10 @@ public final class DynamicLightsCompat {
 
     /**
      * Color for a light block placed by a dynamic lighting mod, inferred from the nearest entity that
-     * resolves to one. Null when nothing nearby resolves (callers fall back to plain white light).
+     * resolves to one (mirrored across the Valkyrien Skies world/ship boundary, see
+     * {@link #addColorSource}), else from the colored light stored at the block's ship-mirrored
+     * position (see {@link #sampleShipMirrorHue}). Null when nothing resolves (callers fall back to
+     * plain white light).
      */
     @Nullable
     public static ColorRGB4 getDynamicBlockLightColor(BlockPos lightBlockPos) {
@@ -331,10 +376,7 @@ public final class DynamicLightsCompat {
         // per-tick snapshot instead. Seeing a dynamic light block also arms the colored-entity scan,
         // which stays off for vanilla worlds that never place these blocks.
         ColorSource[] sources = blockColorSources;
-        if (sources.length == 0) {
-            trackBlockColors = true;
-            return null;
-        }
+        if (sources.length == 0) trackBlockColors = true;
 
         double x = lightBlockPos.getX() + 0.5, y = lightBlockPos.getY() + 0.5, z = lightBlockPos.getZ() + 0.5;
         ColorRGB4 bestColor = null;
@@ -346,7 +388,54 @@ public final class DynamicLightsCompat {
             bestColor = source.color;
             bestDistanceSquared = distanceSquared;
         }
+        if (bestColor == null) bestColor = sampleShipMirrorHue(x, y, z);
         return bestColor;
+    }
+
+    /**
+     * Color for a light block Lively Lighting projected across the Valkyrien Skies world/ship
+     * boundary from a *block* lamp — a ship's lantern lighting the world around it, a world lamp
+     * post lighting a passing ship's hull, or one ship's lamps lighting another. There is no entity
+     * to take the color from, so the colored light this engine has already stored at the block's
+     * mirrored position in the other space is sampled instead: for a world block projected from a
+     * ship lamp that is the spot amid the shipyard lamps whose light it re-emits, and vice versa.
+     * The sample is scaled to a full-intensity hue — the light block's own (already
+     * distance-dimmed) emission scales it back down in Config.getColorEmission.
+     */
+    @Nullable
+    private static ColorRGB4 sampleShipMirrorHue(double x, double y, double z) {
+        if (!VsCompat.hasShipMirrors()) return null;
+        ColoredLightEngine engine = ColoredLightEngine.getInstance();
+        if (engine == null || !engine.isEnabled()) return null;
+
+        int r = 0, g = 0, b = 0;
+        double[] world = VsCompat.shipyardToWorld(x, y, z);
+        if (world != null) {
+            int packed = engine.sampleLightColorPacked(
+                    (int) Math.floor(world[0]), (int) Math.floor(world[1]), (int) Math.floor(world[2]));
+            r = (packed >>> 8) & 0x0F;
+            g = (packed >>> 4) & 0x0F;
+            b = packed & 0x0F;
+        } else {
+            // per-channel max over the mirrors: light from several ships blends like light does
+            int[] max = new int[3];
+            VsCompat.forEachShipyardMirror(x, y, z, BLOCK_SHIP_MIRROR_RANGE, (mx, my, mz) -> {
+                int packed = engine.sampleLightColorPacked(
+                        (int) Math.floor(mx), (int) Math.floor(my), (int) Math.floor(mz));
+                max[0] = Math.max(max[0], (packed >>> 8) & 0x0F);
+                max[1] = Math.max(max[1], (packed >>> 4) & 0x0F);
+                max[2] = Math.max(max[2], packed & 0x0F);
+            });
+            r = max[0];
+            g = max[1];
+            b = max[2];
+        }
+
+        int brightest = Math.max(r, Math.max(g, b));
+        if (brightest == 0) return null;
+        if (brightest == 15) return ColorRGB4.fromRGB4(r, g, b);
+        float scale = 15.0f / brightest;
+        return ColorRGB4.fromRGB4(Math.round(r * scale), Math.round(g * scale), Math.round(b * scale));
     }
 
     /** Luminance an entity should cast on its own (held/equipped/dropped light items, fire). */
