@@ -31,9 +31,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Compatibility with dynamic lighting mods (Torcy, AtomicStryker's Dynamic Lights,
@@ -126,6 +128,18 @@ public final class DynamicLightsCompat {
     private static final CompoundTag NO_NBT = new CompoundTag();
     private static boolean loggedEntitySaveFailure = false;
 
+    /**
+     * Dynamic light blocks whose color did NOT come from a nearby entity, mapped to the packed hue
+     * that actually resolved ({@code -1} when nothing did and the block fell back to white). A
+     * block's color is resolved only when it propagates, which races ship-region propagation on
+     * world join — the mirror sample reads nothing yet and the block would stick white forever.
+     * clientTick rechecks these and re-propagates a block when the hue that would resolve now
+     * differs. Written from the light-propagator thread, iterated on the client thread.
+     */
+    private static final Map<BlockPos, Integer> shipMirrorHuesUsed = new ConcurrentHashMap<>();
+    private static final int SHIP_HUE_RECHECK_INTERVAL_TICKS = 10;
+    private static int recheckCounter;
+
     private static SodiumDynamicLightsHook sdlHook;
     private static boolean trackEntities;
     /** Last remesh anchor per tracked entity id, so terrain updates as sources move. Client thread only. */
@@ -167,18 +181,21 @@ public final class DynamicLightsCompat {
      * chunk-build threads never touches live collections. Called once per client tick.
      */
     public static void clientTick() {
-        if (sdlHook == null && !trackEntities && !trackBlockColors) return;
-
-        ENTITY_NBT.clear();
-
         ColoredLightEngine engine = ColoredLightEngine.getInstance();
         ClientLevel level = Minecraft.getInstance().level;
         if (engine == null || !engine.isEnabled() || level == null) {
             entitySources = NO_SOURCES;
             blockColorSources = NO_COLOR_SOURCES;
             trackedAnchors = new HashMap<>();
+            shipMirrorHuesUsed.clear();
             return;
         }
+
+        recheckShipMirrorHues(engine, level);
+
+        if (sdlHook == null && !trackEntities && !trackBlockColors) return;
+
+        ENTITY_NBT.clear();
 
         List<DynamicSource> sources = new ArrayList<>();
         if (sdlHook != null) {
@@ -388,8 +405,52 @@ public final class DynamicLightsCompat {
             bestColor = source.color;
             bestDistanceSquared = distanceSquared;
         }
-        if (bestColor == null) bestColor = sampleShipMirrorHue(x, y, z);
-        return bestColor;
+        if (bestColor != null) {
+            // color now tracks the entity; a stale mirror entry must not keep re-propagating it
+            shipMirrorHuesUsed.remove(lightBlockPos);
+            return bestColor;
+        }
+
+        ColorRGB4 hue = sampleShipMirrorHue(x, y, z);
+        if (VsCompat.isAvailable()) {
+            // remember what resolved (not gated on hasShipMirrors: on world join blocks propagate
+            // before the first tick publishes any mirror) so recheckShipMirrorHues can re-propagate
+            // the block once the ship's light exists
+            shipMirrorHuesUsed.put(lightBlockPos.immutable(), hue == null ? -1 : packHue(hue));
+        }
+        return hue;
+    }
+
+    /**
+     * Re-propagates dynamic light blocks whose ship-mirror hue has changed since their color was
+     * resolved. Covers the world-join race (the block propagated before the ship's region light or
+     * even the mirrors existed and stuck white) and ships that move or rotate while keeping a
+     * projected block in place. Runs on the client thread every {@link #SHIP_HUE_RECHECK_INTERVAL_TICKS}
+     * ticks; re-propagation re-resolves the color and re-stores the entry.
+     */
+    private static void recheckShipMirrorHues(ColoredLightEngine engine, ClientLevel level) {
+        if (shipMirrorHuesUsed.isEmpty()) return;
+        if (++recheckCounter < SHIP_HUE_RECHECK_INTERVAL_TICKS) return;
+        recheckCounter = 0;
+
+        Iterator<Map.Entry<BlockPos, Integer>> iterator = shipMirrorHuesUsed.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<BlockPos, Integer> entry = iterator.next();
+            BlockPos pos = entry.getKey();
+            if (!isDynamicLightBlock(level.getBlockState(pos).getBlock())) {
+                iterator.remove();
+                continue;
+            }
+            ColorRGB4 hue = sampleShipMirrorHue(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+            int packed = hue == null ? -1 : packHue(hue);
+            if (packed != entry.getValue()) {
+                engine.onBlockLightPropertiesChanged(pos);
+            }
+        }
+    }
+
+    private static int packHue(ColorRGB4 color) {
+        return color.red4 << 8 | color.green4 << 4 | color.blue4;
     }
 
     /**
@@ -408,34 +469,44 @@ public final class DynamicLightsCompat {
         ColoredLightEngine engine = ColoredLightEngine.getInstance();
         if (engine == null || !engine.isEnabled()) return null;
 
-        int r = 0, g = 0, b = 0;
+        int[] max = new int[3];
         double[] world = VsCompat.shipyardToWorld(x, y, z);
         if (world != null) {
-            int packed = engine.sampleLightColorPacked(
-                    (int) Math.floor(world[0]), (int) Math.floor(world[1]), (int) Math.floor(world[2]));
-            r = (packed >>> 8) & 0x0F;
-            g = (packed >>> 4) & 0x0F;
-            b = packed & 0x0F;
+            sampleNeighborhoodMax(engine, world[0], world[1], world[2], max);
         } else {
             // per-channel max over the mirrors: light from several ships blends like light does
-            int[] max = new int[3];
-            VsCompat.forEachShipyardMirror(x, y, z, BLOCK_SHIP_MIRROR_RANGE, (mx, my, mz) -> {
-                int packed = engine.sampleLightColorPacked(
-                        (int) Math.floor(mx), (int) Math.floor(my), (int) Math.floor(mz));
-                max[0] = Math.max(max[0], (packed >>> 8) & 0x0F);
-                max[1] = Math.max(max[1], (packed >>> 4) & 0x0F);
-                max[2] = Math.max(max[2], packed & 0x0F);
-            });
-            r = max[0];
-            g = max[1];
-            b = max[2];
+            VsCompat.forEachShipyardMirror(x, y, z, BLOCK_SHIP_MIRROR_RANGE,
+                    (mx, my, mz) -> sampleNeighborhoodMax(engine, mx, my, mz, max));
         }
+        int r = max[0], g = max[1], b = max[2];
 
         int brightest = Math.max(r, Math.max(g, b));
         if (brightest == 0) return null;
         if (brightest == 15) return ColorRGB4.fromRGB4(r, g, b);
         float scale = 15.0f / brightest;
         return ColorRGB4.fromRGB4(Math.round(r * scale), Math.round(g * scale), Math.round(b * scale));
+    }
+
+    /**
+     * Per-channel max of the stored colored light in the 3x3x3 blocks around a mirrored position.
+     * A single-point sample was too brittle: the mirror comes from the client's ship transform
+     * while the block was placed with the server's transform of an earlier tick, so on a moving
+     * ship it lands up to a block or two off — often inside an opaque hull block right next to the
+     * lamp (stored light 0), which resolved white and flickered as placements landed in and out of
+     * the hull. The brightest nearby sample is the lamp light the projected block re-emits.
+     */
+    private static void sampleNeighborhoodMax(ColoredLightEngine engine, double x, double y, double z, int[] max) {
+        int blockX = (int) Math.floor(x), blockY = (int) Math.floor(y), blockZ = (int) Math.floor(z);
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    int packed = engine.sampleLightColorPacked(blockX + dx, blockY + dy, blockZ + dz);
+                    max[0] = Math.max(max[0], (packed >>> 8) & 0x0F);
+                    max[1] = Math.max(max[1], (packed >>> 4) & 0x0F);
+                    max[2] = Math.max(max[2], packed & 0x0F);
+                }
+            }
+        }
     }
 
     /** Luminance an entity should cast on its own (held/equipped/dropped light items, fire). */
