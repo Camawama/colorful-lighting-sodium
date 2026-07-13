@@ -8,7 +8,6 @@ public class Resources {
 	public static final String DECODE_LIGHT_FULL;
 	public static final String BLEND_LIGHT_INTERNAL;
 	public static final String BLEND_LIGHT_FULL;
-	
 	public static final String LIGHT_DATA_FULL;
 	
 	public static String readStream(InputStream is) throws IOException {

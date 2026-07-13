@@ -2,6 +2,7 @@ package me.erykczy.colorfullighting.compat.oculus.specific;
 
 import com.github.andrew0030.pandora_core.shadowed.tfc.glsl.statements.AssignmentStatement;
 import io.github.douira.glsl_transformer.ast.node.TranslationUnit;
+import io.github.douira.glsl_transformer.ast.node.abstract_node.ASTNode;
 import io.github.douira.glsl_transformer.ast.node.declaration.TypeAndInitDeclaration;
 import io.github.douira.glsl_transformer.ast.node.expression.Expression;
 import io.github.douira.glsl_transformer.ast.node.expression.ReferenceExpression;
@@ -79,18 +80,6 @@ public class BSLPatcher {
 			
 			if (!injectedCl) return;
 			
-			{
-				TranslationUnit unitB = ASTParser._getInternalInstance().parseTranslationUnit(
-						root,
-						Resources.BLEND_LIGHT_INTERNAL
-				);
-				
-				for (int i = unitB.getChildren().size() - 1; i >= 0; i--) {
-					ExternalDeclaration declr = unitB.getChildren().get(i);
-					tree.injectNode(ASTInjectionPoint.BEFORE_FUNCTIONS, declr);
-				}
-			}
-			
 			List<ReferenceExpression> exprs = new ArrayList<>();
 			boolean lmCoordFound = false;
 			
@@ -106,9 +95,14 @@ public class BSLPatcher {
 			if (!lmCoordFound) return;
 			
 			for (ReferenceExpression expr : exprs) {
+				ASTNode par = expr.getParent();
+				if (par instanceof AssignmentExpression assignment) {
+					if (assignment.getLeft() == expr)
+						continue;
+				}
+				
 				expr.replaceBy(expr(
 						root,
-//						"colorful_lighting_blendLight(lightmap, lmCoord).xyz"
 						"(cl_lighting_value * 1.5)"
 				));
 			}

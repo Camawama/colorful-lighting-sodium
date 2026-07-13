@@ -76,18 +76,6 @@ public class ComplementaryPatcher {
 			
 			if (!injectedCl) return;
 			
-			{
-				TranslationUnit unitB = ASTParser._getInternalInstance().parseTranslationUnit(
-						root,
-						Resources.BLEND_LIGHT_INTERNAL
-				);
-				
-				for (int i = unitB.getChildren().size() - 1; i >= 0; i--) {
-					ExternalDeclaration declr = unitB.getChildren().get(i);
-					tree.injectNode(ASTInjectionPoint.BEFORE_FUNCTIONS, declr);
-				}
-			}
-			
 			List<ReferenceExpression> exprs = new ArrayList<>();
 			boolean lmCoordFound = false;
 			
@@ -105,7 +93,6 @@ public class ComplementaryPatcher {
 			for (ReferenceExpression expr : exprs) {
 				expr.replaceBy(expr(
 						root,
-//						"colorful_lighting_blendLight(lightmap, lmCoord).xyz"
 						"cl_lighting_value"
 				));
 			}

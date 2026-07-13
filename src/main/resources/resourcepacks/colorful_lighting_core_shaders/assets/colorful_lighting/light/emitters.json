@@ -95,8 +95,8 @@
 		"default": "green;7"
 	},
 	"minecraft:brown_mushroom": "brown",
-	"minecraft:cave_vines": "#bfff00",
-	"minecraft:cave_vines_plant": "green;7",
+	"minecraft:cave_vines": "#f0ff00",
+	"minecraft:cave_vines_plant": "#f0ff00",
 	"minecraft:chorus_flower": "pink;12",
 	"minecraft:chorus_plant": "purple;6",
 	"minecraft:crimson_nylium": "red;A",
