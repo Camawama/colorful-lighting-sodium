@@ -2,13 +2,16 @@ package me.erykczy.colorfullighting.resourcemanager;
 
 import me.erykczy.colorfullighting.ColorfulLighting;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
+import me.erykczy.colorfullighting.common.BlockEntityNbtCache;
 import me.erykczy.colorfullighting.common.Config;
+import me.erykczy.colorfullighting.common.config.VariantList;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.ToNumberPolicy;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
@@ -37,11 +40,11 @@ public class ConfigResourceManager implements ResourceManagerReloadListener {
 
     @Override
     public void onResourceManagerReload(ResourceManager resourceManager) {
-        HashMap<ResourceLocation, Config.BlockEmitterConfig> emitters = new HashMap<>();
-        HashMap<ResourceLocation, Config.BlockFilterConfig> filters = new HashMap<>();
-        HashMap<ResourceLocation, Config.BlockAbsorberConfig> absorbers = new HashMap<>();
-        HashMap<ResourceLocation, Config.ColorEmitter> entityEmitters = new HashMap<>();
-        HashMap<ResourceLocation, Config.ColorEmitter> itemEmitters = new HashMap<>();
+        HashMap<ResourceLocation, VariantList<Config.ColorEmitter>> emitters = new HashMap<>();
+        HashMap<ResourceLocation, VariantList<Config.ColorFilter>> filters = new HashMap<>();
+        HashMap<ResourceLocation, VariantList<Config.ColorEmitter>> absorbers = new HashMap<>();
+        HashMap<ResourceLocation, VariantList<Config.ColorEmitter>> entityEmitters = new HashMap<>();
+        HashMap<ResourceLocation, VariantList<Config.ColorEmitter>> itemEmitters = new HashMap<>();
         Map<Integer, Config.ColorMoonPhase> moonPhases = new HashMap<>();
 
         loadBuiltInLightConfigs(emitters, filters, absorbers, entityEmitters, itemEmitters, moonPhases);
@@ -79,15 +82,28 @@ public class ConfigResourceManager implements ResourceManagerReloadListener {
         Config.setEntityEmitters(entityEmitters);
         Config.setItemEmitters(itemEmitters);
         Config.setMoonPhases(moonPhases);
-        if(ColorfulLighting.clientAccessor.getLevel() != null)
+
+        // which block entities need NBT snapshots depends on the configs that just changed, and the
+        // snapshots must be in place before the engine starts re-propagating light below
+        var level = ColorfulLighting.clientAccessor.getLevel();
+        var player = ColorfulLighting.clientAccessor.getPlayer();
+        if (level != null && player != null) {
+            ChunkPos playerChunk = player.getChunkPos();
+            BlockEntityNbtCache.reload(level.getLevel(), playerChunk.x, playerChunk.z,
+                    ColorfulLighting.clientAccessor.getRenderDistance());
+        } else {
+            BlockEntityNbtCache.clear();
+        }
+
+        if(level != null)
             ColoredLightEngine.getInstance().reset();
     }
 
-    private static void loadBuiltInLightConfigs(HashMap<ResourceLocation, Config.BlockEmitterConfig> emitters,
-                                                 HashMap<ResourceLocation, Config.BlockFilterConfig> filters,
-                                                 HashMap<ResourceLocation, Config.BlockAbsorberConfig> absorbers,
-                                                 HashMap<ResourceLocation, Config.ColorEmitter> entityEmitters,
-                                                 HashMap<ResourceLocation, Config.ColorEmitter> itemEmitters,
+    private static void loadBuiltInLightConfigs(HashMap<ResourceLocation, VariantList<Config.ColorEmitter>> emitters,
+                                                 HashMap<ResourceLocation, VariantList<Config.ColorFilter>> filters,
+                                                 HashMap<ResourceLocation, VariantList<Config.ColorEmitter>> absorbers,
+                                                 HashMap<ResourceLocation, VariantList<Config.ColorEmitter>> entityEmitters,
+                                                 HashMap<ResourceLocation, VariantList<Config.ColorEmitter>> itemEmitters,
                                                  Map<Integer, Config.ColorMoonPhase> moonPhases) {
         JsonObject emitterObject = loadBuiltInLightJson("emitters.json");
         if (emitterObject != null) {
@@ -120,12 +136,12 @@ public class ConfigResourceManager implements ResourceManagerReloadListener {
         }
     }
 
-    private static void processEmitterEntries(JsonObject object, String sourcePackId, HashMap<ResourceLocation, Config.BlockEmitterConfig> emitters) {
+    private static void processEmitterEntries(JsonObject object, String sourcePackId, HashMap<ResourceLocation, VariantList<Config.ColorEmitter>> emitters) {
         for (var entry : object.entrySet()) {
             try {
                 var key = ResourceLocation.tryParse(entry.getKey());
                 if(!BuiltInRegistries.BLOCK.containsKey(key)) throw new IllegalArgumentException("Couldn't find block "+key);
-                emitters.put(key, Config.BlockEmitterConfig.fromJsonElement(entry.getValue()));
+                emitters.put(key, VariantList.fromJsonElement(entry.getValue(), Config.ColorEmitter::fromJsonElement));
             }
             catch (Exception e) {
                 LOGGER.warn("Failed to load light emitter entry {} from pack {}", entry.toString(), sourcePackId, e);
@@ -133,12 +149,12 @@ public class ConfigResourceManager implements ResourceManagerReloadListener {
         }
     }
 
-    private static void processFilterEntries(JsonObject object, String sourcePackId, HashMap<ResourceLocation, Config.BlockFilterConfig> filters) {
+    private static void processFilterEntries(JsonObject object, String sourcePackId, HashMap<ResourceLocation, VariantList<Config.ColorFilter>> filters) {
         for (var entry : object.entrySet()) {
             try {
                 var key = ResourceLocation.tryParse(entry.getKey());
                 if(!BuiltInRegistries.BLOCK.containsKey(key)) throw new IllegalArgumentException("Couldn't find block "+key);
-                filters.put(key, Config.BlockFilterConfig.fromJsonElement(entry.getValue()));
+                filters.put(key, VariantList.fromJsonElement(entry.getValue(), Config.ColorFilter::fromJsonElement));
             }
             catch (Exception e) {
                 LOGGER.warn("Failed to load light color filter entry {} from pack {}", entry.toString(), sourcePackId, e);
@@ -146,12 +162,12 @@ public class ConfigResourceManager implements ResourceManagerReloadListener {
         }
     }
 
-    private static void processAbsorberEntries(JsonObject object, String sourcePackId, HashMap<ResourceLocation, Config.BlockAbsorberConfig> absorbers) {
+    private static void processAbsorberEntries(JsonObject object, String sourcePackId, HashMap<ResourceLocation, VariantList<Config.ColorEmitter>> absorbers) {
         for (var entry : object.entrySet()) {
             try {
                 var key = ResourceLocation.tryParse(entry.getKey());
                 if(!BuiltInRegistries.BLOCK.containsKey(key)) throw new IllegalArgumentException("Couldn't find block "+key);
-                absorbers.put(key, Config.BlockAbsorberConfig.fromJsonElement(entry.getValue()));
+                absorbers.put(key, VariantList.fromJsonElement(entry.getValue(), Config.ColorEmitter::fromJsonElement));
             }
             catch (Exception e) {
                 LOGGER.warn("Failed to load light color absorber entry {} from pack {}", entry.toString(), sourcePackId, e);
@@ -159,12 +175,12 @@ public class ConfigResourceManager implements ResourceManagerReloadListener {
         }
     }
 
-    private static void processEntityEntries(JsonObject object, String sourcePackId, HashMap<ResourceLocation, Config.ColorEmitter> entityEmitters) {
+    private static void processEntityEntries(JsonObject object, String sourcePackId, HashMap<ResourceLocation, VariantList<Config.ColorEmitter>> entityEmitters) {
         for (var entry : object.entrySet()) {
             try {
                 var key = ResourceLocation.tryParse(entry.getKey());
                 if(!BuiltInRegistries.ENTITY_TYPE.containsKey(key)) throw new IllegalArgumentException("Couldn't find entity type "+key);
-                entityEmitters.put(key, Config.ColorEmitter.fromJsonElement(entry.getValue()));
+                entityEmitters.put(key, VariantList.fromJsonElement(entry.getValue(), Config.ColorEmitter::fromJsonElement));
             }
             catch (Exception e) {
                 LOGGER.warn("Failed to load light entity entry {} from pack {}", entry.toString(), sourcePackId, e);
@@ -172,12 +188,12 @@ public class ConfigResourceManager implements ResourceManagerReloadListener {
         }
     }
 
-    private static void processItemEntries(JsonObject object, String sourcePackId, HashMap<ResourceLocation, Config.ColorEmitter> itemEmitters) {
+    private static void processItemEntries(JsonObject object, String sourcePackId, HashMap<ResourceLocation, VariantList<Config.ColorEmitter>> itemEmitters) {
         for (var entry : object.entrySet()) {
             try {
                 var key = ResourceLocation.tryParse(entry.getKey());
                 if(!BuiltInRegistries.ITEM.containsKey(key)) throw new IllegalArgumentException("Couldn't find item "+key);
-                itemEmitters.put(key, Config.ColorEmitter.fromJsonElement(entry.getValue()));
+                itemEmitters.put(key, VariantList.fromJsonElement(entry.getValue(), Config.ColorEmitter::fromJsonElement));
             }
             catch (Exception e) {
                 LOGGER.warn("Failed to load light item entry {} from pack {}", entry.toString(), sourcePackId, e);

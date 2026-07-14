@@ -71,8 +71,7 @@ public abstract class SodiumLightDataAccessMixin {
                 if (ColoredLightEngine.getInstance().isEnabled()) {
                     // Check if it is our packed format (alpha bits set to 0xF)
                     if ((packedCoords >>> 28) == 0xF) {
-                         var data = SodiumPackedLightData.unpackData(packedCoords);
-                         sl = data.skyLight4;
+                         sl = SodiumPackedLightData.unpackSkyLight(packedCoords);
                          bl = 0; // We don't use cached BL anymore as we fetch color separately
                     } else {
                          bl = LightTexture.block(packedCoords);

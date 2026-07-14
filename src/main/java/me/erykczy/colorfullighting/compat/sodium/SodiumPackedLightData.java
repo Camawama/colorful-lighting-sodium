@@ -11,6 +11,19 @@ public class SodiumPackedLightData {
     public int alpha4;
 
     public static int packData(int skyLight4, ColorRGB8 color) { return packData(skyLight4, color.red, color.green, color.blue); }
+
+    /**
+     * Allocation-free {@code packData(sky, ColorRGB8.fromRGB4(color))} for the chunk-build hot path,
+     * taking the colour as a packed 12-bit {@code r << 8 | g << 4 | b}.
+     */
+    public static int packDataFromRGB4(int skyLight4, int packedRGB4) {
+        return packData(
+                skyLight4,
+                ((packedRGB4 >>> 8) & 0x0F) * 17,
+                ((packedRGB4 >>> 4) & 0x0F) * 17,
+                (packedRGB4 & 0x0F) * 17
+        );
+    }
     public static int packData(int skyLight4, int red8, int green8, int blue8) {
         //blockLight = Math.clamp(blockLight, 0, 15);
         skyLight4 = MathExt.clamp(skyLight4, 0, 15);
@@ -21,6 +34,13 @@ public class SodiumPackedLightData {
         // TODO: big-endian
         return red8 | green8 << 8 | skyLight4 << 16 | blue8 << 20 | alpha4 << 28;
     }
+
+    // Field accessors for hot paths that must not allocate. Same layout as unpackData.
+    public static int unpackRed(int packedData) { return packedData & 0xFF; }
+    public static int unpackGreen(int packedData) { return (packedData >>> 8) & 0xFF; }
+    public static int unpackSkyLight(int packedData) { return (packedData >>> 16) & 0xF; }
+    public static int unpackBlue(int packedData) { return (packedData >>> 20) & 0xFF; }
+    public static int unpackAlpha(int packedData) { return (packedData >>> 28) & 0xF; }
 
     public static SodiumPackedLightData unpackData(int packedData) {
         SodiumPackedLightData data = new SodiumPackedLightData();

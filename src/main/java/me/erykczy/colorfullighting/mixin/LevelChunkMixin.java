@@ -1,16 +1,19 @@
 package me.erykczy.colorfullighting.mixin;
 
+import me.erykczy.colorfullighting.common.BlockEntityNbtCache;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.util.ShapeOcclusion;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.lighting.LightEngine;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
@@ -38,5 +41,20 @@ public abstract class LevelChunkMixin {
         if (LightEngine.hasDifferentLightProperties(level, pos, oldState, newState)) return;
 
         engine.onBlockLightPropertiesChanged(pos);
+    }
+
+    /** Starts tracking a block entity whose block has an NBT-conditioned light rule. */
+    @Inject(method = "addAndRegisterBlockEntity", at = @At("TAIL"))
+    private void colorfullighting$onBlockEntityAdded(BlockEntity blockEntity, CallbackInfo ci) {
+        if (!((LevelChunk) (Object) this).getLevel().isClientSide) return;
+        if (!Minecraft.getInstance().isSameThread()) return;
+        BlockEntityNbtCache.onBlockEntityAdded(blockEntity);
+    }
+
+    @Inject(method = "removeBlockEntity", at = @At("TAIL"))
+    private void colorfullighting$onBlockEntityRemoved(BlockPos pos, CallbackInfo ci) {
+        if (!((LevelChunk) (Object) this).getLevel().isClientSide) return;
+        if (!Minecraft.getInstance().isSameThread()) return;
+        BlockEntityNbtCache.onBlockEntityRemoved(pos);
     }
 }

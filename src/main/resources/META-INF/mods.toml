@@ -30,17 +30,23 @@ versionRange="${minecraft_version_range}"
 ordering="NONE"
 side="BOTH"
 
+# Lower bound 1.0.0-beta-214: the first build whose internal shaders ship wavelet.glsl/depth.glsl
+# (our common.frag override includes them; beta-213 and below would fail shader compilation).
+# Verified against the createmod maven: the Java API surface we mixin to and the shader files we
+# override are unchanged from 1.0.0-beta-214 through 1.0.6.
 [[dependencies.${mod_id}]]
 modId="flywheel"
 mandatory=false
-versionRange="[1.0.0,1.0.9)"
+versionRange="[1.0.0-beta-214,1.0.9)"
 ordering="AFTER"
 side="CLIENT"
 
+# Verified against 6.0.0/6.0.4/6.0.8 jars: renderChains (chain conveyor mixin) and the
+# scrolling/rotating instance shaders we override are compatible across all of 6.0.x.
 [[dependencies.${mod_id}]]
 modId="create"
 mandatory=false
-versionRange="[6.0.8,6.1.0)"
+versionRange="[6.0.0,6.1.0)"
 ordering="AFTER"
 side="BOTH"
 

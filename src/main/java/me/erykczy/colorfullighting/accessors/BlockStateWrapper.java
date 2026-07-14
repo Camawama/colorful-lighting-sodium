@@ -23,6 +23,11 @@ public class BlockStateWrapper implements BlockStateAccessor {
     }
 
     @Override
+    public Block getBlock() {
+        return blockState.getBlock();
+    }
+
+    @Override
     public int getLightEmission() {
         return blockState.getLightEmission(EmptyBlockGetter.INSTANCE, BlockPos.ZERO);
     }

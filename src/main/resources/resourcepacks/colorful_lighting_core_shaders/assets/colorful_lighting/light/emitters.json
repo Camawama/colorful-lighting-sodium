@@ -64,7 +64,17 @@
 	"minecraft:tube_coral_fan": "blue;6",
 	"minecraft:tube_coral_wall_fan": "blue;6",
 
-	"minecraft:beacon": "white",
+	"minecraft:beacon": {
+		"default": "white",
+		"variants": [
+			{ "nbt": "{Primary:1}", "color": "#33ebff" },
+			{ "nbt": "{Primary:3}", "color": "#d9c043" },
+			{ "nbt": "{Primary:5}", "color": "#ffc700" },
+			{ "nbt": "{Primary:8}", "color": "#fdff84" },
+			{ "nbt": "{Primary:10}", "color": "#cd5cab" },
+			{ "nbt": "{Primary:11}", "color": "#9146f0" }
+		]
+	},
 	"minecraft:conduit": "#9cffff",
 	"minecraft:dragon_egg": "magenta;6",
 	"minecraft:enchanting_table": "purple",
@@ -221,15 +231,15 @@
 	},
 	"minecraft:soul_campfire": {
 		"states": {
-			"lit=true": "#e6feff",
+			"lit=true": "#36d9e6",
 			"lit=false": "#00aaaa;1"
 		},
 		"default": "#e6feff"
 	},
-	"minecraft:soul_fire": "#e6feff",
-	"minecraft:soul_lantern": "#e6feff",
-	"minecraft:soul_torch": "#e6feff",
-	"minecraft:soul_wall_torch": "#e6feff",
+	"minecraft:soul_fire": "#36d9e6",
+	"minecraft:soul_lantern": "#36d9e6",
+	"minecraft:soul_torch": "#36d9e6",
+	"minecraft:soul_wall_torch": "#36d9e6",
 	"minecraft:torch": "vanilla",
 	"minecraft:wall_torch": "vanilla",
 	"minecraft:crying_obsidian": "#9800ba"

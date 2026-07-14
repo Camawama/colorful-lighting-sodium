@@ -37,6 +37,15 @@ public class ColorfulLighting
     {
         context.registerConfig(net.minecraftforge.fml.config.ModConfig.Type.CLIENT, ColorfulLightingConfig.SPEC);
 
+        // The texture-mode force exists to debug the flywheel buffer-texture path, so make every
+        // such session self-documenting: flywheel dumps each assembled shader to
+        // <gameDir>/flywheel_sources/. Set here because this runs before flywheel's Compilation
+        // class loads (it reads the property once in its static initializer).
+        if (me.erykczy.colorfullighting.common.ColorfulLightingConfig.flywheelForceTextureMode()) {
+            System.setProperty("flw.dumpShaderSource", "true");
+            LOGGER.info("flywheelForceTextureMode: enabling flywheel shader source dumps (flywheel_sources/)");
+        }
+
         DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> new DistExecutor.SafeRunnable() {
             @Override
             public void run() {
@@ -45,7 +54,7 @@ public class ColorfulLighting
                 MinecraftForge.EVENT_BUS.register(new ClientEventListener());
                 context.getModEventBus().addListener(ColorfulLighting::onClientSetup);
                 context.getModEventBus().addListener(ColorfulLighting::onLoadingComplete);
-            }
+        }
         });
     }
 
@@ -72,6 +81,10 @@ public class ColorfulLighting
         if(ModList.get().isLoaded("create")) {
             CreateCompat.init();
             LOGGER.info("Create detected!");
+        }
+        if(ModList.get().isLoaded("valkyrienskies")) {
+            me.erykczy.colorfullighting.compat.valkyrienskies.VsCompat.init();
+            LOGGER.info("Valkyrien Skies detected!");
         }
         DynamicLightsCompat.init();
     }

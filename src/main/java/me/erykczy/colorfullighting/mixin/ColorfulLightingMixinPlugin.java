@@ -27,6 +27,24 @@ public class ColorfulLightingMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public void onLoad(String mixinPackage) {
+        // Runs during mixin bootstrap, before any flywheel class can load. Flywheel's Compilation
+        // class reads flw.dumpShaderSource exactly once in its static initializer, and flywheel's
+        // GL probing (which pulls that class in) runs before our mod constructor — setting the
+        // property there was 144ms too late. No Forge/MC classes may be touched here, so the
+        // config is read as a plain file; the game's working directory is the game dir.
+        try {
+            java.nio.file.Path config = java.nio.file.Paths.get("config", "colorful_lighting-client.toml");
+            if (java.nio.file.Files.exists(config)) {
+                for (String line : java.nio.file.Files.readAllLines(config)) {
+                    if (line.trim().replace(" ", "").startsWith("flywheelForceTextureMode=true")) {
+                        System.setProperty("flw.dumpShaderSource", "true");
+                        break;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // no config yet (first launch) or unreadable: no dumps, nothing else affected
+        }
     }
 
     @Override
