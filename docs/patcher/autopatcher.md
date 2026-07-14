@@ -55,7 +55,9 @@ I could not successfully get the auto patcher to work on deferred shaders
 
 ## Complementary patcher
 
+```properties
 colorful_lighting.patcher_family=Complementary
+```
 
 Known bugs:
 - with spooklementary, while advanced color tracing is on, sky light only functions in close proximity to colored lights
@@ -96,6 +98,10 @@ After the line which makes a call to `GetLightMapCoordinates`, inject `cl_lighti
 
 
 ## BSL patcher
+
+```properties
+colorful_lighting.patcher_family=BSL
+```
 
 The BSL auto patcher is a modification of the Complementary auto patcher, as the two shaders have very similar targets
 
