@@ -44,7 +44,13 @@
     "compat.create.ChainConveyorRendererMixin",
     "compat.create.AnimatedSceneElementBaseMixin",
     "compat.create.ShadeSeparatingSuperByteBufferMixin",
-    "compat.dynamiclights.SodiumDynamicLightsMixin"
+    "compat.dynamiclights.SodiumDynamicLightsMixin",
+    "compat.iris.IrisMacroInjection",
+	"compat.iris.CommonTransformerMixin",
+	"compat.iris.ShaderPropertiesMixin",
+	"compat.iris.ShaderPackMixin",
+	"compat.iris.ShaderPackAccessor",
+	"compat.iris.IrisMixin"
   ],
   "injectors": {
     "defaultRequire": 1

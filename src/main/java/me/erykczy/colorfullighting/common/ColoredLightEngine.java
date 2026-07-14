@@ -11,6 +11,7 @@ import me.erykczy.colorfullighting.common.util.MathExt;
 import me.erykczy.colorfullighting.common.util.ShapeOcclusion;
 import me.erykczy.colorfullighting.compat.dynamiclights.DynamicLightsCompat;
 import me.erykczy.colorfullighting.compat.flywheel.FlywheelCompat;
+import me.erykczy.colorfullighting.compat.oculus.OculusCompat;
 import me.erykczy.colorfullighting.compat.sodium.SodiumCompat;
 import me.erykczy.colorfullighting.mixin.compat.sodium.SodiumWorldRendererAccessor;
 import net.minecraft.client.Minecraft;
@@ -156,6 +157,9 @@ public class ColoredLightEngine {
             ColorfulLightingConfig.save();
             reset();
             updateShaderPack();
+			
+			if (OculusCompat.isOculusLoaded())
+				OculusCompat.reloadPack();
 
             // Flywheel keeps colored light in its own GPU buffers, refreshed only through
             // onLightUpdate (which is gated on 'enabled'). Recollect everything it tracks so

@@ -1,0 +1,4 @@
+{
+	"colorfullighting.message.iris_warning": "Colorful Lighting: Autopatched Iris shader, do not report issues to the shader developer unless the issue still occurs with \"/cl off\".",
+	"colorfullighting.argument.shader.incomplete": "Unknown or incomplete shader name."
+}

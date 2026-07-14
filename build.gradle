@@ -89,6 +89,8 @@ repositories {
         url = "https://api.modrinth.com/maven"
     }
     maven { url = "https://raw.githubusercontent.com/Fuzss/modresources/main/maven/" }
+
+    flatDir { dirs project.file('libs') }
 }
 
 dependencies {
@@ -150,6 +152,8 @@ dependencies {
 
     // Registrate (required by Create internally)
     implementation fg.deobf("com.tterrag.registrate:Registrate:${registrate_version}")
+
+    runtimeOnly "curse.maven:euphoria-patches-915902:8177591"
 }
 
 tasks.named('processResources', ProcessResources).configure {
