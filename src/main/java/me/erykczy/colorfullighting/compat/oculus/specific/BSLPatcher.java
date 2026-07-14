@@ -52,7 +52,7 @@ public class BSLPatcher {
 		if (type == PatchShaderType.FRAGMENT) {
 			boolean injectedCl = false;
 			
-			root.rename("lightmap", "complementary_lightmap");
+			root.rename("lightmap", "bsl_lightmap");
 			
 			for (ExternalDeclaration child : tree.getChildren()) {
 				if (child instanceof DeclarationExternalDeclaration ext) {

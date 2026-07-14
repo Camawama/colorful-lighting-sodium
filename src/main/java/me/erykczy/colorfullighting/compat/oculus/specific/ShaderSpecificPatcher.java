@@ -23,6 +23,7 @@ import io.github.douira.glsl_transformer.ast.query.match.HintedMatcher;
 import io.github.douira.glsl_transformer.ast.transform.ASTParser;
 import io.github.douira.glsl_transformer.parser.ParseShape;
 import io.github.douira.glsl_transformer.util.Type;
+import me.erykczy.colorfullighting.common.accessors.iris.CustomShaderProperties;
 import me.erykczy.colorfullighting.common.accessors.iris.ResolvedShaderPack;
 import me.erykczy.colorfullighting.compat.oculus.Resources;
 import me.erykczy.colorfullighting.mixin.compat.iris.ShaderPackAccessor;
@@ -32,6 +33,7 @@ import net.irisshaders.iris.pipeline.transform.PatchShaderType;
 import net.irisshaders.iris.pipeline.transform.parameter.Parameters;
 import net.irisshaders.iris.shaderpack.ShaderPack;
 import net.irisshaders.iris.shaderpack.include.AbsolutePackPath;
+import net.irisshaders.iris.shaderpack.properties.ShaderProperties;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -43,7 +45,10 @@ import java.util.stream.Stream;
 
 public class ShaderSpecificPatcher {
 	public static String resolveShader(ShaderPack pack) {
-		Function<AbsolutePackPath, String> sourceProvider = ((ShaderPackAccessor) pack).getSourceProvider();
+		ShaderProperties properties = ((ShaderPackAccessor) pack).getShaderProperties();
+		String value = ((CustomShaderProperties) properties).colorfullighting$getPatcherFamily();
+		if (value != null) return value;
+		
 		Path pth = ((ResolvedShaderPack) pack).path();
 		
 		Path pth1 = pth.resolve("shaders.settings");
@@ -84,15 +89,36 @@ public class ShaderSpecificPatcher {
 			String txt = Resources.readStream(is);
 			txt = txt.replace("\r", "");
 			
-			if (txt.contains("""
+			if (txt.startsWith("""
 					/////////////////////////////////////
 					// Complementary Shaders by EminGT //
+					""") || txt.startsWith("""
+					//////////////////////////////////////////
+					// Complementary Shaders by EminGT      //
+					// With Euphoria Patches by SpacEagle17 //
+					//////////////////////////////////////////
 					"""))
 				return "Complementary";
+			String[] knownVersions = new String[]{
+					"v8", "v9", "v10"
+			};
+			for (String knownVersion : knownVersions) {
+				if (txt.contains("""
+					/*\s
+					BSL Shaders $version$ Series by Capt Tatsu\s
+					https://capttatsu.com\s
+					*/\s
+					""".replace("$version$", knownVersion))) {
+					return "BSL";
+				}
+			}
 			if (txt.contains("""
 					/*\s
-					BSL Shaders v8 Series by Capt Tatsu\s
-					https://capttatsu.com\s
+					Insanity Shader is based from BSL Shaders by Capt Tatsu.
+					
+					Most of the code is made by Capt Tatsu. They gave me permission to use their code for Insanity.
+					
+					Support the original author by donating to them.
 					*/\s
 					"""))
 				return "BSL";

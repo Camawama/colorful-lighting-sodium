@@ -7,7 +7,8 @@ import me.erykczy.colorfullighting.common.BlockEntityNbtCache;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.ViewArea;
 import me.erykczy.colorfullighting.compat.dynamiclights.DynamicLightsCompat;
-import me.erykczy.colorfullighting.compat.oculus.OculusCompat;
+import me.erykczy.colorfullighting.compat.oculus.cmd.PackArgumentType;
+import me.erykczy.colorfullighting.compat.oculus.cmd.ShaderPackName;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.commands.CommandSourceStack;
@@ -145,6 +146,25 @@ public class ClientEventListener {
                                     context.getSource().sendSuccess(() -> Component.literal("Reloading all colored lights..."), false);
                                     return 1;
                                 })
+                        )
+                        .then(Commands.literal("patchshader")
+		                        .then(
+				                        Commands.argument("shader_pack", new PackArgumentType())
+				                        .executes(context -> {
+					                        ShaderPackName pck = context.getArgument("shader_pack", ShaderPackName.class);
+											
+					                        context.getSource().sendSuccess(() -> Component.literal("Patching shaderpacks for Colorful Lighting..."), false);
+					                        me.erykczy.colorfullighting.compat.oculus.ShaderpackAutoPatcher.runAsync(pck.getName(), message -> {
+						                        var minecraft = Minecraft.getInstance();
+						                        minecraft.execute(() -> {
+							                        if (minecraft.player != null) {
+								                        minecraft.player.displayClientMessage(Component.literal(message), false);
+							                        }
+						                        });
+					                        });
+					                        return 1;
+				                        })
+		                        )
                         )
                         .then(Commands.literal("on")
                                 .executes(context -> {

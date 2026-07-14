@@ -220,6 +220,29 @@ public final class ShaderpackPatchEngine {
         }
         return results;
     }
+	
+    public static Result patch(Path shaderpack, Consumer<String> log) {
+//        if (!Files.isDirectory(shaderpack)) return null;
+//        List<Path> sources = new ArrayList<>();
+//        try (Stream<Path> children = Files.list(shaderpack)) {
+//            children.sorted().forEach(sources::add);
+//        } catch (IOException e) {
+//            log.accept("Cannot list " + shaderpack + ": " + e);
+//            return null;
+//        }
+        
+		String base = outputBaseName(shaderpack);
+        if (base == null) return null; // not a pack, or one of our own outputs
+	    Result res;
+        try {
+            res = (patchPack(shaderpack, shaderpack.getParent().resolve(base + OUTPUT_SUFFIX), log));
+        } catch (Exception e) {
+	        res = (new Result(shaderpack.getFileName().toString(), null, 0, true, "failed: " + e));
+            log.accept("Failed to patch " + shaderpack.getFileName() + ": " + e);
+        }
+		
+        return res;
+    }
 
     /** @return base name for the patched output, or null if this path should not be patched. */
     static String outputBaseName(Path source) {

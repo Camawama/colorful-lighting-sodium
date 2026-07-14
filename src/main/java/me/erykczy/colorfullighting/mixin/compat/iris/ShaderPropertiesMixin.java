@@ -10,6 +10,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.OptionalInt;
 import java.util.function.Consumer;
 
@@ -25,6 +27,13 @@ public abstract class ShaderPropertiesMixin implements CustomShaderProperties {
 		throw new RuntimeException("wat?");
 	}
 	
+	@Unique
+	private static void colorfullighting$handleStringDirective(String key, String value, String expectedKey, Consumer<String> handler) {
+		if (expectedKey.equals(key)) {
+			handler.accept(value);
+		}
+	}
+	
 	// 0: incompatible (shader developer has tested, it does not work)
 	// 1: attempt patch
 	// 2: standardized patch will work (guarantee provided by shader developer)
@@ -35,14 +44,22 @@ public abstract class ShaderPropertiesMixin implements CustomShaderProperties {
 	//    disables all helpers, the developer is assumed to have implemented the helpers on their own with this option
 	@Unique
 	private OptionalInt colorfullighting$compatStatus = OptionalInt.of(1);
+	@Unique
+	private String colorfullighting$patcherFamily = null;
 	
 	@Inject(at = @At("TAIL"), method = "lambda$new$48")
 	public void colorfullighting$postInit(Object keyObject, Object valueObject, CallbackInfo ci) {
 		handleIntDirective((String) keyObject, (String) valueObject, "colorful_lighting.compat_status", value -> colorfullighting$compatStatus = OptionalInt.of(value));
+		colorfullighting$handleStringDirective((String) keyObject, (String) valueObject, "colorful_lighting.patcher_family", value -> colorfullighting$patcherFamily = value);
 	}
 	
 	@Override
 	public OptionalInt colorfullighting$getCompatStatus() {
 		return colorfullighting$compatStatus;
+	}
+	
+	@Override
+	public String colorfullighting$getPatcherFamily() {
+		return colorfullighting$patcherFamily;
 	}
 }
