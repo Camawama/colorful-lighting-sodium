@@ -63,7 +63,7 @@ Known bugs:
 - with spooklementary, while advanced color tracing is on, sky light only functions in close proximity to colored lights
 - Complementary's builtin dynamic lighting seems to get suppressed and instead just end up scaling the value vectors of the colored lighting
   - I'm not *exactly* sure if this is actually what's happening, but dynamic lights definitely behave weird
-  - I'm probably gonna want to add in some helpers for dynamic lighting
+  - I'm probably gonna want to add in some helpers for dynamic lighting; let me know if you have pointers on how I should best do this
 
 ### Fragment Shader
 
