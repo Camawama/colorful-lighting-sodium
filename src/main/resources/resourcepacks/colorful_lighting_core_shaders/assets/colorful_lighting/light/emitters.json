@@ -231,15 +231,15 @@
 	},
 	"minecraft:soul_campfire": {
 		"states": {
-			"lit=true": "#e6feff",
+			"lit=true": "#36d9e6",
 			"lit=false": "#00aaaa;1"
 		},
 		"default": "#e6feff"
 	},
-	"minecraft:soul_fire": "#e6feff",
-	"minecraft:soul_lantern": "#e6feff",
-	"minecraft:soul_torch": "#e6feff",
-	"minecraft:soul_wall_torch": "#e6feff",
+	"minecraft:soul_fire": "#36d9e6",
+	"minecraft:soul_lantern": "#36d9e6",
+	"minecraft:soul_torch": "#36d9e6",
+	"minecraft:soul_wall_torch": "#36d9e6",
 	"minecraft:torch": "vanilla",
 	"minecraft:wall_torch": "vanilla",
 	"minecraft:crying_obsidian": "#9800ba"

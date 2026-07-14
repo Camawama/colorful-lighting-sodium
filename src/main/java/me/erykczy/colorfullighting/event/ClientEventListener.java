@@ -146,20 +146,6 @@ public class ClientEventListener {
                                     return 1;
                                 })
                         )
-                        .then(Commands.literal("patchshaders")
-                                .executes(context -> {
-                                    context.getSource().sendSuccess(() -> Component.literal("Patching shaderpacks for Colorful Lighting..."), false);
-                                    me.erykczy.colorfullighting.compat.oculus.ShaderpackAutoPatcher.runAsync(message -> {
-                                        var minecraft = Minecraft.getInstance();
-                                        minecraft.execute(() -> {
-                                            if (minecraft.player != null) {
-                                                minecraft.player.displayClientMessage(Component.literal(message), false);
-                                            }
-                                        });
-                                    });
-                                    return 1;
-                                })
-                        )
                         .then(Commands.literal("on")
                                 .executes(context -> {
                                     ColoredLightEngine.getInstance().setEnabled(true);
@@ -180,6 +166,78 @@ public class ClientEventListener {
                                     return 1;
                                 })
                         )
+                        // Diagnostic and power-user commands live under one literal so the
+                        // top-level autocomplete stays a short list: on, off, purge, debug.
+                        .then(Commands.literal("debug")
+                                .then(Commands.literal("patchshaders")
+                                        .executes(context -> {
+                                            context.getSource().sendSuccess(() -> Component.literal("Patching shaderpacks for Colorful Lighting..."), false);
+                                            me.erykczy.colorfullighting.compat.oculus.ShaderpackAutoPatcher.runAsync(message -> {
+                                                var minecraft = Minecraft.getInstance();
+                                                minecraft.execute(() -> {
+                                                    if (minecraft.player != null) {
+                                                        minecraft.player.displayClientMessage(Component.literal(message), false);
+                                                    }
+                                                });
+                                            });
+                                            return 1;
+                                        })
+                                )
+                                .then(Commands.literal("flywheel")
+                                        .executes(context -> {
+                                            context.getSource().sendSuccess(() -> Component.literal(
+                                                    me.erykczy.colorfullighting.compat.flywheel.FlywheelCompat.describeMode()), false);
+                                            boolean forced = me.erykczy.colorfullighting.common.ColorfulLightingConfig.flywheelForceTextureMode();
+                                            context.getSource().sendSuccess(() -> Component.literal(
+                                                    "Configured: " + (forced ? "texture (forced for testing)" : "auto (SSBO when the GPU supports GLSL 430)")
+                                                            + " — change with /cl debug flywheel texture|auto"), false);
+                                            if (forced
+                                                    && me.erykczy.colorfullighting.compat.flywheel.FlywheelCompat.isAvailable()
+                                                    && !me.erykczy.colorfullighting.compat.flywheel.FlywheelCompat.isTextureFallback()) {
+                                                context.getSource().sendSuccess(() -> Component.literal(
+                                                        "WARNING: texture mode is configured but SSBO mode is active — the setting was read after flywheel initialized. Add -Dcolorfullighting.flywheelForceTextureMode=true to your JVM arguments instead."), false);
+                                            }
+                                            return 1;
+                                        })
+                                        .then(Commands.literal("report")
+                                                .executes(context -> {
+                                                    var compat = me.erykczy.colorfullighting.compat.flywheel.FlywheelCompat.getInstance();
+                                                    String report = compat == null
+                                                            ? "Flywheel colored light is inactive"
+                                                            : compat.flywheelColoredLightStorage.debugReport();
+                                                    ColorfulLighting.LOGGER.info("[CL flywheel] {}", report);
+                                                    context.getSource().sendSuccess(() -> Component.literal(report), false);
+                                                    return 1;
+                                                })
+                                        )
+                                        .then(Commands.literal("texture")
+                                                .executes(context -> setFlywheelTextureMode(context.getSource(), true))
+                                        )
+                                        .then(Commands.literal("ssbo")
+                                                .executes(context -> setFlywheelTextureMode(context.getSource(), false))
+                                        )
+                                        .then(Commands.literal("auto")
+                                                .executes(context -> setFlywheelTextureMode(context.getSource(), false))
+                                        )
+                                )
+                        )
         );
+    }
+
+    /**
+     * The flywheel colored-light transport can't switch live: GlCompat.MAX_GLSL_VERSION is read
+     * once at class init and baked into every compiled flywheel shader as its #version, and the
+     * Java side must match the shaders exactly. So the command writes the config and asks for a
+     * restart instead.
+     */
+    private static int setFlywheelTextureMode(CommandSourceStack source, boolean forceTexture) {
+        me.erykczy.colorfullighting.common.ColorfulLightingConfig.FLYWHEEL_FORCE_TEXTURE_MODE.set(forceTexture);
+        me.erykczy.colorfullighting.common.ColorfulLightingConfig.save();
+        if (forceTexture) {
+            source.sendSuccess(() -> Component.literal("Flywheel colored light set to buffer-texture mode (GLSL capped at 410). Restart the game to apply, then use '/flywheel backend instancing' — the indirect backend needs GLSL 460 and cannot run while capped."), false);
+        } else {
+            source.sendSuccess(() -> Component.literal("Flywheel colored light set to auto (SSBO when the GPU supports GLSL 430). Restart the game to apply."), false);
+        }
+        return 1;
     }
 }

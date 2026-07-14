@@ -38,6 +38,8 @@
     "compat.flywheel.LightBuffersMixin",
     "compat.flywheel.LightStorageMixin",
     "compat.flywheel.InstancedLightMixin",
+    "compat.flywheel.GlProgramMixin",
+    "compat.flywheel.GlCompatMixin",
     "compat.create.ChainConveyorRendererMixin",
     "compat.create.AnimatedSceneElementBaseMixin",
     "compat.create.ShadeSeparatingSuperByteBufferMixin",

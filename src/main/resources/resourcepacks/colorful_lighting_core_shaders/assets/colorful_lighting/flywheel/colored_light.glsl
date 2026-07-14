@@ -1,9 +1,18 @@
 #include "flywheel:internal/light_lut.glsl"
 #include "colorful_lighting:colored_light_types.glsl"
 
+// SSBOs need GLSL 430; flywheel compiles with the highest GLSL the context can offer, so on
+// older contexts (GL 4.1 Macs and the like) the same section data is read through a buffer
+// texture instead — same buffer object, same indexing, texelFetch instead of an array access.
+// FlywheelCompat.isTextureFallback makes the identical decision on the Java side (upload/bind),
+// and GlProgramMixin points the sampler at its texture unit.
+#if __VERSION__ >= 430
 layout(std430, binding = 8) restrict readonly buffer ColoredLightSections {
     int coloredLightSections[];
 };
+#else
+uniform isamplerBuffer _cl_coloredLightSections;
+#endif
 
 vec4 minecraft_sample_vanilla_lightmap(sampler2D lightMap, ivec2 uv) {
     return texture(lightMap, clamp(uv / 256.0, vec2(0.5 / 16.0), vec2(15.5 / 16.0)));
@@ -48,7 +57,7 @@ vec4 mixColoredLightWithLightMap(sampler2D lightMap, ColoredLightFloatData data)
     return vec4(sky + block * max(0.1, 1.0 - sky.r), 1.0);
 }
 
-// get packed colored light from uniform buffer object
+// get packed colored light from the section buffer
 int getColoredLightFromBuffer(ivec3 blockPos) {
     uint lightSectionIndex;
     if (_flw_chunkCoordToSectionIndex(blockPos >> 4, lightSectionIndex)) {
@@ -56,7 +65,11 @@ int getColoredLightFromBuffer(ivec3 blockPos) {
     }
     ivec3 blockPosRelative = ivec3((blockPos & 0xF) + 1);
     int index = (blockPosRelative.x + blockPosRelative.z * 18 + blockPosRelative.y * 18 * 18);
+    #if __VERSION__ >= 430
     return coloredLightSections[lightSectionIndex * 18 * 18 * 18 + index];
+    #else
+    return texelFetch(_cl_coloredLightSections, int(lightSectionIndex) * 18 * 18 * 18 + index).r;
+    #endif
 }
 
 // sample ColoredLightFloatData at a given blockPos

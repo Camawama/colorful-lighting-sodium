@@ -45,11 +45,20 @@ public class ColorfulLightingConfig {
     public static final ForgeConfigSpec.BooleanValue ENABLED;
     public static final ForgeConfigSpec.BooleanValue AUTO_PATCH_SHADERPACKS;
     public static final ForgeConfigSpec.EnumValue<LightUpdateSpeed> LIGHT_UPDATE_SPEED;
+    public static final ForgeConfigSpec.BooleanValue FLYWHEEL_FORCE_TEXTURE_MODE;
 
     public static final ForgeConfigSpec SPEC;
 
     static {
         ENABLED = BUILDER.comment("Enable colorful lighting").define("enabled", true);
+        FLYWHEEL_FORCE_TEXTURE_MODE = BUILDER
+                .comment(
+                        "TESTING ONLY. Caps flywheel's GLSL version at 410, forcing the whole flywheel pipeline down",
+                        "the same path older GPUs (e.g. GL 4.1 Macs) take: colored light travels as a buffer texture",
+                        "instead of an SSBO. Takes effect on the next game launch (the mode is baked into every",
+                        "compiled flywheel shader). Use '/flywheel backend instancing' with this - the indirect",
+                        "backend needs GLSL 460 and cannot work while capped. Toggle with '/cl debug flywheel texture|auto'.")
+                .define("flywheelForceTextureMode", false);
         AUTO_PATCH_SHADERPACKS = BUILDER
                 .comment("Automatically create '<Pack> + ColorfulLighting' copies of shaderpacks that decode colored lighting (requires Oculus)")
                 .define("autoPatchShaderpacks", true);
@@ -71,6 +80,43 @@ public class ColorfulLightingConfig {
     public static LightUpdateSpeed lightUpdateSpeed() {
         if (!SPEC.isLoaded()) return LightUpdateSpeed.FAST;
         return LIGHT_UPDATE_SPEED.get();
+    }
+
+    /** Cached result of the raw-file read below; the value can't change while the game runs. */
+    private static Boolean forceTextureModeFromFile;
+
+    /**
+     * Safe before the config file is loaded: GlCompatMixin reads this during flywheel's GL probing,
+     * which runs before Forge loads client configs — in that window the setting is read straight
+     * from the config file on disk (written by the '/cl flywheel' command last session). The JVM
+     * property is an additional override that can never lose a timing race.
+     */
+    public static boolean flywheelForceTextureMode() {
+        if (Boolean.getBoolean("colorfullighting.flywheelForceTextureMode")) return true;
+        if (SPEC.isLoaded()) return FLYWHEEL_FORCE_TEXTURE_MODE.get();
+        return forceTextureModeFromFile();
+    }
+
+    private static boolean forceTextureModeFromFile() {
+        if (forceTextureModeFromFile != null) return forceTextureModeFromFile;
+        boolean result = false;
+        try {
+            java.nio.file.Path path = net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get()
+                    .resolve("colorful_lighting-client.toml");
+            if (java.nio.file.Files.exists(path)) {
+                for (String line : java.nio.file.Files.readAllLines(path)) {
+                    String trimmed = line.trim();
+                    if (trimmed.startsWith("flywheelForceTextureMode")) {
+                        result = trimmed.replace(" ", "").endsWith("=true");
+                        break;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // unreadable config: fall through to the safe default
+        }
+        forceTextureModeFromFile = result;
+        return result;
     }
 
     public static void save() {
