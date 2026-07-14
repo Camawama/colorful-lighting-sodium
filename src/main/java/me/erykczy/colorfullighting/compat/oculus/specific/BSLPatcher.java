@@ -1,6 +1,5 @@
 package me.erykczy.colorfullighting.compat.oculus.specific;
 
-import com.github.andrew0030.pandora_core.shadowed.tfc.glsl.statements.AssignmentStatement;
 import io.github.douira.glsl_transformer.ast.node.TranslationUnit;
 import io.github.douira.glsl_transformer.ast.node.abstract_node.ASTNode;
 import io.github.douira.glsl_transformer.ast.node.declaration.TypeAndInitDeclaration;
