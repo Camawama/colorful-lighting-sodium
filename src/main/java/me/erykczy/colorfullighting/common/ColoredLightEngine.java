@@ -43,6 +43,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * Most work is delegated to LightPropagator thread.
  */
 public class ColoredLightEngine {
+	private static final List<ColoredLightEngine> TRACKED = new ArrayList<>();
+	
 	private final ClientAccessor clientAccessor;
 	private final LevelAccessor level;
 	private final ColoredLightStorage storage = new ColoredLightStorage();
@@ -137,10 +139,6 @@ public class ColoredLightEngine {
     // volatile: written on the render thread each frame, read on the light propagator thread
     private volatile Frustum frustum;
 
-    private static ColoredLightEngine instance;
-    public static ColoredLightEngine getInstance() {
-		throw new RuntimeException("Unsupported.");
-    }
     public static ColoredLightEngine create(Level level, ClientAccessor clientAccessor) {
         return new ColoredLightEngine(level, clientAccessor);
     }
@@ -149,10 +147,18 @@ public class ColoredLightEngine {
 		this.level = ((LevelAttachments) level).colorfullighting$getAccessor();
         this.clientAccessor = clientAccessor;
         reset();
+	    synchronized (TRACKED) {
+		    TRACKED.add(this);
+	    }
     }
 	
 	public static void resetAll() {
 		// TODO: reset engines
+		synchronized (TRACKED) {
+			for (ColoredLightEngine coloredLightEngine : TRACKED) {
+				coloredLightEngine.reset();
+			}
+		}
 //        reset();
 	}
     
@@ -201,11 +207,21 @@ public class ColoredLightEngine {
         }
     }
 	
+	public static ColoredLightEngine getInstance() {
+		throw new RuntimeException("Unsupported.");
+	}
+	
 	public void updateFrustum(Frustum frustum) {
         this.frustum = frustum;
     }
-
-    /**
+	
+	public void unload() {
+		synchronized (TRACKED) {
+			TRACKED.remove(this);
+		}
+	}
+	
+	/**
      * Per-thread memo of the last section sampled. Sodium walks a chunk build in section order and takes
      * roughly ten samples per block face, nearly all of them landing in the section already cached here,
      * so this turns two concurrent-map lookups per sample into two per section.

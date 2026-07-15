@@ -132,6 +132,8 @@ public class ClientEventListener {
         BeaconEffectSync.clear();
 		// I think this is redundant
         ((LevelAttachments) event.getLevel()).colorfullighting$getEngine().reset();
+		// TODO: attach this to a Cleaner as well for redundancy/safety reasons
+	    ((LevelAttachments) event.getLevel()).colorfullighting$getEngine().unload();
     }
 
     @SubscribeEvent
