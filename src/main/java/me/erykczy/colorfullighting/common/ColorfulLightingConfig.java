@@ -61,7 +61,7 @@ public class ColorfulLightingConfig {
                 .define("flywheelForceTextureMode", false);
         AUTO_PATCH_SHADERPACKS = BUILDER
                 .comment("Automatically create '<Pack> + ColorfulLighting' copies of shaderpacks that decode colored lighting (requires Oculus)")
-                .define("autoPatchShaderpacks", true);
+                .define("autoPatchShaderpacks", false);
         LIGHT_UPDATE_SPEED = BUILDER
                 .comment(
                         "How quickly colored light fills in after chunks load.",
