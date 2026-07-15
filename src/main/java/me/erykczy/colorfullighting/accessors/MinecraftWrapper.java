@@ -3,6 +3,7 @@ package me.erykczy.colorfullighting.accessors;
 import me.erykczy.colorfullighting.common.accessors.ClientAccessor;
 import me.erykczy.colorfullighting.common.accessors.LevelAccessor;
 import me.erykczy.colorfullighting.common.accessors.PlayerAccessor;
+import me.erykczy.colorfullighting.common.accessors.mixin.LevelAttachments;
 import net.minecraft.client.Minecraft;
 import org.jetbrains.annotations.NotNull;
 
@@ -18,7 +19,7 @@ public class MinecraftWrapper implements ClientAccessor {
     @Override
     public @Nullable LevelAccessor getLevel() {
         if(minecraft.level == null) return null;
-        return new LevelWrapper(minecraft.level, minecraft.levelRenderer);
+        return ((LevelAttachments) minecraft.level).colorfullighting$getAccessor();
     }
 
     @Override
