@@ -1,8 +1,10 @@
 package me.erykczy.colorfullighting.accessors;
 
+import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.Config;
 import me.erykczy.colorfullighting.common.accessors.BlockStateAccessor;
 import me.erykczy.colorfullighting.common.accessors.LevelAccessor;
+import me.erykczy.colorfullighting.common.accessors.LevelAttachments;
 import me.erykczy.colorfullighting.compat.valkyrienskies.VsCompat;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
@@ -16,7 +18,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.function.Consumer;
 
-public class LevelWrapper implements LevelAccessor {
+public class LevelWrapper implements LevelAccessor, LevelAttachments {
     private final ClientLevel level;
     private final LevelRenderer levelRenderer;
 
@@ -116,4 +118,9 @@ public class LevelWrapper implements LevelAccessor {
     public Level getLevel() {
         return level;
     }
+	
+	@Override
+	public ColoredLightEngine colorfullighting$getEngine() {
+		return ((LevelAttachments) level).colorfullighting$getEngine();
+	}
 }
