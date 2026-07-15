@@ -55,13 +55,17 @@ public abstract class LevelChunkMixin {
     private void colorfullighting$onBlockEntityAdded(BlockEntity blockEntity, CallbackInfo ci) {
         if (!((LevelChunk) (Object) this).getLevel().isClientSide) return;
         if (!Minecraft.getInstance().isSameThread()) return;
-        BlockEntityNbtCache.onBlockEntityAdded(blockEntity);
+		
+	    Level level = ((LevelChunk) (Object) this).getLevel();
+	    ((LevelAttachments) level).colorfullighting$getNbtCache().onBlockEntityAdded(blockEntity);
     }
 
     @Inject(method = "removeBlockEntity", at = @At("TAIL"))
     private void colorfullighting$onBlockEntityRemoved(BlockPos pos, CallbackInfo ci) {
         if (!((LevelChunk) (Object) this).getLevel().isClientSide) return;
         if (!Minecraft.getInstance().isSameThread()) return;
-        BlockEntityNbtCache.onBlockEntityRemoved(pos);
+	    
+		Level level = ((LevelChunk) (Object) this).getLevel();
+        ((LevelAttachments) level).colorfullighting$getNbtCache().onBlockEntityRemoved(pos);
     }
 }

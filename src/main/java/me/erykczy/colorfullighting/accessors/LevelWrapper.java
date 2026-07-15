@@ -1,6 +1,7 @@
 package me.erykczy.colorfullighting.accessors;
 
 import me.erykczy.colorfullighting.api.CLClientLevel;
+import me.erykczy.colorfullighting.common.BlockEntityNbtCache;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.Config;
 import me.erykczy.colorfullighting.common.accessors.*;
@@ -161,5 +162,10 @@ public class LevelWrapper implements LevelAccessor, LevelAttachments {
 	@Override
 	public LevelAccessor colorfullighting$getAccessor() {
 		return this;
+	}
+	
+	@Override
+	public BlockEntityNbtCache colorfullighting$getNbtCache() {
+		return ((LevelAttachments) level).colorfullighting$getNbtCache();
 	}
 }

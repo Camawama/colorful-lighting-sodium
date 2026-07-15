@@ -1,5 +1,6 @@
 package me.erykczy.colorfullighting.mixin.compat.sodium;
 
+import me.erykczy.colorfullighting.common.BlockEntityNbtCache;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.accessors.LevelAccessor;
 import me.erykczy.colorfullighting.common.accessors.mixin.LevelAttachments;
@@ -29,5 +30,10 @@ public class WorldSliceMixin implements LevelAttachments {
 	@Override
 	public LevelAccessor colorfullighting$getAccessor() {
 		return ((LevelAttachments) world).colorfullighting$getAccessor();
+	}
+	
+	@Override
+	public BlockEntityNbtCache colorfullighting$getNbtCache() {
+		return ((LevelAttachments) world).colorfullighting$getNbtCache();
 	}
 }

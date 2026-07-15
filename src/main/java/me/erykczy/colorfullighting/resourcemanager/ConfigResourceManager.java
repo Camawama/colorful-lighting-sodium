@@ -4,6 +4,7 @@ import me.erykczy.colorfullighting.ColorfulLighting;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.BlockEntityNbtCache;
 import me.erykczy.colorfullighting.common.Config;
+import me.erykczy.colorfullighting.common.accessors.mixin.LevelAttachments;
 import me.erykczy.colorfullighting.common.config.VariantList;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -89,10 +90,12 @@ public class ConfigResourceManager implements ResourceManagerReloadListener {
         var player = ColorfulLighting.clientAccessor.getPlayer();
         if (level != null && player != null) {
             ChunkPos playerChunk = player.getChunkPos();
-            BlockEntityNbtCache.reload(level.getLevel(), playerChunk.x, playerChunk.z,
+            ((LevelAttachments) level).colorfullighting$getNbtCache().reload(level.getLevel(), playerChunk.x, playerChunk.z,
                     ColorfulLighting.clientAccessor.getRenderDistance());
         } else {
-            BlockEntityNbtCache.clear();
+			if (level != null) {
+				((LevelAttachments) level).colorfullighting$getNbtCache().clear();
+			}
         }
 
         ColoredLightEngine.resetAll();

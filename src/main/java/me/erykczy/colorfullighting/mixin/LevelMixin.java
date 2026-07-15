@@ -2,6 +2,7 @@ package me.erykczy.colorfullighting.mixin;
 
 import me.erykczy.colorfullighting.ColorfulLighting;
 import me.erykczy.colorfullighting.accessors.LevelWrapper;
+import me.erykczy.colorfullighting.common.BlockEntityNbtCache;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.accessors.LevelAccessor;
 import me.erykczy.colorfullighting.common.accessors.mixin.ClientLevelAccessor;
@@ -29,6 +30,8 @@ public class LevelMixin implements LevelAttachments {
 	ColoredLightEngine colorfullighting$engine;
 	@Unique
 	VsCompat colorfullighting$vsCompat;
+	@Unique
+	BlockEntityNbtCache colorfullighting$nbtCache;
 	
 	@Inject(at = @At("TAIL"), method = "<init>")
 	public void postInit(WritableLevelData p_270739_, ResourceKey p_270683_, RegistryAccess p_270200_, Holder p_270240_, Supplier p_270692_, boolean p_270904_, boolean p_270470_, long p_270248_, int p_270466_, CallbackInfo ci) {
@@ -44,6 +47,8 @@ public class LevelMixin implements LevelAttachments {
 		if (VsCompat.isAvailable()) {
 			colorfullighting$vsCompat = new VsCompat();
 		}
+		
+		colorfullighting$nbtCache = new BlockEntityNbtCache();
 	}
 	
 	@Override
@@ -59,5 +64,9 @@ public class LevelMixin implements LevelAttachments {
 	@Override
 	public LevelAccessor colorfullighting$getAccessor() {
 		return colorfullighting$accessor;
+	}
+	@Override
+	public BlockEntityNbtCache colorfullighting$getNbtCache() {
+		return colorfullighting$nbtCache;
 	}
 }

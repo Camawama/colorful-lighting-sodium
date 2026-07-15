@@ -1,5 +1,6 @@
 package me.erykczy.colorfullighting.common;
 
+import me.erykczy.colorfullighting.common.accessors.mixin.LevelAttachments;
 import me.erykczy.colorfullighting.mixin.BeaconBlockEntityAccessor;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.effect.MobEffect;
@@ -7,6 +8,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BeaconBlock;
 import net.minecraft.world.level.block.entity.BeaconBlockEntity;
+import net.minecraft.world.level.chunk.LevelChunk;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Optional;
@@ -61,7 +63,7 @@ public final class BeaconEffectSync {
         BeaconBlockEntityAccessor accessor = (BeaconBlockEntityAccessor) beacon;
         accessor.colorfullighting$setPrimaryPower(primary.orElse(null));
         accessor.colorfullighting$setSecondaryPower(secondary.orElse(null));
-
-        BlockEntityNbtCache.onBlockEntityDataChanged(pos);
+	    
+	    ((LevelAttachments) level).colorfullighting$getNbtCache().onBlockEntityDataChanged(pos);
     }
 }

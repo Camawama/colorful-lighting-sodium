@@ -33,13 +33,13 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class BlockEntityNbtCache {
     /** Written on the client thread, read from the light propagator thread. */
-    private static final ConcurrentHashMap<Long, CompoundTag> SNAPSHOTS = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, CompoundTag> SNAPSHOTS = new ConcurrentHashMap<>();
     /** Client thread only. */
-    private static final Map<Long, Tracked> TRACKED = new HashMap<>();
+    private final Map<Long, Tracked> TRACKED = new HashMap<>();
 
     private static boolean loggedSaveFailure = false;
 
-    private BlockEntityNbtCache() {}
+    public BlockEntityNbtCache() {}
 
     private static final class Tracked {
         final BlockEntity blockEntity;
@@ -58,12 +58,12 @@ public final class BlockEntityNbtCache {
      * call from any thread.
      */
     @Nullable
-    public static CompoundTag get(BlockPos pos) {
+    public CompoundTag get(BlockPos pos) {
         if (SNAPSHOTS.isEmpty()) return null;
         return SNAPSHOTS.get(pos.asLong());
     }
 
-    public static void onBlockEntityAdded(BlockEntity blockEntity) {
+    public void onBlockEntityAdded(BlockEntity blockEntity) {
         // Runs for every block entity in every loaded chunk, so both checks must be near-free:
         // an empty-set test, then a reference compare against the blocks that carry NBT rules.
         if (!Config.anyBlockNeedsNbt()) return;
@@ -77,7 +77,7 @@ public final class BlockEntityNbtCache {
         refresh(packedPos, tracked, false);
     }
 
-    public static void onBlockEntityRemoved(BlockPos pos) {
+    public void onBlockEntityRemoved(BlockPos pos) {
         long packedPos = pos.asLong();
         if (TRACKED.remove(packedPos) != null) {
             SNAPSHOTS.remove(packedPos);
@@ -85,7 +85,7 @@ public final class BlockEntityNbtCache {
     }
 
     /** Snapshots a freshly received chunk's block entities before its light is propagated. */
-    public static void onChunkLoaded(LevelChunk chunk) {
+    public void onChunkLoaded(LevelChunk chunk) {
         if (!Config.anyBlockNeedsNbt()) return;
         for (BlockEntity blockEntity : chunk.getBlockEntities().values()) {
             onBlockEntityAdded(blockEntity);
@@ -93,12 +93,12 @@ public final class BlockEntityNbtCache {
     }
 
     /** A block entity just received new data from the server; relight now rather than on the next tick. */
-    public static void onBlockEntityDataChanged(BlockPos pos) {
+    public void onBlockEntityDataChanged(BlockPos pos) {
         Tracked tracked = TRACKED.get(pos.asLong());
         if (tracked != null) refresh(pos.asLong(), tracked, true);
     }
 
-    public static void clear() {
+    public void clear() {
         TRACKED.clear();
         SNAPSHOTS.clear();
     }
@@ -108,7 +108,7 @@ public final class BlockEntityNbtCache {
      * before the engine resets: it re-propagates light asynchronously, and any chunk it reaches before
      * the snapshots are republished would be lit from stale NBT with no relight to correct it.
      */
-    public static void reload(@Nullable Level level, int centerChunkX, int centerChunkZ, int chunkRadius) {
+    public void reload(@Nullable Level level, int centerChunkX, int centerChunkZ, int chunkRadius) {
         clear();
         if (level != null && Config.anyBlockNeedsNbt()) {
             rescan(level, centerChunkX, centerChunkZ, chunkRadius);
@@ -119,7 +119,7 @@ public final class BlockEntityNbtCache {
      * Re-serializes every tracked block entity and queues a relight where the resolved light changed.
      * Called once per client tick, on the client thread.
      */
-    public static void clientTick() {
+    public void clientTick() {
         if (TRACKED.isEmpty()) return;
 
         Iterator<Map.Entry<Long, Tracked>> iterator = TRACKED.entrySet().iterator();
@@ -135,7 +135,7 @@ public final class BlockEntityNbtCache {
         }
     }
 
-    private static void rescan(Level level, int centerChunkX, int centerChunkZ, int chunkRadius) {
+    private void rescan(Level level, int centerChunkX, int centerChunkZ, int chunkRadius) {
         for (int x = centerChunkX - chunkRadius; x <= centerChunkX + chunkRadius; x++) {
             for (int z = centerChunkZ - chunkRadius; z <= centerChunkZ + chunkRadius; z++) {
                 LevelChunk chunk = level.getChunkSource().getChunk(x, z, false);
@@ -148,7 +148,7 @@ public final class BlockEntityNbtCache {
      * @param allowRelight false while seeding, when the chunk's light has not been propagated yet and
      *                     a relight request would be wasted work
      */
-    private static void refresh(long packedPos, Tracked tracked, boolean allowRelight) {
+    private void refresh(long packedPos, Tracked tracked, boolean allowRelight) {
         CompoundTag tag = snapshot(tracked.blockEntity);
         if (tag == null) return; // serialization failed; keep the previous snapshot
 

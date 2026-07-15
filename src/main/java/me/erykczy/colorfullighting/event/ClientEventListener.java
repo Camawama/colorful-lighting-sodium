@@ -61,6 +61,9 @@ public class ClientEventListener {
 	    // Keep a light region alive for every loaded Valkyrien Skies ship (no-op without VS).
 	    VsCompat compat = attachments.colorfullighting$getVSCompat();
 		if (compat != null) compat.clientTick(event.level);
+		
+	    // Re-reads tracked block entities' NBT and relights the ones whose resolved light changed.
+	    attachments.colorfullighting$getNbtCache().clientTick();
     }
 	
     @SubscribeEvent
@@ -98,8 +101,6 @@ public class ClientEventListener {
         var player = ColorfulLighting.clientAccessor.getPlayer();
         if (player == null) return;
 
-        // Re-reads tracked block entities' NBT and relights the ones whose resolved light changed.
-        BlockEntityNbtCache.clientTick();
     }
 
     /**
@@ -110,7 +111,7 @@ public class ClientEventListener {
     public void onChunkLoad(ChunkEvent.Load event) {
         if (!event.getLevel().isClientSide()) return;
         if (event.getChunk() instanceof LevelChunk chunk) {
-            BlockEntityNbtCache.onChunkLoaded(chunk);
+	        ((LevelAttachments) event.getLevel()).colorfullighting$getNbtCache().onChunkLoaded(chunk);
         }
     }
 
@@ -127,7 +128,7 @@ public class ClientEventListener {
     @SubscribeEvent
     public void onLevelUnload(LevelEvent.Unload event) {
         if (!event.getLevel().isClientSide()) return;
-        BlockEntityNbtCache.clear();
+	    ((LevelAttachments) event.getLevel()).colorfullighting$getNbtCache().clear();
         BeaconEffectSync.clear();
 		// I think this is redundant
         ((LevelAttachments) event.getLevel()).colorfullighting$getEngine().reset();

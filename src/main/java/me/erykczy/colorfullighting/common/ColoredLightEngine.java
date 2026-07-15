@@ -43,7 +43,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * Most work is delegated to LightPropagator thread.
  */
 public class ColoredLightEngine {
-	private ClientAccessor clientAccessor;
+	private final ClientAccessor clientAccessor;
 	private final LevelAccessor level;
 	private final ColoredLightStorage storage = new ColoredLightStorage();
     private final ColoredLightStorage darknessStorage = new ColoredLightStorage();
