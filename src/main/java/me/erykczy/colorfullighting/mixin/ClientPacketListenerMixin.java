@@ -3,7 +3,7 @@ package me.erykczy.colorfullighting.mixin;
 import me.erykczy.colorfullighting.common.BeaconEffectSync;
 import me.erykczy.colorfullighting.common.BlockEntityNbtCache;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
-import me.erykczy.colorfullighting.common.accessors.LevelAttachments;
+import me.erykczy.colorfullighting.common.accessors.mixin.LevelAttachments;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.core.BlockPos;

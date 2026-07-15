@@ -1,8 +1,11 @@
 package me.erykczy.colorfullighting.accessors;
 
+import me.erykczy.colorfullighting.api.CLClientLevel;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.Config;
 import me.erykczy.colorfullighting.common.accessors.*;
+import me.erykczy.colorfullighting.common.accessors.mixin.ClientLevelAccessor;
+import me.erykczy.colorfullighting.common.accessors.mixin.LevelAttachments;
 import me.erykczy.colorfullighting.compat.valkyrienskies.VsCompat;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
@@ -10,7 +13,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ChunkStatus;
 import org.jetbrains.annotations.NotNull;

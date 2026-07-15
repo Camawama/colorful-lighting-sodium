@@ -1,11 +1,8 @@
 package me.erykczy.colorfullighting.mixin.compat.iris;
 
-import me.erykczy.colorfullighting.common.accessors.iris.CustomShaderProperties;
-import net.irisshaders.iris.Iris;
+import me.erykczy.colorfullighting.common.accessors.mixin.iris.CustomShaderProperties;
 import net.irisshaders.iris.helpers.OptionalBoolean;
 import net.irisshaders.iris.shaderpack.properties.ShaderProperties;
-import net.minecraft.client.Minecraft;
-import net.minecraft.network.chat.Component;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -13,8 +10,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.util.Arrays;
-import java.util.List;
 import java.util.OptionalInt;
 import java.util.function.Consumer;
 

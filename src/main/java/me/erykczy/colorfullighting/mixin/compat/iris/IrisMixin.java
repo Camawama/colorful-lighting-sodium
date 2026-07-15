@@ -1,9 +1,7 @@
 package me.erykczy.colorfullighting.mixin.compat.iris;
 
-import me.erykczy.colorfullighting.ColorfulLighting;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
-import me.erykczy.colorfullighting.common.accessors.iris.CustomShaderProperties;
-import me.erykczy.colorfullighting.compat.oculus.OculusCompat;
+import me.erykczy.colorfullighting.common.accessors.mixin.iris.CustomShaderProperties;
 import net.irisshaders.iris.Iris;
 import net.irisshaders.iris.shaderpack.properties.ShaderProperties;
 import net.minecraft.client.Minecraft;

@@ -1,7 +1,7 @@
 package me.erykczy.colorfullighting.mixin;
 
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
-import me.erykczy.colorfullighting.common.accessors.LevelAttachments;
+import me.erykczy.colorfullighting.common.accessors.mixin.LevelAttachments;
 import me.jellysquid.mods.sodium.client.world.WorldSlice;
 import net.minecraft.client.multiplayer.ClientLevel;
 import org.spongepowered.asm.mixin.Final;

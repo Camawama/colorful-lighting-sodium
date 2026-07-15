@@ -3,6 +3,7 @@ package me.erykczy.colorfullighting.common;
 import me.erykczy.colorfullighting.ColorfulLighting;
 import me.erykczy.colorfullighting.accessors.LevelWrapper;
 import me.erykczy.colorfullighting.common.accessors.*;
+import me.erykczy.colorfullighting.common.accessors.mixin.ClientLevelAccessor;
 import me.erykczy.colorfullighting.common.util.ColorRGB4;
 import me.erykczy.colorfullighting.common.util.ColorRGB8;
 import me.erykczy.colorfullighting.common.util.MathExt;

@@ -1,4 +1,4 @@
-package me.erykczy.colorfullighting.common.accessors.iris;
+package me.erykczy.colorfullighting.common.accessors.mixin.iris;
 
 import java.util.OptionalInt;
 

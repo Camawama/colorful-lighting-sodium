@@ -6,7 +6,7 @@ import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.Config;
 import me.erykczy.colorfullighting.common.accessors.BlockStateAccessor;
 import me.erykczy.colorfullighting.common.accessors.LevelAccessor;
-import me.erykczy.colorfullighting.common.accessors.LightEngineAccessor;
+import me.erykczy.colorfullighting.common.accessors.mixin.LightEngineAccessor;
 import me.erykczy.colorfullighting.common.util.ColorRGB4;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;

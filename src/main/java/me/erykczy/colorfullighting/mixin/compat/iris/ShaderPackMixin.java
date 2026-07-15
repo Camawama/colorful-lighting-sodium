@@ -1,7 +1,7 @@
 package me.erykczy.colorfullighting.mixin.compat.iris;
 
 import com.google.common.collect.ImmutableList;
-import me.erykczy.colorfullighting.common.accessors.iris.ResolvedShaderPack;
+import me.erykczy.colorfullighting.common.accessors.mixin.iris.ResolvedShaderPack;
 import me.erykczy.colorfullighting.compat.oculus.specific.ShaderSpecificPatcher;
 import net.irisshaders.iris.shaderpack.ShaderPack;
 import org.spongepowered.asm.mixin.Mixin;
@@ -23,13 +23,13 @@ public class ShaderPackMixin implements ResolvedShaderPack {
 	}
 	
 	@Override
-	public String getResolvedName() {
+	public String colorfullighting$getResolvedName() {
 		if (name == null) name = ShaderSpecificPatcher.resolveShader((ShaderPack) (Object) this);
 		return name;
 	}
 	
 	@Override
-	public Path path() {
+	public Path colorfullighting$path() {
 		return root;
 	}
 }

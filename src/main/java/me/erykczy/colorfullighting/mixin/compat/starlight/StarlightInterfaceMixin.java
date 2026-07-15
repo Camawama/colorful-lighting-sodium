@@ -1,7 +1,7 @@
 package me.erykczy.colorfullighting.mixin.compat.starlight;
 
-import me.erykczy.colorfullighting.common.accessors.LevelAttachments;
-import me.erykczy.colorfullighting.common.accessors.LightEngineAccessor;
+import me.erykczy.colorfullighting.common.accessors.mixin.LevelAttachments;
+import me.erykczy.colorfullighting.common.accessors.mixin.LightEngineAccessor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.chunk.LightChunkGetter;

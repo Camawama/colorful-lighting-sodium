@@ -1,4 +1,4 @@
-package me.erykczy.colorfullighting.common.accessors;
+package me.erykczy.colorfullighting.api;
 
 /**
  * API interface for other mods to implement if they do custom rendering for a Client Level

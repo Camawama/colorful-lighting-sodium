@@ -1,47 +1,25 @@
 package me.erykczy.colorfullighting.compat.oculus.specific;
 
 import io.github.douira.glsl_transformer.ast.node.TranslationUnit;
-import io.github.douira.glsl_transformer.ast.node.abstract_node.ASTNode;
-import io.github.douira.glsl_transformer.ast.node.declaration.Declaration;
-import io.github.douira.glsl_transformer.ast.node.declaration.TypeAndInitDeclaration;
 import io.github.douira.glsl_transformer.ast.node.expression.Expression;
 import io.github.douira.glsl_transformer.ast.node.expression.ReferenceExpression;
-import io.github.douira.glsl_transformer.ast.node.expression.binary.AssignmentExpression;
-import io.github.douira.glsl_transformer.ast.node.expression.unary.FunctionCallExpression;
-import io.github.douira.glsl_transformer.ast.node.expression.unary.MemberAccessExpression;
-import io.github.douira.glsl_transformer.ast.node.external_declaration.DeclarationExternalDeclaration;
 import io.github.douira.glsl_transformer.ast.node.external_declaration.ExternalDeclaration;
 import io.github.douira.glsl_transformer.ast.node.statement.Statement;
-import io.github.douira.glsl_transformer.ast.node.statement.terminal.ExpressionStatement;
-import io.github.douira.glsl_transformer.ast.node.type.FullySpecifiedType;
-import io.github.douira.glsl_transformer.ast.node.type.qualifier.StorageQualifier;
-import io.github.douira.glsl_transformer.ast.node.type.qualifier.TypeQualifier;
-import io.github.douira.glsl_transformer.ast.node.type.specifier.BuiltinNumericTypeSpecifier;
 import io.github.douira.glsl_transformer.ast.query.Root;
-import io.github.douira.glsl_transformer.ast.query.match.AutoHintedMatcher;
-import io.github.douira.glsl_transformer.ast.query.match.HintedMatcher;
 import io.github.douira.glsl_transformer.ast.transform.ASTParser;
-import io.github.douira.glsl_transformer.parser.ParseShape;
-import io.github.douira.glsl_transformer.util.Type;
-import me.erykczy.colorfullighting.common.accessors.iris.CustomShaderProperties;
-import me.erykczy.colorfullighting.common.accessors.iris.ResolvedShaderPack;
+import me.erykczy.colorfullighting.common.accessors.mixin.iris.CustomShaderProperties;
+import me.erykczy.colorfullighting.common.accessors.mixin.iris.ResolvedShaderPack;
 import me.erykczy.colorfullighting.compat.oculus.Resources;
 import me.erykczy.colorfullighting.mixin.compat.iris.ShaderPackAccessor;
 import net.irisshaders.iris.Iris;
-import net.irisshaders.iris.pipeline.transform.Patch;
 import net.irisshaders.iris.pipeline.transform.PatchShaderType;
 import net.irisshaders.iris.pipeline.transform.parameter.Parameters;
 import net.irisshaders.iris.shaderpack.ShaderPack;
-import net.irisshaders.iris.shaderpack.include.AbsolutePackPath;
 import net.irisshaders.iris.shaderpack.properties.ShaderProperties;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Objects;
-import java.util.function.Function;
-import java.util.stream.Stream;
 
 public class ShaderSpecificPatcher {
 	public static String resolveShader(ShaderPack pack) {
@@ -49,7 +27,7 @@ public class ShaderSpecificPatcher {
 		String value = ((CustomShaderProperties) properties).colorfullighting$getPatcherFamily();
 		if (value != null) return value;
 		
-		Path pth = ((ResolvedShaderPack) pack).path();
+		Path pth = ((ResolvedShaderPack) pack).colorfullighting$path();
 		
 		Path pth1 = pth.resolve("shaders.settings");
 		
@@ -144,7 +122,7 @@ public class ShaderSpecificPatcher {
 		ShaderPack pack = Iris.getCurrentPack().get();
 		// TODO: check resolved shader name, run patches
 		
-		String name = ((ResolvedShaderPack) pack).getResolvedName();
+		String name = ((ResolvedShaderPack) pack).colorfullighting$getResolvedName();
 		
 		switch (name) {
 			case "Sildur's Vibrant":

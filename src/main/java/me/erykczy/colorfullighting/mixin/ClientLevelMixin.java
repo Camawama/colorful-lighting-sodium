@@ -1,6 +1,6 @@
 package me.erykczy.colorfullighting.mixin;
 
-import me.erykczy.colorfullighting.common.accessors.ClientLevelAccessor;
+import me.erykczy.colorfullighting.common.accessors.mixin.ClientLevelAccessor;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
 import org.spongepowered.asm.mixin.Final;

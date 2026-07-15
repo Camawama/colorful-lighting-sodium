@@ -3,16 +3,13 @@ package me.erykczy.colorfullighting.compat.valkyrienskies;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.ViewArea;
-import me.erykczy.colorfullighting.common.accessors.LevelAttachments;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.multiplayer.ClientLevel;
+import me.erykczy.colorfullighting.common.accessors.mixin.LevelAttachments;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import org.valkyrienskies.core.api.ships.Ship;
 import org.valkyrienskies.core.internal.world.VsiShipWorld;
 import org.valkyrienskies.mod.common.VSGameUtilsKt;
 
-import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;

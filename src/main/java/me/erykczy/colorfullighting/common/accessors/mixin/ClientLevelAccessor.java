@@ -1,4 +1,4 @@
-package me.erykczy.colorfullighting.common.accessors;
+package me.erykczy.colorfullighting.common.accessors.mixin;
 
 import net.minecraft.client.renderer.LevelRenderer;
 
