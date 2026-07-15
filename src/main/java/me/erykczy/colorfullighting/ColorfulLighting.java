@@ -60,7 +60,6 @@ public class ColorfulLighting
 
     public static void onClientSetup(FMLClientSetupEvent event) {
 	    clientAccessor = new MinecraftWrapper(Minecraft.getInstance());
-        ColoredLightEngine.create(clientAccessor);
         ColoredLightEngine.setEnabled(ColorfulLightingConfig.ENABLED.get());
     }
 

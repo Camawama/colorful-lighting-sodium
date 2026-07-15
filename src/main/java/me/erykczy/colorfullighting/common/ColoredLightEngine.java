@@ -1,10 +1,8 @@
 package me.erykczy.colorfullighting.common;
 
 import me.erykczy.colorfullighting.ColorfulLighting;
-import me.erykczy.colorfullighting.common.accessors.BlockStateAccessor;
-import me.erykczy.colorfullighting.common.accessors.ClientAccessor;
-import me.erykczy.colorfullighting.common.accessors.LevelAccessor;
-import me.erykczy.colorfullighting.common.accessors.PlayerAccessor;
+import me.erykczy.colorfullighting.accessors.LevelWrapper;
+import me.erykczy.colorfullighting.common.accessors.*;
 import me.erykczy.colorfullighting.common.util.ColorRGB4;
 import me.erykczy.colorfullighting.common.util.ColorRGB8;
 import me.erykczy.colorfullighting.common.util.MathExt;
@@ -23,6 +21,7 @@ import net.minecraft.core.SectionPos;
 import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
@@ -44,8 +43,9 @@ import java.util.concurrent.locks.ReentrantLock;
  * Most work is delegated to LightPropagator thread.
  */
 public class ColoredLightEngine {
-    private ClientAccessor clientAccessor;
-    private final ColoredLightStorage storage = new ColoredLightStorage();
+	private ClientAccessor clientAccessor;
+	private final LevelAccessor level;
+	private final ColoredLightStorage storage = new ColoredLightStorage();
     private final ColoredLightStorage darknessStorage = new ColoredLightStorage();
     /**
      * Guards writers against each other only. Sampling never takes it: the storages are concurrent maps
@@ -141,11 +141,16 @@ public class ColoredLightEngine {
     public static ColoredLightEngine getInstance() {
 		throw new RuntimeException("Unsupported.");
     }
-    public static ColoredLightEngine create(ClientAccessor clientAccessor) {
-        return new ColoredLightEngine(clientAccessor);
+    public static ColoredLightEngine create(Level level, ClientAccessor clientAccessor) {
+        return new ColoredLightEngine(level, clientAccessor);
     }
 
-    private ColoredLightEngine(ClientAccessor clientAccessor) {
+    private ColoredLightEngine(Level level, ClientAccessor clientAccessor) {
+		if (level instanceof ClientLevel clientLevel) {
+			this.level = new LevelWrapper(level, ((ClientLevelAccessor) clientLevel).colorfullighting$getLevelRenderer());
+		} else {
+			this.level = new LevelWrapper(level, null);
+		}
         this.clientAccessor = clientAccessor;
         reset();
     }
@@ -358,8 +363,6 @@ public class ColoredLightEngine {
 
     public void updateViewArea(ViewArea newArea) {
         if (!enabled) return;
-        LevelAccessor level = clientAccessor.getLevel();
-        if(level == null) return;
         if(viewArea.equals(newArea)) return;
 
         // unload sections
@@ -432,8 +435,6 @@ public class ColoredLightEngine {
      */
     public void syncExtraRegions(Map<Long, LightRegion> desired) {
         if (!enabled) return;
-        LevelAccessor level = clientAccessor.getLevel();
-        if (level == null) return;
         if (extraRegions.isEmpty() && desired.isEmpty()) return;
 
         boolean changed = false;
@@ -559,9 +560,7 @@ public class ColoredLightEngine {
 
     public void onBlockLightPropertiesChanged(BlockPos blockPos) {
         if (!enabled) return;
-        LevelAccessor level = clientAccessor.getLevel();
-        if (level == null) return;
-
+        
         SectionPos sectionPos = SectionPos.of(blockPos);
         if (!isChunkTrackedInner(sectionPos.x(), sectionPos.z())) return;
 
@@ -632,9 +631,7 @@ public class ColoredLightEngine {
 
     public void onLightUpdate() {
         if (!enabled) return;
-        LevelAccessor level = clientAccessor.getLevel();
-        if(level == null) return;
-
+        
         lightPropagator.applyReadyChanges();
 
         long[] sectionsToUpdate;
@@ -942,9 +939,6 @@ public class ColoredLightEngine {
         }
 
         private void performRegionRebuild(ChunkPos centerChunk) {
-            LevelAccessor level = clientAccessor.getLevel();
-            if (level == null) return;
-
             int radius = 1; // 3x3 area
             int minChunkX = centerChunk.x - radius;
             int maxChunkX = centerChunk.x + radius;
@@ -1307,8 +1301,6 @@ public class ColoredLightEngine {
          */
         /** @return true when this pass actually did work; false means the queue is blocked (chunks still loading) */
         private boolean propagateLight() {
-            LevelAccessor level = clientAccessor.getLevel();
-            if(level == null) return false;
             PlayerAccessor player = clientAccessor.getPlayer();
             if(player == null) return false;
             boolean progressed = false;
@@ -1354,8 +1346,6 @@ public class ColoredLightEngine {
 
         /** @return true when this pass actually did work; false means the queue is blocked (chunks still loading) */
         private boolean propagateDarkness() {
-            LevelAccessor level = clientAccessor.getLevel();
-            if(level == null) return false;
             PlayerAccessor player = clientAccessor.getPlayer();
             if(player == null) return false;
             boolean progressed = false;

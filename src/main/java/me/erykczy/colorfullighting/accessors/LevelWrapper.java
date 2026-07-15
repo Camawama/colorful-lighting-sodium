@@ -2,9 +2,7 @@ package me.erykczy.colorfullighting.accessors;
 
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.Config;
-import me.erykczy.colorfullighting.common.accessors.BlockStateAccessor;
-import me.erykczy.colorfullighting.common.accessors.LevelAccessor;
-import me.erykczy.colorfullighting.common.accessors.LevelAttachments;
+import me.erykczy.colorfullighting.common.accessors.*;
 import me.erykczy.colorfullighting.compat.valkyrienskies.VsCompat;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
@@ -12,22 +10,42 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ChunkStatus;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.function.Consumer;
 
 public class LevelWrapper implements LevelAccessor, LevelAttachments {
-    private final ClientLevel level;
+    private final Level level;
+	@Nullable
     private final LevelRenderer levelRenderer;
+	private final boolean isClient;
+	private final boolean isClLevel;
 
-    public LevelWrapper(@NotNull ClientLevel level, @NotNull LevelRenderer levelRenderer) {
+    public LevelWrapper(@NotNull Level level, @Nullable LevelRenderer levelRenderer) {
         this.level = level;
-        this.levelRenderer = levelRenderer;
+	    this.isClient = level instanceof ClientLevel;
+	    this.isClLevel = level instanceof CLClientLevel;
+		
+		this.levelRenderer = levelRenderer;
     }
-
-    public ClientLevel getWrappedLevel() {
+	
+	public LevelWrapper(Level level) {
+		this.level = level;
+		this.isClient = level instanceof ClientLevel;
+		this.isClLevel = level instanceof CLClientLevel;
+		
+		if (isClient) {
+			levelRenderer = ((ClientLevelAccessor) level).colorfullighting$getLevelRenderer();
+		} else {
+			levelRenderer = null;
+		}
+	}
+	
+	public Level getWrappedLevel() {
         return level;
     }
 
@@ -111,7 +129,16 @@ public class LevelWrapper implements LevelAccessor, LevelAttachments {
 
     @Override
     public void setSectionDirty(int x, int y, int z) {
-        levelRenderer.setSectionDirty(x, y, z);
+		if (levelRenderer != null)
+			levelRenderer.setSectionDirty(x, y, z);
+		else {
+			if (isClLevel) {
+				((CLClientLevel) level).setSectionDirty(x, y, z);
+			} else if (isClient) {
+				// not ideal, but it works as a fallback
+				((ClientLevel) level).setSectionDirtyWithNeighbors(x, y, z);
+			}
+		}
     }
 
     @Override

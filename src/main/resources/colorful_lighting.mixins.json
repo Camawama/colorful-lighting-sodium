@@ -53,7 +53,8 @@
 	"compat.iris.ShaderPackAccessor",
 	"compat.iris.IrisMixin",
     "compat.dynamiclights.SodiumDynamicLightsMixin",
-	"WorldSliceMixin"
+	"WorldSliceMixin",
+	"ClientLevelMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -23,7 +23,7 @@ public class LevelMixin implements LevelAttachments {
 	
 	@Inject(at = @At("TAIL"), method = "<init>")
 	public void postInit(WritableLevelData p_270739_, ResourceKey p_270683_, RegistryAccess p_270200_, Holder p_270240_, Supplier p_270692_, boolean p_270904_, boolean p_270470_, long p_270248_, int p_270466_, CallbackInfo ci) {
-		colorfullighting$engine = ColoredLightEngine.create(ColorfulLighting.clientAccessor);
+		colorfullighting$engine = ColoredLightEngine.create((Level) (Object) this, ColorfulLighting.clientAccessor);
 	}
 	
 	@Override

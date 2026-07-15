@@ -31,11 +31,8 @@ import java.util.Set;
  * used through the stable {@code org.valkyrienskies.core.api} types.
  */
 final class VsCompatImpl {
-    private static Method getShipObjectWorld;
-    private static Method getLoadedShips;
-    private static Class<?> loadedShipsOwner;
-
     /** Per-ship state from the previous tick, so unchanged ships are not re-snapshotted. */
+	// TODO: needs to not be global state
     private static final Map<Long, TrackedShip> tracked = new HashMap<>();
 
     /** Cheap change signature: the region only needs rebuilding when one of these moves. */
@@ -59,7 +56,7 @@ final class VsCompatImpl {
 
     static void tick(Level level) throws ReflectiveOperationException {
         ColoredLightEngine engine = ((LevelAttachments) level).colorfullighting$getEngine();
-        if (level == null || engine == null) {
+        if (engine == null) {
             if (!tracked.isEmpty()) {
                 tracked.clear();
                 VsCompat.publish(new VsCompat.ShipSnapshot[0]);
