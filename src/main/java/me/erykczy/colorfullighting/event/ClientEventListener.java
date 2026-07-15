@@ -11,6 +11,7 @@ import me.erykczy.colorfullighting.common.accessors.mixin.LevelRendererAccessor;
 import me.erykczy.colorfullighting.compat.dynamiclights.DynamicLightsCompat;
 import me.erykczy.colorfullighting.compat.oculus.cmd.PackArgumentType;
 import me.erykczy.colorfullighting.compat.oculus.cmd.ShaderPackName;
+import me.erykczy.colorfullighting.compat.valkyrienskies.VsCompat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
@@ -52,12 +53,14 @@ public class ClientEventListener {
 			    pos.x + renderDistance,
 			    pos.z + renderDistance
 	    );
-		
-		ColoredLightEngine engine = ((LevelAttachments) event.level).colorfullighting$getEngine();
+	    
+	    LevelAttachments attachments = (LevelAttachments) event.level;
+		ColoredLightEngine engine = attachments.colorfullighting$getEngine();
 		engine.updateViewArea(viewArea);
 		
 	    // Keep a light region alive for every loaded Valkyrien Skies ship (no-op without VS).
-	    me.erykczy.colorfullighting.compat.valkyrienskies.VsCompat.clientTick(event.level);
+	    VsCompat compat = attachments.colorfullighting$getVSCompat();
+		if (compat != null) compat.clientTick(event.level);
     }
 	
     @SubscribeEvent

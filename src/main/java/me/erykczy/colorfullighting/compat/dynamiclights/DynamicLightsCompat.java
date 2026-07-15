@@ -287,15 +287,17 @@ public final class DynamicLightsCompat {
     private static void addColorSource(List<ColorSource> colors, Entity entity, ColorRGB4 color) {
         double x = entity.getX(), y = entity.getY(), z = entity.getZ();
         colors.add(new ColorSource(x, y, z, color));
-        if (!VsCompat.hasShipMirrors()) return;
+		
+		LevelAttachments attachments = (LevelAttachments) entity.level();
+        if (!VsCompat.hasShipMirrors(attachments)) return;
 
-        double[] world = VsCompat.shipyardToWorld(x, y, z);
+        double[] world = VsCompat.shipyardToWorld(attachments, x, y, z);
         if (world != null) {
             // shipyard resident (item frame on a ship): mirror out into the world
             colors.add(new ColorSource(world[0], world[1], world[2], color));
         } else {
             // world entity near a ship: mirror into each such ship's shipyard
-            VsCompat.forEachShipyardMirror(x, y, z, ENTITY_SHIP_MIRROR_RANGE,
+            VsCompat.forEachShipyardMirror(attachments, x, y, z, ENTITY_SHIP_MIRROR_RANGE,
                     (mx, my, mz) -> colors.add(new ColorSource(mx, my, mz, color)));
         }
     }
@@ -411,7 +413,7 @@ public final class DynamicLightsCompat {
             return bestColor;
         }
 
-        ColorRGB4 hue = sampleShipMirrorHue(((LevelAttachments) level).colorfullighting$getEngine(), x, y, z);
+        ColorRGB4 hue = sampleShipMirrorHue(((LevelAttachments) level).colorfullighting$getEngine(), level, x, y, z);
         if (VsCompat.isAvailable()) {
             // remember what resolved (not gated on hasShipMirrors: on world join blocks propagate
             // before the first tick publishes any mirror) so recheckShipMirrorHues can re-propagate
@@ -441,7 +443,7 @@ public final class DynamicLightsCompat {
                 iterator.remove();
                 continue;
             }
-            ColorRGB4 hue = sampleShipMirrorHue(engine, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+            ColorRGB4 hue = sampleShipMirrorHue(engine, ((LevelAttachments) level).colorfullighting$getAccessor(), pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
             int packed = hue == null ? -1 : packHue(hue);
             if (packed != entry.getValue()) {
                 engine.onBlockLightPropertiesChanged(pos);
@@ -464,16 +466,17 @@ public final class DynamicLightsCompat {
      * distance-dimmed) emission scales it back down in Config.getColorEmission.
      */
     @Nullable
-    private static ColorRGB4 sampleShipMirrorHue(ColoredLightEngine engine, double x, double y, double z) {
-        if (!VsCompat.hasShipMirrors()) return null;
+    private static ColorRGB4 sampleShipMirrorHue(ColoredLightEngine engine, LevelAccessor level, double x, double y, double z) {
+		LevelAttachments attachments = (LevelAttachments) level;
+        if (!VsCompat.hasShipMirrors(attachments)) return null;
 
         int[] max = new int[3];
-        double[] world = VsCompat.shipyardToWorld(x, y, z);
+        double[] world = VsCompat.shipyardToWorld(attachments, x, y, z);
         if (world != null) {
             sampleNeighborhoodMax(engine, world[0], world[1], world[2], max);
         } else {
             // per-channel max over the mirrors: light from several ships blends like light does
-            VsCompat.forEachShipyardMirror(x, y, z, BLOCK_SHIP_MIRROR_RANGE,
+            VsCompat.forEachShipyardMirror(attachments, x, y, z, BLOCK_SHIP_MIRROR_RANGE,
                     (mx, my, mz) -> sampleNeighborhoodMax(engine, mx, my, mz, max));
         }
         int r = max[0], g = max[1], b = max[2];

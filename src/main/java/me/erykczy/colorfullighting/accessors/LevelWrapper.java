@@ -71,7 +71,7 @@ public class LevelWrapper implements LevelAccessor, LevelAttachments {
         if (level.getChunkSource().hasChunk(chunkPos.x, chunkPos.z)) return true;
         // Shipyard chunks that hold no ship blocks are never sent to the client: missing there
         // means empty, not "still loading", so propagation may treat them as loaded air.
-        return VsCompat.isKnownEmptyShipChunk(chunkPos.x, chunkPos.z);
+        return VsCompat.isKnownEmptyShipChunk((LevelAttachments) level, chunkPos.x, chunkPos.z);
     }
 
     @Override
@@ -116,7 +116,7 @@ public class LevelWrapper implements LevelAccessor, LevelAttachments {
         var chunk = level.getChunkSource().getChunk(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ()), ChunkStatus.FULL, false);
         if(chunk == null) {
             // see hasChunk: an absent block-less shipyard chunk is known to be air
-            if (VsCompat.isKnownEmptyShipChunk(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ())))
+            if (VsCompat.isKnownEmptyShipChunk((LevelAttachments) level, SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ())))
                 return AIR_STATE;
             return null;
         }
@@ -135,7 +135,7 @@ public class LevelWrapper implements LevelAccessor, LevelAttachments {
 			levelRenderer.setSectionDirty(x, y, z);
 		else {
 			if (isClLevel) {
-				((CLClientLevel) level).setSectionDirty(x, y, z);
+				((CLClientLevel) level).colorfullighting$setSectionDirty(x, y, z);
 			} else if (isClient) {
 				// not ideal, but it works as a fallback
 				((ClientLevel) level).setSectionDirtyWithNeighbors(x, y, z);
@@ -151,5 +151,15 @@ public class LevelWrapper implements LevelAccessor, LevelAttachments {
 	@Override
 	public ColoredLightEngine colorfullighting$getEngine() {
 		return ((LevelAttachments) level).colorfullighting$getEngine();
+	}
+	
+	@Override
+	public VsCompat colorfullighting$getVSCompat() {
+		return ((LevelAttachments) level).colorfullighting$getVSCompat();
+	}
+	
+	@Override
+	public LevelAccessor colorfullighting$getAccessor() {
+		return this;
 	}
 }

@@ -1,9 +1,8 @@
 package me.erykczy.colorfullighting.common;
 
 import me.erykczy.colorfullighting.ColorfulLighting;
-import me.erykczy.colorfullighting.accessors.LevelWrapper;
 import me.erykczy.colorfullighting.common.accessors.*;
-import me.erykczy.colorfullighting.common.accessors.mixin.ClientLevelAccessor;
+import me.erykczy.colorfullighting.common.accessors.mixin.LevelAttachments;
 import me.erykczy.colorfullighting.common.util.ColorRGB4;
 import me.erykczy.colorfullighting.common.util.ColorRGB8;
 import me.erykczy.colorfullighting.common.util.MathExt;
@@ -147,11 +146,7 @@ public class ColoredLightEngine {
     }
 
     private ColoredLightEngine(Level level, ClientAccessor clientAccessor) {
-		if (level instanceof ClientLevel clientLevel) {
-			this.level = new LevelWrapper(level, ((ClientLevelAccessor) clientLevel).colorfullighting$getLevelRenderer());
-		} else {
-			this.level = new LevelWrapper(level, null);
-		}
+		this.level = ((LevelAttachments) level).colorfullighting$getAccessor();
         this.clientAccessor = clientAccessor;
         reset();
     }

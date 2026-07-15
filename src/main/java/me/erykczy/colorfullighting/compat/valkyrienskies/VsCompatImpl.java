@@ -29,21 +29,24 @@ import java.util.Set;
  */
 final class VsCompatImpl {
     /** Per-ship state from the previous tick, so unchanged ships are not re-snapshotted. */
-	// TODO: needs to not be global state
-    private static final Map<Long, TrackedShip> tracked = new HashMap<>();
+    private final Map<Long, TrackedShip> tracked = new HashMap<>();
 
     /** Cheap change signature: the region only needs rebuilding when one of these moves. */
     private record ShipShape(int minX, int minY, int minZ, int maxX, int maxY, int maxZ, int activeChunkCount) {}
     private record TrackedShip(ShipShape shape, VsCompat.ShipSnapshot snapshot, ColoredLightEngine.LightRegion region) {}
-
-    private VsCompatImpl() {}
+	
+	private final VsCompat compat;
+	
+    public VsCompatImpl(VsCompat compat) {
+		this.compat = compat;
+	}
 
     /**
      * The top three rows of the affine transform, laid out the way
      * {@link VsCompat.ShipMirror#apply} expects. Copied out so the published mirror never holds a
      * live VS matrix that physics could mutate under a reader thread.
      */
-    private static double[] affineRows(org.joml.Matrix4dc m) {
+    private double[] affineRows(org.joml.Matrix4dc m) {
         return new double[]{
                 m.m00(), m.m10(), m.m20(), m.m30(),
                 m.m01(), m.m11(), m.m21(), m.m31(),
@@ -51,14 +54,14 @@ final class VsCompatImpl {
         };
     }
 
-    static void tick(Level level) throws ReflectiveOperationException {
+    void tick(Level level) {
         ColoredLightEngine engine = ((LevelAttachments) level).colorfullighting$getEngine();
         if (engine == null) {
             if (!tracked.isEmpty()) {
                 tracked.clear();
-                VsCompat.publish(new VsCompat.ShipSnapshot[0]);
+                compat.publish(new VsCompat.ShipSnapshot[0]);
             }
-            VsCompat.publishMirrors(new VsCompat.ShipMirror[0]);
+            compat.publishMirrors(new VsCompat.ShipMirror[0]);
             return;
         }
 
@@ -124,12 +127,12 @@ final class VsCompatImpl {
         }
         if (tracked.keySet().retainAll(seen)) snapshotChanged = true;
 
-        VsCompat.publishMirrors(mirrors.toArray(new VsCompat.ShipMirror[0]));
+        compat.publishMirrors(mirrors.toArray(new VsCompat.ShipMirror[0]));
 
         if (snapshotChanged) {
             // Publish before syncing the engine: once sections exist, propagation may immediately
             // consult isKnownEmptyShipChunk from the propagator thread.
-            VsCompat.publish(tracked.values().stream().map(TrackedShip::snapshot).toArray(VsCompat.ShipSnapshot[]::new));
+            compat.publish(tracked.values().stream().map(TrackedShip::snapshot).toArray(VsCompat.ShipSnapshot[]::new));
         }
 
         Map<Long, ColoredLightEngine.LightRegion> desired = new HashMap<>();

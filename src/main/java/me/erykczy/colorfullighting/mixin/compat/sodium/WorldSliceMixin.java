@@ -1,7 +1,9 @@
-package me.erykczy.colorfullighting.mixin;
+package me.erykczy.colorfullighting.mixin.compat.sodium;
 
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
+import me.erykczy.colorfullighting.common.accessors.LevelAccessor;
 import me.erykczy.colorfullighting.common.accessors.mixin.LevelAttachments;
+import me.erykczy.colorfullighting.compat.valkyrienskies.VsCompat;
 import me.jellysquid.mods.sodium.client.world.WorldSlice;
 import net.minecraft.client.multiplayer.ClientLevel;
 import org.spongepowered.asm.mixin.Final;
@@ -17,5 +19,15 @@ public class WorldSliceMixin implements LevelAttachments {
 	@Override
 	public ColoredLightEngine colorfullighting$getEngine() {
 		return ((LevelAttachments) world).colorfullighting$getEngine();
+	}
+	
+	@Override
+	public VsCompat colorfullighting$getVSCompat() {
+		return ((LevelAttachments) world).colorfullighting$getVSCompat();
+	}
+	
+	@Override
+	public LevelAccessor colorfullighting$getAccessor() {
+		return ((LevelAttachments) world).colorfullighting$getAccessor();
 	}
 }
