@@ -76,7 +76,7 @@ public class CommonTransformations {
 			Root root, Parameters parameters,
 			boolean core, CallbackInfo ci
 	) {
-		if (!ColoredLightEngine.getInstance().isEnabled()) return;
+		if (!ColoredLightEngine.isEnabled()) return;
 		
 		TextureStage stage = parameters.getTextureStage();
 		Patch patch = parameters.patch;

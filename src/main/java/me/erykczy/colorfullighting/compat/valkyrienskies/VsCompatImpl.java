@@ -3,10 +3,14 @@ package me.erykczy.colorfullighting.compat.valkyrienskies;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.ViewArea;
+import me.erykczy.colorfullighting.common.accessors.LevelAttachments;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
 import org.valkyrienskies.core.api.ships.Ship;
+import org.valkyrienskies.core.internal.world.VsiShipWorld;
+import org.valkyrienskies.mod.common.VSGameUtilsKt;
 
 import java.lang.reflect.Method;
 import java.util.Collection;
@@ -53,9 +57,8 @@ final class VsCompatImpl {
         };
     }
 
-    static void tick() throws ReflectiveOperationException {
-        ClientLevel level = Minecraft.getInstance().level;
-        ColoredLightEngine engine = ColoredLightEngine.getInstance();
+    static void tick(Level level) throws ReflectiveOperationException {
+        ColoredLightEngine engine = ((LevelAttachments) level).colorfullighting$getEngine();
         if (level == null || engine == null) {
             if (!tracked.isEmpty()) {
                 tracked.clear();
@@ -65,21 +68,13 @@ final class VsCompatImpl {
             return;
         }
 
-        if (getShipObjectWorld == null) {
-            getShipObjectWorld = Class.forName("org.valkyrienskies.mod.common.VSGameUtilsKt")
-                    .getMethod("getShipObjectWorld", ClientLevel.class);
-        }
-        Object shipWorld = getShipObjectWorld.invoke(null, level);
+        VsiShipWorld shipWorld = VSGameUtilsKt.getShipObjectWorld(level);
         Collection<?> ships;
         if (shipWorld == null) {
             ships = List.of();
         } else {
-            if (getLoadedShips == null || loadedShipsOwner != shipWorld.getClass()) {
-                loadedShipsOwner = shipWorld.getClass();
-                getLoadedShips = loadedShipsOwner.getMethod("getLoadedShips");
-            }
             // QueryableShipData extends java.util.Collection in every VS version
-            ships = (Collection<?>) getLoadedShips.invoke(shipWorld);
+            ships = shipWorld.getLoadedShips();
         }
 
         boolean snapshotChanged = false;

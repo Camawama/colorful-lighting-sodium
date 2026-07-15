@@ -122,7 +122,7 @@ public class Config {
         // nearby entity that caused them; client-lighting mods are handled by the entity
         // tracking in DynamicLightsCompat instead
         if (DynamicLightsCompat.isDynamicLightBlock(block)) {
-            ColorRGB4 dynamicColor = DynamicLightsCompat.getDynamicBlockLightColor(pos);
+            ColorRGB4 dynamicColor = DynamicLightsCompat.getDynamicBlockLightColor(level, pos);
             if (dynamicColor != null) {
                 return dynamicColor.mul(lightEmission);
             }

@@ -4,6 +4,7 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.erykczy.colorfullighting.ColorfulLighting;
 import me.erykczy.colorfullighting.common.ViewArea;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
 
 /**
  * Valkyrien Skies compat: keeps a colored light region (see ColoredLightEngine.LightRegion) alive
@@ -41,10 +42,10 @@ public final class VsCompat {
     }
 
     /** Called once per client tick from ClientEventListener; no-op when VS is absent. */
-    public static void clientTick() {
+    public static void clientTick(Level level) {
         if (!available) return;
         try {
-            VsCompatImpl.tick();
+            VsCompatImpl.tick(level);
         } catch (Throwable t) {
             available = false;
             snapshot = new ShipSnapshot[0];

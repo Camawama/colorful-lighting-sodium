@@ -55,6 +55,9 @@ public class ClientEventListener {
 		
 		ColoredLightEngine engine = ((LevelAttachments) event.level).colorfullighting$getEngine();
 		engine.updateViewArea(viewArea);
+		
+	    // Keep a light region alive for every loaded Valkyrien Skies ship (no-op without VS).
+	    me.erykczy.colorfullighting.compat.valkyrienskies.VsCompat.clientTick(event.level);
     }
 	
     @SubscribeEvent
@@ -91,9 +94,6 @@ public class ClientEventListener {
         if (ColorfulLighting.clientAccessor == null) return;
         var player = ColorfulLighting.clientAccessor.getPlayer();
         if (player == null) return;
-
-        // Keep a light region alive for every loaded Valkyrien Skies ship (no-op without VS).
-        me.erykczy.colorfullighting.compat.valkyrienskies.VsCompat.clientTick();
 
         // Re-reads tracked block entities' NBT and relights the ones whose resolved light changed.
         BlockEntityNbtCache.clientTick();

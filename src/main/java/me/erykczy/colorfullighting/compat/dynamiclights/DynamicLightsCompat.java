@@ -389,7 +389,7 @@ public final class DynamicLightsCompat {
      * plain white light).
      */
     @Nullable
-    public static ColorRGB4 getDynamicBlockLightColor(BlockPos lightBlockPos) {
+    public static ColorRGB4 getDynamicBlockLightColor(LevelAccessor level, BlockPos lightBlockPos) {
         // Runs on the light-propagator thread, so it must never touch the live entity lists: read the
         // per-tick snapshot instead. Seeing a dynamic light block also arms the colored-entity scan,
         // which stays off for vanilla worlds that never place these blocks.
@@ -412,7 +412,7 @@ public final class DynamicLightsCompat {
             return bestColor;
         }
 
-        ColorRGB4 hue = sampleShipMirrorHue(x, y, z);
+        ColorRGB4 hue = sampleShipMirrorHue(((LevelAttachments) level).colorfullighting$getEngine(), x, y, z);
         if (VsCompat.isAvailable()) {
             // remember what resolved (not gated on hasShipMirrors: on world join blocks propagate
             // before the first tick publishes any mirror) so recheckShipMirrorHues can re-propagate
@@ -442,7 +442,7 @@ public final class DynamicLightsCompat {
                 iterator.remove();
                 continue;
             }
-            ColorRGB4 hue = sampleShipMirrorHue(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+            ColorRGB4 hue = sampleShipMirrorHue(engine, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
             int packed = hue == null ? -1 : packHue(hue);
             if (packed != entry.getValue()) {
                 engine.onBlockLightPropertiesChanged(pos);
@@ -465,10 +465,8 @@ public final class DynamicLightsCompat {
      * distance-dimmed) emission scales it back down in Config.getColorEmission.
      */
     @Nullable
-    private static ColorRGB4 sampleShipMirrorHue(double x, double y, double z) {
+    private static ColorRGB4 sampleShipMirrorHue(ColoredLightEngine engine, double x, double y, double z) {
         if (!VsCompat.hasShipMirrors()) return null;
-        ColoredLightEngine engine = ColoredLightEngine.getInstance();
-        if (engine == null || !ColoredLightEngine.isEnabled()) return null;
 
         int[] max = new int[3];
         double[] world = VsCompat.shipyardToWorld(x, y, z);
