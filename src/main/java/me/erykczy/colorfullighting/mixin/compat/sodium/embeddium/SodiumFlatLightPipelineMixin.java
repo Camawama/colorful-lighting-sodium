@@ -1,4 +1,4 @@
-package me.erykczy.colorfullighting.mixin.compat.sodium;
+package me.erykczy.colorfullighting.mixin.compat.sodium.embeddium;
 
 import me.erykczy.colorfullighting.accessors.BlockStateWrapper;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
@@ -10,6 +10,7 @@ import me.erykczy.colorfullighting.common.util.ColorRGB8;
 import me.erykczy.colorfullighting.compat.sodium.SodiumPackedLightData;
 import me.jellysquid.mods.sodium.client.model.light.data.LightDataAccess;
 import me.jellysquid.mods.sodium.client.model.light.data.QuadLightData;
+import me.jellysquid.mods.sodium.client.model.light.flat.FlatLightPipeline;
 import me.jellysquid.mods.sodium.client.model.quad.ModelQuadView;
 import me.jellysquid.mods.sodium.client.model.quad.properties.ModelQuadFlags;
 import net.minecraft.core.BlockPos;
@@ -22,7 +23,7 @@ import org.spongepowered.asm.mixin.Shadow;
 
 import java.util.Arrays;
 
-@Mixin(targets = "me.jellysquid.mods.sodium.client.model.light.flat.FlatLightPipeline", remap = false, priority = 500)
+@Mixin(value = FlatLightPipeline.class, remap = false, priority = 500)
 public abstract class SodiumFlatLightPipelineMixin {
 
     @Shadow private LightDataAccess lightCache;
@@ -48,9 +49,12 @@ public abstract class SodiumFlatLightPipelineMixin {
 
         // 1. Always sample the light color for the offset position first.
         // This ensures light propagation is never skipped or blocked.
+	    
+	    // I'm leaving that comment there incase something breaks
+	    // But I do not see any reason why that would be true
+	    // so I moved it to only sample the light color IF the light color is going to be used
 	    BlockAndTintGetter level = this.lightCache.getWorld();
         BlockPos offsetPos = pos.relative(face);
-        ColorRGB4 sampledColor = ((LevelAttachments) level).colorfullighting$getEngine().sampleLightColor(offsetPos);
         
         int adjWord = this.lightCache.get(pos, face);
         int skyLight = LightDataAccess.unpackSL(adjWord);
@@ -71,7 +75,8 @@ public abstract class SodiumFlatLightPipelineMixin {
         }
 
         // 4. Fallback to normal lighting behavior with the properly sampled ambient light color
-        return SodiumPackedLightData.packData(skyLight, ColorRGB8.fromRGB4(sampledColor));
+	    int sampledColor = ((LevelAttachments) level).colorfullighting$getEngine().sampleLightColorInt(offsetPos);
+        return SodiumPackedLightData.packDataFromRGB4(skyLight, sampledColor);
     }
 
     /**
@@ -114,8 +119,7 @@ public abstract class SodiumFlatLightPipelineMixin {
                 int word = this.lightCache.get(pos);
 	            
 	            BlockAndTintGetter level = this.lightCache.getWorld();
-                // Always sample light at pos
-                ColorRGB4 sampledColor = ((LevelAttachments) level).colorfullighting$getEngine().sampleLightColor(pos);
+	            // Always sample light at pos
                 int skyLight = LightDataAccess.unpackSL(word);
                 
                 boolean overridden = false;
@@ -133,7 +137,8 @@ public abstract class SodiumFlatLightPipelineMixin {
                 }
                 
                 if (!overridden) {
-                    lightmap = SodiumPackedLightData.packData(skyLight, ColorRGB8.fromRGB4(sampledColor));
+	                int sampledColor = ((LevelAttachments) level).colorfullighting$getEngine().sampleLightColorInt(pos);
+                    lightmap = SodiumPackedLightData.packDataFromRGB4(skyLight, sampledColor);
                 }
             }
         }

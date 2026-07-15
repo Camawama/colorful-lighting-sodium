@@ -250,6 +250,12 @@ public class ColoredLightEngine {
         return ColorRGB4.fromRGB4((packed >>> 8) & 0x0F, (packed >>> 4) & 0x0F, packed & 0x0F);
     }
 
+    public int sampleLightColorInt(BlockPos pos) { return sampleLightColorInt(pos.getX(), pos.getY(), pos.getZ()); }
+    public int sampleLightColorInt(int x, int y, int z) {
+        int packed = sampleLightColorPacked(x, y, z);
+        return packed;
+    }
+
     public int sampleLightColorPacked(int x, int y, int z) {
         return sampleLightColorPacked(sectionCursor.get(), x, y, z);
     }

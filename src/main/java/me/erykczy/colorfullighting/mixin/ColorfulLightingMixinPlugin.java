@@ -66,6 +66,18 @@ public class ColorfulLightingMixinPlugin implements IMixinConfigPlugin {
             // Ensure SodiumDynamicLights (DynamicLights Reforged) is installed
             return hasClass("toni.sodiumdynamiclights.SodiumDynamicLights");
         }
+        if (mixinClassName.contains(".embeddium.")) {
+            // Ensure SPECIFICALLY embeddium is installed
+            return hasClass("org.embeddedt.embeddium_integrity.MixinTaintDetector");
+        }
+	    if (mixinClassName.contains(".mixin.compat.sodium.sodium.")) {
+		    // Ensure any sodium version EXCEPT embeddium is installed
+		    return !hasClass("org.embeddedt.embeddium_integrity.MixinTaintDetector");
+	    }
+        if (mixinClassName.contains(".sodium.")) {
+            // Ensure Sodium/Rubidium/Embeddium is installed
+            return hasClass("me.jellysquid.mods.sodium.client.SodiumClientMod");
+        }
         return true;
     }
 

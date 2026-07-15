@@ -6,6 +6,13 @@ public class ColorRGB8 {
     public static ColorRGB8 fromRGB4(ColorRGB4 value) {
         return new ColorRGB8(value.red4 * 17, value.green4 * 17, value.blue4 * 17);
     }
+	
+    public static ColorRGB8 fromRGB4Int(int value) {
+	    int r = (value >>> 8) & 0x0F;
+		int g = (value >>> 4) & 0x0F;
+		int b = value & 0x0F;
+        return new ColorRGB8(r * 17, g * 17, b * 17);
+    }
 
     public static ColorRGB8 fromRGB8(int r, int g, int b) {
         return new ColorRGB8(r, g, b);

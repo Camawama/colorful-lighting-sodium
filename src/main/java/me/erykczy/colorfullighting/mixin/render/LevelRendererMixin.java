@@ -12,6 +12,7 @@ import me.erykczy.colorfullighting.common.util.ColorRGB4;
 import me.erykczy.colorfullighting.common.util.ColorRGB8;
 import me.erykczy.colorfullighting.common.util.PackedLightData;
 import me.erykczy.colorfullighting.compat.create.CreateCompat;
+import me.erykczy.colorfullighting.compat.sodium.SodiumPackedLightData;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.core.BlockPos;
@@ -53,9 +54,9 @@ public class LevelRendererMixin implements LevelRendererAccessor {
                 }
             }
         }
-
-        ColorRGB4 color = ((LevelAttachments) level).colorfullighting$getEngine().sampleLightColor(pos);
-        cir.setReturnValue(PackedLightData.packData(skyLight, ColorRGB8.fromRGB4(color)));
+		
+        int color = ((LevelAttachments) level).colorfullighting$getEngine().sampleLightColorInt(pos);
+        cir.setReturnValue(SodiumPackedLightData.packDataFromRGB4(skyLight, color));
     }
 	
 	@Override

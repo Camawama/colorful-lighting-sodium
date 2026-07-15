@@ -19,8 +19,8 @@
     "compat.sodium.SodiumWorldSliceMixin",
     "compat.sodium.SodiumBlockOcclusionCacheMixin",
     "compat.sodium.SodiumFluidRendererMixin",
-    "compat.sodium.SodiumFlatLightPipelineMixin",
-    "compat.sodium.SodiumSmoothLightPipelineMixin",
+	"compat.sodium.embeddium.SodiumFlatLightPipelineMixin",
+	"compat.sodium.embeddium.SodiumSmoothLightPipelineMixin",
     "compat.sodium.SodiumQuadLighterMixin",
     "compat.sodium.SodiumLightDataAccessMixin",
     "compat.sodium.SodiumAoFaceDataMixin",
@@ -53,8 +53,11 @@
 	"compat.iris.ShaderPackAccessor",
 	"compat.iris.IrisMixin",
     "compat.dynamiclights.SodiumDynamicLightsMixin",
-	  "compat.sodium.WorldSliceMixin",
-	"ClientLevelMixin"
+	"compat.sodium.WorldSliceMixin",
+	"ClientLevelMixin",
+	"render.RenderChunkRegionMixin",
+	"compat.sodium.sodium.FlatLightPipelineMixin",
+	"compat.sodium.sodium.SodiumSmoothLightPipelineMixin"
   ],
   "injectors": {
     "defaultRequire": 1
