@@ -65,10 +65,8 @@ public class FlatLightPipelineMixin {
 		if (LightDataAccess.unpackEM(word)) {
 			BlockState state = level.getBlockState(pos);
 			
-			BlockStateAccessor stateAccessor = new BlockStateWrapper(state);
-			
 			// 3. Only override the light if the block ACTUALLY emits configured light
-			var emission = Config.getLightColor(stateAccessor);
+			var emission = Config.getLightColor(state);
 			if (!emission.equals(Config.defaultColor)) {
 				return SodiumPackedLightData.packData(skyLight, ColorRGB8.fromRGB4(emission));
 			}
@@ -123,9 +121,7 @@ public class FlatLightPipelineMixin {
 				if (LightDataAccess.unpackEM(word)) {
 					BlockState state = level.getBlockState(pos);
 					
-					BlockStateAccessor stateAccessor = new BlockStateWrapper(state);
-					
-					var emission = Config.getLightColor(stateAccessor);
+					var emission = Config.getLightColor(state);
 					if (!emission.equals(Config.defaultColor)) {
 						lightmap = SodiumPackedLightData.packData(skyLight, ColorRGB8.fromRGB4(emission));
 						overridden = true;

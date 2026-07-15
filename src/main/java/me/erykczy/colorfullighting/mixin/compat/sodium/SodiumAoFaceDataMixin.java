@@ -61,15 +61,11 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
 
         if (LightDataAccess.unpackEM(word)) {
             BlockPos pos = new BlockPos(x, y, z);
-            BlockState state = level.getBlockState(pos);
-            LevelAccessor levelAccessor = ColorfulLighting.clientAccessor.getLevel();
-            if(levelAccessor != null) {
-                BlockStateAccessor stateAccessor = new BlockStateWrapper(state);
-
-                var emission = Config.getLightColor(stateAccessor);
-                if (!emission.equals(Config.defaultColor)) {
-                    return SodiumPackedLightData.packData(skyLight, ColorRGB8.fromRGB4(emission));
-                }
+			
+	        BlockState state = level.getBlockState(pos);
+	        var emission = Config.getLightColor(state);
+            if (!emission.equals(Config.defaultColor)) {
+                return SodiumPackedLightData.packData(skyLight, ColorRGB8.fromRGB4(emission));
             }
         }
         return SodiumPackedLightData.packDataFromRGB4(skyLight, engine.sampleLightColorPacked(cursor, x, y, z));

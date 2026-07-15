@@ -10,6 +10,10 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
 import org.jetbrains.annotations.NotNull;
 
+/**
+ * To be converted into a static utility class and renamed to BlockStateHelper
+ */
+@Deprecated(forRemoval = true)
 public class BlockStateWrapper implements BlockStateAccessor {
     final BlockState blockState;
 

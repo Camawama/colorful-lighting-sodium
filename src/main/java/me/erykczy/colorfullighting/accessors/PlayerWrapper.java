@@ -6,6 +6,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.ChunkPos;
 import org.jetbrains.annotations.NotNull;
 
+// what, purpose does this serve?
+@Deprecated(forRemoval = true)
 public class PlayerWrapper implements PlayerAccessor {
     final LocalPlayer player;
 

@@ -44,14 +44,11 @@ public class LevelRendererMixin implements LevelRendererAccessor {
 
         int skyLight = level.getBrightness(LightLayer.SKY, pos);
         if(state.emissiveRendering(level, pos)) {
-            LevelAccessor levelAccessor = ColorfulLighting.clientAccessor.getLevel();
-            if(levelAccessor != null) {
-                BlockStateAccessor stateAccessor = new BlockStateWrapper(state);
-                if (Config.getEmissionBrightness(stateAccessor) > 0) {
-                    var emission = Config.getLightColor(stateAccessor);
-                    cir.setReturnValue(PackedLightData.packData(skyLight, ColorRGB8.fromRGB4(emission)));
-                    return;
-                }
+            BlockStateAccessor stateAccessor = new BlockStateWrapper(state);
+            if (Config.getEmissionBrightness(stateAccessor) > 0) {
+                var emission = Config.getLightColor(state);
+                cir.setReturnValue(PackedLightData.packData(skyLight, ColorRGB8.fromRGB4(emission)));
+                return;
             }
         }
 		
