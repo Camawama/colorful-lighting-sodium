@@ -1,6 +1,8 @@
 package me.erykczy.colorfullighting.mixin;
 
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
+import me.erykczy.colorfullighting.common.accessors.LevelAttachments;
+import me.erykczy.colorfullighting.common.accessors.LightEngineAccessor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.lighting.BlockLightEngine;
@@ -13,10 +15,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class BlockLightEngineMixin {
     @Inject(method = "checkNode", at = @At("TAIL"))
     private void colorfullighting$checkNode(long packedPos, CallbackInfo ci) {
-        if (!ColoredLightEngine.getInstance().isEnabled()) {
+        if (!ColoredLightEngine.isEnabled()) {
             return;
         }
         if(!Minecraft.getInstance().isSameThread()) return; // only client side
-        ColoredLightEngine.getInstance().onBlockLightPropertiesChanged(BlockPos.of(packedPos));
+        ((LevelAttachments) ((LightEngineAccessor) this).colorfullighting$getChunkGetter().getLevel()).colorfullighting$getEngine().onBlockLightPropertiesChanged(BlockPos.of(packedPos));
     }
 }

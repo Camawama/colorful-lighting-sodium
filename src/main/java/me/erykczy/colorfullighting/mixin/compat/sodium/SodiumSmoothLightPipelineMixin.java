@@ -79,7 +79,7 @@ public abstract class SodiumSmoothLightPipelineMixin {
         
         SodiumAoFaceDataExtension faceData = (SodiumAoFaceDataExtension) faceDataObj;
 
-        if (!ColoredLightEngine.getInstance().isEnabled()) {
+        if (!ColoredLightEngine.isEnabled()) {
             int lightMap = faceData.getBlendedLightMap(w);
             float ao = faceData.getBlendedShade(w);
 
@@ -114,7 +114,7 @@ public abstract class SodiumSmoothLightPipelineMixin {
 
         float ao = (n1.getBlendedShade(w) * n1d) + (n2.getBlendedShade(w) * n2d);
         
-        if (!ColoredLightEngine.getInstance().isEnabled()) {
+        if (!ColoredLightEngine.isEnabled()) {
             // Replicate vanilla/Sodium logic
             // We need to get the blended lightmap from n1 and n2, unpack them, interpolate, and repack
             int lm1 = n1.getBlendedLightMap(w);

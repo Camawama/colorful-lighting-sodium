@@ -30,8 +30,12 @@ public abstract class DefaultChunkRendererMixin {
         ChunkShaderInterface shader = activeProgram.getInterface();
         
         if (shader instanceof ChunkShaderInterfaceExtension extension) {
-            ColoredLightEngine engine = ColoredLightEngine.getInstance();
-            extension.setColoredLightingEnabled(engine != null && engine.isEnabled());
+			// TODO: original code made sure the lighting engine is not null
+	        //       unsure if having this be dependent on if the world instance has a colored lighting engine is important or not
+//            ColoredLightEngine engine = ColoredLightEngine.getInstance();
+//            extension.setColoredLightingEnabled(engine != null && ColoredLightEngine.isEnabled());
+	        
+            extension.setColoredLightingEnabled(ColoredLightEngine.isEnabled());
 
             ClientLevel level = Minecraft.getInstance().level;
             if (level != null) {

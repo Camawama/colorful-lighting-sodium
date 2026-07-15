@@ -6,25 +6,35 @@ import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.Config;
 import me.erykczy.colorfullighting.common.accessors.BlockStateAccessor;
 import me.erykczy.colorfullighting.common.accessors.LevelAccessor;
+import me.erykczy.colorfullighting.common.accessors.LevelAttachments;
+import me.erykczy.colorfullighting.common.accessors.LevelRendererAccessor;
 import me.erykczy.colorfullighting.common.util.ColorRGB4;
 import me.erykczy.colorfullighting.common.util.ColorRGB8;
 import me.erykczy.colorfullighting.common.util.PackedLightData;
 import me.erykczy.colorfullighting.compat.create.CreateCompat;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.BlockAndTintGetter;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.state.BlockState;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+import javax.annotation.Nullable;
+
 @Mixin(LevelRenderer.class)
-public class LevelRendererMixin {
-    @Inject(method = "getLightColor(Lnet/minecraft/world/level/BlockAndTintGetter;Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;)I", at = @At("HEAD"), cancellable = true)
+public class LevelRendererMixin implements LevelRendererAccessor {
+	@Shadow
+	@Nullable
+	private ClientLevel level;
+	
+	@Inject(method = "getLightColor(Lnet/minecraft/world/level/BlockAndTintGetter;Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/BlockPos;)I", at = @At("HEAD"), cancellable = true)
     private static void colorfullighting$getLightColor(BlockAndTintGetter level, BlockState state, BlockPos pos, CallbackInfoReturnable<Integer> cir) {
-        if (!ColoredLightEngine.getInstance().isEnabled()) {
+        if (!ColoredLightEngine.isEnabled()) {
             return;
         }
 
@@ -44,8 +54,12 @@ public class LevelRendererMixin {
             }
         }
 
-        ColorRGB4 color = ColoredLightEngine.getInstance().sampleLightColor(pos);
+        ColorRGB4 color = ((LevelAttachments) level).colorfullighting$getEngine().sampleLightColor(pos);
         cir.setReturnValue(PackedLightData.packData(skyLight, ColorRGB8.fromRGB4(color)));
     }
-
+	
+	@Override
+	public ClientLevel colorfullighting$getClientLevel() {
+		return level;
+	}
 }

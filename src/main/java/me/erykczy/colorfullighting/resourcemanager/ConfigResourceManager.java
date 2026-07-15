@@ -95,8 +95,7 @@ public class ConfigResourceManager implements ResourceManagerReloadListener {
             BlockEntityNbtCache.clear();
         }
 
-        if(level != null)
-            ColoredLightEngine.getInstance().reset();
+        ColoredLightEngine.resetAll();
     }
 
     private static void loadBuiltInLightConfigs(HashMap<ResourceLocation, VariantList<Config.ColorEmitter>> emitters,

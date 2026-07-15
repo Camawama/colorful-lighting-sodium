@@ -68,7 +68,7 @@ public abstract class SodiumLightDataAccessMixin {
             } else {
                 int packedCoords = LevelRenderer.getLightColor(world, state, pos);
                 
-                if (ColoredLightEngine.getInstance().isEnabled()) {
+                if (ColoredLightEngine.isEnabled()) {
                     // Check if it is our packed format (alpha bits set to 0xF)
                     if ((packedCoords >>> 28) == 0xF) {
                          sl = SodiumPackedLightData.unpackSkyLight(packedCoords);

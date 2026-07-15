@@ -5,12 +5,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Enumeration;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -137,6 +132,7 @@ public final class ShaderpackPatchEngine {
             variable.float.cl_starRaw = clamp(1.0 - (cl_dayT * 2.0 + 0.25), 0.0, 1.0)
             variable.float.cl_moonVib = 1.0 - 0.55 * abs(moonPhase - 4.0) * 0.25
             uniform.float.cl_skyWash = clamp((0.15 + 0.85 * cl_dayF) * 3.0 * (1.0 - cl_starRaw * cl_starRaw * 0.5 * cl_moonVib), 0.0, 1.0)
+            colorful_lighting.compat_status=4
             # <<< Colorful Lighting auto-patch <<<
             """;
 

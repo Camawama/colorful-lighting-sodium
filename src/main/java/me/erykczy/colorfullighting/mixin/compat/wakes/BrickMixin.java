@@ -28,7 +28,7 @@ public class BrickMixin {
 
     @Redirect(method = "populatePixels", at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/platform/NativeImage;getPixelRGBA(II)I"), remap = true)
     private int redirectGetPixelRGBA(NativeImage lightPixels, int x, int y) {
-        if (ColoredLightEngine.getInstance().isEnabled()) {
+        if (ColoredLightEngine.isEnabled()) {
             int light = this.colorful_lighting$lastLightCoordinate;
             
             // Check if the light value is actually a packed colored light value

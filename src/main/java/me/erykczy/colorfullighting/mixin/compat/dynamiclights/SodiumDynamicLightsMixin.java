@@ -22,8 +22,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public class SodiumDynamicLightsMixin {
     @Inject(method = "getLightmapWithDynamicLight(DI)I", at = @At("HEAD"), cancellable = true, remap = false, require = 0)
     private void colorfullighting$skipVanillaFormatBoost(double dynamicLightLevel, int lightmap, CallbackInfoReturnable<Integer> cir) {
-        ColoredLightEngine engine = ColoredLightEngine.getInstance();
-        if (engine != null && engine.isEnabled()) {
+        if (ColoredLightEngine.isEnabled()) {
             cir.setReturnValue(lightmap);
         }
     }

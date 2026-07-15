@@ -6,22 +6,30 @@ import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.Config;
 import me.erykczy.colorfullighting.common.accessors.BlockStateAccessor;
 import me.erykczy.colorfullighting.common.accessors.LevelAccessor;
+import me.erykczy.colorfullighting.common.accessors.LightEngineAccessor;
 import me.erykczy.colorfullighting.common.util.ColorRGB4;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LightChunkGetter;
 import net.minecraft.world.level.lighting.LightEngine;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(LightEngine.class)
-public class LightEngineMixin {
-    @Inject(method = "hasDifferentLightProperties", at = @At("HEAD"), cancellable = true)
+public class LightEngineMixin implements LightEngineAccessor {
+	@Shadow
+	@Final
+	protected LightChunkGetter chunkSource;
+	
+	@Inject(method = "hasDifferentLightProperties", at = @At("HEAD"), cancellable = true)
     private static void colorfullighting$hasDifferentLightProperties(BlockGetter level, BlockPos pos, BlockState state1, BlockState state2, CallbackInfoReturnable<Boolean> cir) {
-        if (!ColoredLightEngine.getInstance().isEnabled()) {
+        if (!ColoredLightEngine.isEnabled()) {
             return;
         }
         if(!Minecraft.getInstance().isSameThread()) return; // only client side
@@ -47,4 +55,9 @@ public class LightEngineMixin {
             cir.setReturnValue(true);
         }
     }
+	
+	@Override
+	public LightChunkGetter colorfullighting$getChunkGetter() {
+		return chunkSource;
+	}
 }

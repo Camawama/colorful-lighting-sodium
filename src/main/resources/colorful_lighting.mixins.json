@@ -10,6 +10,7 @@
     "LevelChunkMixin",
     "LevelLightEngineMixin",
     "LightEngineMixin",
+	"LevelMixin",
     "render.LiquidBlockRendererMixin",
     "render.LevelRendererMixin",
     "render.AmbientOcclusionFaceMixin",
@@ -43,7 +44,8 @@
     "compat.create.ChainConveyorRendererMixin",
     "compat.create.AnimatedSceneElementBaseMixin",
     "compat.create.ShadeSeparatingSuperByteBufferMixin",
-    "compat.dynamiclights.SodiumDynamicLightsMixin"
+    "compat.dynamiclights.SodiumDynamicLightsMixin",
+	"WorldSliceMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -3,6 +3,7 @@ package me.erykczy.colorfullighting.common;
 import me.erykczy.colorfullighting.ColorfulLighting;
 import me.erykczy.colorfullighting.common.accessors.BlockStateAccessor;
 import me.erykczy.colorfullighting.common.accessors.LevelAccessor;
+import me.erykczy.colorfullighting.common.accessors.LevelAttachments;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.Level;
@@ -179,7 +180,7 @@ public final class BlockEntityNbtCache {
         tracked.seeded = true;
 
         if (changed && allowRelight) {
-            ColoredLightEngine.getInstance().onBlockLightPropertiesChanged(pos);
+            ((LevelAttachments) level).colorfullighting$getEngine().onBlockLightPropertiesChanged(pos);
         }
     }
 

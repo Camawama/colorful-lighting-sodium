@@ -103,8 +103,8 @@ public class ColoredLightEngine {
     private Thread lightPropagatorThread;
     
     // volatile: read from Sodium chunk-build worker threads and the light propagator thread
-    private volatile boolean enabled = true;
-    private boolean packsInitialized = false;
+    private static volatile boolean enabled = true;
+    private static boolean packsInitialized = false;
 
     private static final String CORE_SHADER_PACK_ID = ColorfulLighting.CORE_SHADER_PACK_ID;
 
@@ -138,23 +138,28 @@ public class ColoredLightEngine {
 
     private static ColoredLightEngine instance;
     public static ColoredLightEngine getInstance() {
-        return instance;
+		throw new RuntimeException("Unsupported.");
     }
-    public static void create(ClientAccessor clientAccessor) {
-        instance = new ColoredLightEngine(clientAccessor);
+    public static ColoredLightEngine create(ClientAccessor clientAccessor) {
+        return new ColoredLightEngine(clientAccessor);
     }
 
     private ColoredLightEngine(ClientAccessor clientAccessor) {
         this.clientAccessor = clientAccessor;
         reset();
     }
+	
+	public static void resetAll() {
+		// TODO: reset engines
+//        reset();
+	}
     
-    public void setEnabled(boolean enabled) {
-        if (this.enabled != enabled) {
-            this.enabled = enabled;
+    public static void setEnabled(boolean enabled) {
+        if (ColoredLightEngine.enabled != enabled) {
+            ColoredLightEngine.enabled = enabled;
             ColorfulLightingConfig.ENABLED.set(enabled);
             ColorfulLightingConfig.save();
-            reset();
+	        resetAll();
             updateShaderPack();
 
             // Flywheel keeps colored light in its own GPU buffers, refreshed only through
@@ -166,16 +171,16 @@ public class ColoredLightEngine {
         }
     }
     
-    public boolean isEnabled() {
+    public static boolean isEnabled() {
         return enabled;
     }
     
-    public void onPacksInitialized() {
+    public static void onPacksInitialized() {
         packsInitialized = true;
         updateShaderPack();
     }
 
-    private void updateShaderPack() {
+    private static void updateShaderPack() {
         if (!packsInitialized) return;
         Minecraft mc = Minecraft.getInstance();
         PackRepository repo = mc.getResourcePackRepository();
@@ -190,8 +195,8 @@ public class ColoredLightEngine {
             mc.reloadResourcePacks();
         }
     }
-
-    public void updateFrustum(Frustum frustum) {
+	
+	public void updateFrustum(Frustum frustum) {
         this.frustum = frustum;
     }
 

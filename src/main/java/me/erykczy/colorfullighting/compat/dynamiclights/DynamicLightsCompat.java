@@ -4,6 +4,7 @@ import me.erykczy.colorfullighting.ColorfulLighting;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.Config;
 import me.erykczy.colorfullighting.common.accessors.LevelAccessor;
+import me.erykczy.colorfullighting.common.accessors.LevelAttachments;
 import me.erykczy.colorfullighting.common.util.ColorRGB4;
 import me.erykczy.colorfullighting.compat.sodium.SodiumCompat;
 import me.erykczy.colorfullighting.compat.valkyrienskies.VsCompat;
@@ -18,6 +19,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import me.erykczy.colorfullighting.common.config.VariantList;
@@ -180,10 +182,9 @@ public final class DynamicLightsCompat {
      * sources and/or scans luminous entities, into an immutable array so light sampling on
      * chunk-build threads never touches live collections. Called once per client tick.
      */
-    public static void clientTick() {
-        ColoredLightEngine engine = ColoredLightEngine.getInstance();
-        ClientLevel level = Minecraft.getInstance().level;
-        if (engine == null || !engine.isEnabled() || level == null) {
+    public static void clientTick(ClientLevel level) {
+	    ColoredLightEngine engine = ((LevelAttachments) level).colorfullighting$getEngine();
+	    if (engine == null || !ColoredLightEngine.isEnabled() || level == null) {
             entitySources = NO_SOURCES;
             blockColorSources = NO_COLOR_SOURCES;
             trackedAnchors = new HashMap<>();
@@ -467,7 +468,7 @@ public final class DynamicLightsCompat {
     private static ColorRGB4 sampleShipMirrorHue(double x, double y, double z) {
         if (!VsCompat.hasShipMirrors()) return null;
         ColoredLightEngine engine = ColoredLightEngine.getInstance();
-        if (engine == null || !engine.isEnabled()) return null;
+        if (engine == null || !ColoredLightEngine.isEnabled()) return null;
 
         int[] max = new int[3];
         double[] world = VsCompat.shipyardToWorld(x, y, z);

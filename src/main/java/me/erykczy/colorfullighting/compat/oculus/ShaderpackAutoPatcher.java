@@ -1,12 +1,13 @@
 package me.erykczy.colorfullighting.compat.oculus;
 
+import me.erykczy.colorfullighting.ColorfulLighting;
+import me.erykczy.colorfullighting.common.ColorfulLightingConfig;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
-import me.erykczy.colorfullighting.ColorfulLighting;
-import me.erykczy.colorfullighting.common.ColorfulLightingConfig;
 
 /**
  * Euphoria-Patches-style auto patcher: scans the shaderpacks folder and writes a

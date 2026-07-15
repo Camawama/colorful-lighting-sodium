@@ -59,13 +59,13 @@ public class ColorfulLighting
     }
 
     public static void onClientSetup(FMLClientSetupEvent event) {
-        clientAccessor = new MinecraftWrapper(Minecraft.getInstance());
+	    clientAccessor = new MinecraftWrapper(Minecraft.getInstance());
         ColoredLightEngine.create(clientAccessor);
-        ColoredLightEngine.getInstance().setEnabled(ColorfulLightingConfig.ENABLED.get());
+        ColoredLightEngine.setEnabled(ColorfulLightingConfig.ENABLED.get());
     }
 
     public static void onLoadingComplete(FMLLoadCompleteEvent event) {
-        ColoredLightEngine.getInstance().onPacksInitialized();
+        ColoredLightEngine.onPacksInitialized();
         if (ModList.get().isLoaded("rubidium") || ModList.get().isLoaded("embeddium") || ModList.get().isLoaded("sodium")) {
             LOGGER.info("Sodium/Embeddium detected!");
         }

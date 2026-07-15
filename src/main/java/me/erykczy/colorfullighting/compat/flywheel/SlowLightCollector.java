@@ -18,7 +18,7 @@ public class SlowLightCollector {
         // shaders fall back to the vanilla per-instance lightmap for entries without the colored
         // magic bits. Writing packed black instead would override vanilla block light with
         // darkness on everything flywheel renders.
-        if (!ColoredLightEngine.getInstance().isEnabled()) return;
+        if (!ColoredLightEngine.isEnabled()) return;
 
         var blockPos = new BlockPos.MutableBlockPos();
         int xMin = SectionPos.sectionToBlockCoord(SectionPos.x(section));

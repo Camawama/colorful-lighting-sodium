@@ -2,6 +2,7 @@ package me.erykczy.colorfullighting.mixin.render;
 
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.Config;
+import me.erykczy.colorfullighting.common.accessors.LevelAttachments;
 import me.erykczy.colorfullighting.common.util.ColorRGB8;
 import me.erykczy.colorfullighting.common.util.PackedLightData;
 import net.minecraft.client.renderer.entity.DragonFireballRenderer;
@@ -54,12 +55,12 @@ public class EntityRendererMixin {
 
     @Inject(method = "getPackedLightCoords", at = @At("HEAD"), cancellable = true)
     private <T extends Entity>void colorfullighting$getPackedLightCoords(T entity, float partialTicks, CallbackInfoReturnable<Integer> cir) {
-        if (!ColoredLightEngine.getInstance().isEnabled()) {
+        if (!ColoredLightEngine.isEnabled()) {
             return;
         }
         BlockPos blockpos = BlockPos.containing(entity.getLightProbePosition(partialTicks));
         int skyLight = entity.level().getBrightness(LightLayer.SKY, blockpos);
-        ColorRGB8 color = ColoredLightEngine.getInstance().sampleTrilinearLightColor(entity.getLightProbePosition(partialTicks));
+        ColorRGB8 color = ((LevelAttachments) entity.level()).colorfullighting$getEngine().sampleTrilinearLightColor(entity.getLightProbePosition(partialTicks));
         if(entity.isOnFire() || FIRE_LIT_ENTITIES.contains(entity.getType())) {
             ColorRGB8 fireColor = ColorRGB8.fromRGB4(Config.getLightColor(Blocks.FIRE));
             color = ColorRGB8.fromRGB8(

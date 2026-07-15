@@ -6,9 +6,12 @@ import me.erykczy.colorfullighting.common.BeaconEffectSync;
 import me.erykczy.colorfullighting.common.BlockEntityNbtCache;
 import me.erykczy.colorfullighting.common.ColoredLightEngine;
 import me.erykczy.colorfullighting.common.ViewArea;
+import me.erykczy.colorfullighting.common.accessors.LevelAttachments;
+import me.erykczy.colorfullighting.common.accessors.LevelRendererAccessor;
 import me.erykczy.colorfullighting.compat.dynamiclights.DynamicLightsCompat;
 import me.erykczy.colorfullighting.compat.oculus.OculusCompat;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -21,17 +24,41 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.level.ChunkEvent;
 import net.minecraftforge.event.level.LevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.LogicalSide;
 
 public class ClientEventListener {
     private boolean wasShaderPackInUse = false;
     private String lastShaderPackName = null;
 
     @SubscribeEvent
+    public void onTick(TickEvent.LevelTickEvent event) {
+	    if (event.side != LogicalSide.CLIENT) return;
+		
+	    if (ColorfulLighting.clientAccessor == null) return;
+	    var player = ColorfulLighting.clientAccessor.getPlayer();
+	    if (player == null) return;
+	    
+	    // Snapshot dynamic light sources (SodiumDynamicLights) for this tick
+	    if (event.level instanceof ClientLevel clientLevel) {
+		    DynamicLightsCompat.clientTick(clientLevel);
+	    }
+		
+	    ChunkPos pos = player.getChunkPos();
+	    int renderDistance = ColorfulLighting.clientAccessor.getRenderDistance();
+	    ViewArea viewArea = new ViewArea(
+			    pos.x - renderDistance,
+			    pos.z - renderDistance,
+			    pos.x + renderDistance,
+			    pos.z + renderDistance
+	    );
+		
+		ColoredLightEngine engine = ((LevelAttachments) event.level).colorfullighting$getEngine();
+		engine.updateViewArea(viewArea);
+    }
+	
+    @SubscribeEvent
     public void onTick(TickEvent.ClientTickEvent event) {
         if (event.phase == TickEvent.Phase.START) return;
-
-        // Snapshot dynamic light sources (SodiumDynamicLights) for this tick
-        DynamicLightsCompat.clientTick();
 
         // Check for Oculus shader state changes
         if (OculusCompat.isOculusLoaded()) {
@@ -44,14 +71,14 @@ public class ClientEventListener {
                     // Packs carrying the Colorful Lighting patch marker decode the packed
                     // lightmap format themselves, so the engine can stay on.
                     boolean patched = OculusCompat.isShaderPackPatched(packName);
-                    ColoredLightEngine.getInstance().setEnabled(patched);
+                    ColoredLightEngine.setEnabled(patched);
                     if (patched) {
                         ColorfulLighting.LOGGER.info("Oculus shader '{}' is Colorful Lighting patched, keeping colored lighting enabled", packName);
                     } else {
                         ColorfulLighting.LOGGER.info("Oculus shader '{}' enabled, disabling colored lighting (no Colorful Lighting patch found)", packName);
                     }
                 } else {
-                    ColoredLightEngine.getInstance().setEnabled(true);
+                    ColoredLightEngine.setEnabled(true);
                     ColorfulLighting.LOGGER.info("Oculus shader disabled, enabling colored lighting");
                 }
                 if (Minecraft.getInstance().levelRenderer != null) {
@@ -63,15 +90,6 @@ public class ClientEventListener {
         if (ColorfulLighting.clientAccessor == null) return;
         var player = ColorfulLighting.clientAccessor.getPlayer();
         if (player == null) return;
-        ChunkPos pos = player.getChunkPos();
-        int renderDistance = ColorfulLighting.clientAccessor.getRenderDistance();
-        ViewArea viewArea = new ViewArea(
-                pos.x - renderDistance,
-                pos.z - renderDistance,
-                pos.x + renderDistance,
-                pos.z + renderDistance
-        );
-        ColoredLightEngine.getInstance().updateViewArea(viewArea);
 
         // Keep a light region alive for every loaded Valkyrien Skies ship (no-op without VS).
         me.erykczy.colorfullighting.compat.valkyrienskies.VsCompat.clientTick();
@@ -97,7 +115,7 @@ public class ClientEventListener {
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
             LevelRenderer levelRenderer = Minecraft.getInstance().levelRenderer;
             if (levelRenderer != null) {
-                ColoredLightEngine.getInstance().updateFrustum(levelRenderer.getFrustum());
+                ((LevelAttachments) ((LevelRendererAccessor) levelRenderer).colorfullighting$getClientLevel()).colorfullighting$getEngine().updateFrustum(levelRenderer.getFrustum());
             }
         }
     }
@@ -107,7 +125,8 @@ public class ClientEventListener {
         if (!event.getLevel().isClientSide()) return;
         BlockEntityNbtCache.clear();
         BeaconEffectSync.clear();
-        ColoredLightEngine.getInstance().reset();
+		// I think this is redundant
+        ((LevelAttachments) event.getLevel()).colorfullighting$getEngine().reset();
     }
 
     @SubscribeEvent
@@ -120,7 +139,7 @@ public class ClientEventListener {
                                         .executes(context -> {
                                             var player = Minecraft.getInstance().player;
                                             if (player != null) {
-                                                ColoredLightEngine.getInstance().rebuildChunk(player.chunkPosition());
+                                                ((LevelAttachments) player.level()).colorfullighting$getEngine().rebuildChunk(player.chunkPosition());
                                                 context.getSource().sendSuccess(() -> Component.literal("Reloading colored light in 3x3 chunk radius..."), false);
                                             }
                                             return 1;
@@ -128,7 +147,7 @@ public class ClientEventListener {
                                 )
                                 .then(Commands.literal("all")
                                         .executes(context -> {
-                                            ColoredLightEngine.getInstance().reset();
+                                            ColoredLightEngine.resetAll();
                                             if (Minecraft.getInstance().levelRenderer != null) {
                                                 Minecraft.getInstance().levelRenderer.allChanged();
                                             }
@@ -138,7 +157,7 @@ public class ClientEventListener {
                                 )
                                 .executes(context -> {
                                     // Default behavior (same as 'all') for backward compatibility
-                                    ColoredLightEngine.getInstance().reset();
+                                    ColoredLightEngine.resetAll();
                                     if (Minecraft.getInstance().levelRenderer != null) {
                                         Minecraft.getInstance().levelRenderer.allChanged();
                                     }
@@ -148,7 +167,7 @@ public class ClientEventListener {
                         )
                         .then(Commands.literal("on")
                                 .executes(context -> {
-                                    ColoredLightEngine.getInstance().setEnabled(true);
+                                    ColoredLightEngine.setEnabled(true);
                                     if (Minecraft.getInstance().levelRenderer != null) {
                                         Minecraft.getInstance().levelRenderer.allChanged();
                                     }
@@ -158,7 +177,7 @@ public class ClientEventListener {
                         )
                         .then(Commands.literal("off")
                                 .executes(context -> {
-                                    ColoredLightEngine.getInstance().setEnabled(false);
+                                    ColoredLightEngine.setEnabled(false);
                                     if (Minecraft.getInstance().levelRenderer != null) {
                                         Minecraft.getInstance().levelRenderer.allChanged();
                                     }

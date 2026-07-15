@@ -13,7 +13,7 @@ public class AmbientOcclusionFaceMixin {
 
     @Inject(method = "blend(IIII)I", at = @At("HEAD"), cancellable = true)
     private void colorfullighting$blend(int lightColor0, int lightColor1, int lightColor2, int lightColor3, CallbackInfoReturnable<Integer> cir) {
-        if (!ColoredLightEngine.getInstance().isEnabled()) {
+        if (!ColoredLightEngine.isEnabled()) {
             return;
         }
         cir.setReturnValue(PackedLightData.blend(lightColor0, lightColor1, lightColor2, lightColor3));
@@ -21,7 +21,7 @@ public class AmbientOcclusionFaceMixin {
 
     @Inject(method = "blend(IIIIFFFF)I", at = @At("HEAD"), cancellable = true)
     private void colorfullighting$blend(int lightColor0, int lightColor1, int lightColor2, int lightColor3, float weight0, float weight1, float weight2, float weight3, CallbackInfoReturnable<Integer> cir) {
-        if (!ColoredLightEngine.getInstance().isEnabled()) {
+        if (!ColoredLightEngine.isEnabled()) {
             return;
         }
         cir.setReturnValue(PackedLightData.blend(lightColor0, lightColor1, lightColor2, lightColor3, weight0, weight1, weight2, weight3));
