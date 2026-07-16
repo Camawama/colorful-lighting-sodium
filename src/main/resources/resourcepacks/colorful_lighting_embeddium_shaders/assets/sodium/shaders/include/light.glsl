@@ -11,7 +11,14 @@ vec4 _sample_colored_common(sampler2D lightMap, uint sl4, uint red8, uint green8
         _sample_lightmap_vanilla(lightMap, ivec2(int(blue8), 0)).r
     );
 
-    return vec4(sky + block * max(0.1, 1.0 - sky.r), 1.0);
+    float moonWashoutFactor = mix(1.0, 0.0, u_NightVibrancy);
+    float skyExposure = float(sl4) / 16.0;
+    float effectiveSkyBrightness = sky.r * moonWashoutFactor * skyExposure;
+    float washFactor = max(0.1, 1.0 - effectiveSkyBrightness);
+
+    block = mix(vec3(length(block)), block, washFactor * 0.25 + 0.75);
+
+    return vec4(sky + block * (max(0.1, 1.0 - sky.r) * 0.9 + 0.1), 1.0);
 }
 
 vec4 _sample_lightmap(sampler2D lightMap, ivec2 uv) {
