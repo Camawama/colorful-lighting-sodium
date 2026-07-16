@@ -10,7 +10,7 @@ import me.erykczy.colorfullighting.compat.oculus.OculusCompat;
 import me.erykczy.colorfullighting.event.ClientEventListener;
 import me.erykczy.colorfullighting.compat.create.CreateCompat;
 import me.erykczy.colorfullighting.compat.flywheel.FlywheelCompat;
-import me.erykczy.colorfullighting.resourcemanager.CoreShaderRegistration;
+import me.erykczy.colorfullighting.resourcemanager.InternalPackRegistration;
 import me.erykczy.colorfullighting.resourcemanager.ModResourceManagers;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.api.distmarker.Dist;
@@ -50,7 +50,7 @@ public class ColorfulLighting
             @Override
             public void run() {
                 ModResourceManagers.register(context.getModEventBus());
-                CoreShaderRegistration.register(context.getModEventBus());
+                InternalPackRegistration.register(context.getModEventBus());
                 MinecraftForge.EVENT_BUS.register(new ClientEventListener());
                 context.getModEventBus().addListener(ColorfulLighting::onClientSetup);
                 context.getModEventBus().addListener(ColorfulLighting::onLoadingComplete);

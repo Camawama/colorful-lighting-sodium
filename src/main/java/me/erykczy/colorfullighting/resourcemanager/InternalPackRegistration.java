@@ -21,19 +21,12 @@ import net.minecraftforge.fml.loading.FMLLoader;
 import net.minecraftforge.forgespi.language.IModFileInfo;
 import net.minecraftforge.forgespi.language.IModInfo;
 
-import java.awt.*;
-import java.io.IOException;
-import java.net.URI;
-import java.nio.file.FileSystem;
-import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.List;
-import java.util.stream.Stream;
 
-public class CoreShaderRegistration {
+public class InternalPackRegistration {
     private static final String BUILT_IN_PACK_FOLDER = "resourcepacks";
     private static Path cachedPackPath;
     private static final List<Pair<ResourceLocation, Component>> packs = new ArrayList<>();
@@ -42,46 +35,39 @@ public class CoreShaderRegistration {
     public static void register(IEventBus bus) {
 		registerPacks.add(makePack(
 				ResourceLocation.parse("colorful_lighting:colorful_lighting_assets"),
-				Component.literal("Colorful Lighting Main Assets"),
+				Component.literal("Colorful Lighting Assets"),
+				true,
 				Pack.Position.BOTTOM
 		));
 		registerPacks.add(makePack(
 				ResourceLocation.parse("colorful_lighting:colorful_lighting_core_shaders"),
-				Component.literal("Colorful Lighting Core Shaders")
+				Component.literal("Colorful Lighting Core Shaders"),
+				false
 		));
 		if (ModList.get().isLoaded("embeddium")) {
 			registerPacks.add(makePack(
 					ResourceLocation.parse("colorful_lighting:colorful_lighting_embeddium_shaders"),
-					Component.literal("Colorful Lighting Sodium Shaders")
+					Component.literal("Colorful Lighting Sodium Shaders"),
+					false
 			));
 		} else if (ModList.get().isLoaded("rubidium")) {
 			registerPacks.add(makePack(
 					ResourceLocation.parse("colorful_lighting:colorful_lighting_rubidium_shaders"),
-					Component.literal("Colorful Lighting Rubidium Shaders")
+					Component.literal("Colorful Lighting Rubidium Shaders"),
+					false
 			));
 		} else if (ModList.get().isLoaded("sodium")) {
 			registerPacks.add(makePack(
 					ResourceLocation.parse("colorful_lighting:colorful_lighting_sodium_shaders"),
-					Component.literal("Colorful Lighting Sodium Shaders")
+					Component.literal("Colorful Lighting Sodium Shaders"),
+					false
 			));
 		}
 		
-        bus.addListener(EventPriority.LOWEST, CoreShaderRegistration::addPackFinders);
+        bus.addListener(EventPriority.LOWEST, InternalPackRegistration::addPackFinders);
     }
 	
-	private static InternalPack makePack(ResourceLocation id, MutableComponent displayName) {
-		IModFileInfo info = getPackInfo(id);
-		// Important: findResource(String... path) expects path *segments*, not a single "a/b/c" string.
-		// Passing a single string can produce a non-existent path inside the mod jar, making the pack empty.
-		Path resourcePath = info.getFile().findResource(BUILT_IN_PACK_FOLDER, id.getPath());
-		
-		return new InternalPack(
-				id, displayName,
-				info, resourcePath
-		);
-	}
-	
-	private static InternalPack makePack(ResourceLocation id, MutableComponent displayName, Pack.Position position) {
+	private static InternalPack makePack(ResourceLocation id, MutableComponent displayName, boolean display) {
 		IModFileInfo info = getPackInfo(id);
 		// Important: findResource(String... path) expects path *segments*, not a single "a/b/c" string.
 		// Passing a single string can produce a non-existent path inside the mod jar, making the pack empty.
@@ -90,7 +76,20 @@ public class CoreShaderRegistration {
 		return new InternalPack(
 				id, displayName,
 				info, resourcePath,
-				position
+				display
+		);
+	}
+	
+	private static InternalPack makePack(ResourceLocation id, MutableComponent displayName, boolean display, Pack.Position position) {
+		IModFileInfo info = getPackInfo(id);
+		// Important: findResource(String... path) expects path *segments*, not a single "a/b/c" string.
+		// Passing a single string can produce a non-existent path inside the mod jar, making the pack empty.
+		Path resourcePath = info.getFile().findResource(BUILT_IN_PACK_FOLDER, id.getPath());
+		
+		return new InternalPack(
+				id, displayName,
+				info, resourcePath,
+				display, position
 		);
 	}
 	
@@ -105,12 +104,12 @@ public class CoreShaderRegistration {
 			        return;
 		        }
 		        
-		        final Pack.Info packInfo = createInfoForLatest(registerPack.displayName, false);
+		        final Pack.Info packInfo = createInfoForLatest(registerPack.displayName, !registerPack.display);
 		        final Pack pack = Pack.create(
 				        registerPack.addID, registerPack.displayName,
 				        false,
 				        (path) -> new PathPackResources(path, registerPack.resourcePath, true),
-				        packInfo, PackType.CLIENT_RESOURCES, registerPack.position, true, PackSource.BUILT_IN);
+				        packInfo, PackType.CLIENT_RESOURCES, registerPack.position, packInfo.hidden(), PackSource.BUILT_IN);
 		        event.addRepositorySource((packConsumer) ->
 				        packConsumer.accept(pack));
 	        }

@@ -14,23 +14,26 @@ public class InternalPack {
 	public final Component displayName;
 	public final IModFileInfo info;
 	public final Path resourcePath;
+	public final boolean display;
 	
-	public InternalPack(ResourceLocation id, Component displayName, IModFileInfo info, Path resourcePath) {
+	public InternalPack(ResourceLocation id, Component displayName, IModFileInfo info, Path resourcePath, boolean display) {
 		this.id = id;
 		this.displayName = displayName;
 		this.info = info;
 		this.resourcePath = resourcePath;
+		this.display = display;
 		
 		this.addID = id.getNamespace() + ":add_pack/" + id.getPath();
 		
 		this.position = Pack.Position.TOP;
 	}
 	
-	public InternalPack(ResourceLocation id, Component displayName, IModFileInfo info, Path resourcePath, Pack.Position position) {
+	public InternalPack(ResourceLocation id, Component displayName, IModFileInfo info, Path resourcePath, boolean display, Pack.Position position) {
 		this.id = id;
 		this.displayName = displayName;
 		this.info = info;
 		this.resourcePath = resourcePath;
+		this.display = display;
 		
 		this.addID = id.getNamespace() + ":add_pack/" + id.getPath();
 		
