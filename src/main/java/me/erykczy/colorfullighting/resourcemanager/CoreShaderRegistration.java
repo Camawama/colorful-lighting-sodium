@@ -136,8 +136,8 @@ public class CoreShaderRegistration {
         if (minecraft == null || minecraft.options == null) return;
         List<String> selectedIds = minecraft.options.resourcePacks;
 	    for (InternalPack registerPack : registerPacks) {
-		    if (!selectedIds.contains(registerPack.id.toString())) {
-			    selectedIds.add(registerPack.id.toString());
+		    if (!selectedIds.contains(registerPack.addID)) {
+			    selectedIds.add(registerPack.addID);
 		    }
 	    }
     }
