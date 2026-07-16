@@ -110,8 +110,6 @@ public class ColoredLightEngine {
     private static volatile boolean enabled = true;
     private static boolean packsInitialized = false;
 
-    private static final String CORE_SHADER_PACK_ID = ColorfulLighting.CORE_SHADER_PACK_ID;
-
     /** How long a computed chunk ordering stays usable before it is rebuilt. */
     private static final long CHUNK_ORDER_TTL_NANOS = 100_000_000L; // 100 ms
 

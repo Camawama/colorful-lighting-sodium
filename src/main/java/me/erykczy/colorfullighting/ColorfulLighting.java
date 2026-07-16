@@ -27,8 +27,7 @@ import org.slf4j.Logger;
 public class ColorfulLighting
 {
     public static final String MOD_ID = "colorful_lighting";
-    public static final String BUILT_IN_RESOURCE_PACK_ID = "colorful_lighting_core_shaders";
-    public static final String CORE_SHADER_PACK_ID = MOD_ID + ":add_pack/" + BUILT_IN_RESOURCE_PACK_ID;
+    public static final String BUILT_IN_RESOURCE_PACK_ID = "colorful_lighting_core_assets";
     public static final String BUILT_IN_LIGHT_RESOURCE_PATH = "/resourcepacks/" + BUILT_IN_RESOURCE_PACK_ID + "/assets/colorful_lighting/light";
     public static final Logger LOGGER = LogUtils.getLogger();
     public static ClientAccessor clientAccessor;

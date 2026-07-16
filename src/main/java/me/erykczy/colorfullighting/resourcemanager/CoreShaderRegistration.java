@@ -41,31 +41,25 @@ public class CoreShaderRegistration {
 	
 	public static void register(IEventBus bus) {
 		registerPacks.add(makePack(
-				ResourceLocation.parse("colorful_lighting:colorful_lighting_core_shaders"),
-				Component.literal("Colorful Lighting Main Assets"),
-				Pack.Position.BOTTOM
+				ResourceLocation.parse("colorful_lighting:colorful_lighting_core_assets"),
+				Component.literal("Colorful Lighting Main Assets")
 		));
-//		registerPacks.add(makePack(
-//				ResourceLocation.parse("colorful_lighting:colorful_lighting_core_shaders"),
-//				Component.literal("Colorful Lighting Core Shaders")
-//		));
 		if (ModList.get().isLoaded("embeddium")) {
 			registerPacks.add(makePack(
 					ResourceLocation.parse("colorful_lighting:colorful_lighting_embeddium_shaders"),
 					Component.literal("Colorful Lighting Embeddium Shaders")
 			));
+		} else if (ModList.get().isLoaded("rubidium")) {
+			registerPacks.add(makePack(
+					ResourceLocation.parse("colorful_lighting:colorful_lighting_rubidium_shaders"),
+					Component.literal("Colorful Lighting Rubidium Shaders")
+			));
+		} else if (ModList.get().isLoaded("sodium")) {
+			registerPacks.add(makePack(
+					ResourceLocation.parse("colorful_lighting:colorful_lighting_sodium_shaders"),
+					Component.literal("Colorful Lighting Sodium Shaders")
+			));
 		}
-//		else if (ModList.get().isLoaded("rubidium")) {
-//			registerPacks.add(makePack(
-//					ResourceLocation.parse("colorful_lighting:colorful_lighting_rubidium_shaders"),
-//					Component.literal("Colorful Lighting Rubidium Shaders")
-//			));
-//		} else if (ModList.get().isLoaded("sodium")) {
-//			registerPacks.add(makePack(
-//					ResourceLocation.parse("colorful_lighting:colorful_lighting_sodium_shaders"),
-//					Component.literal("Colorful Lighting Sodium Shaders")
-//			));
-//		}
 		
 		bus.addListener(EventPriority.LOWEST, CoreShaderRegistration::addPackFinders);
 	}
