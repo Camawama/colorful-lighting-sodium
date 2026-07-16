@@ -12,6 +12,7 @@ import me.erykczy.colorfullighting.compat.flywheel.FlywheelCompat;
 import me.erykczy.colorfullighting.compat.oculus.OculusCompat;
 import me.erykczy.colorfullighting.compat.sodium.SodiumCompat;
 import me.erykczy.colorfullighting.mixin.compat.sodium.SodiumWorldRendererAccessor;
+import me.erykczy.colorfullighting.resourcemanager.CoreShaderRegistration;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.culling.Frustum;
@@ -201,10 +202,7 @@ public class ColoredLightEngine {
         // vertices as garbage (often full-bright) light. The patched shaders understand both
         // formats and render plain vanilla lighting when u_ColoredLightingEnabled is 0, so
         // toggling needs no shader swap (and therefore no resource reload) at all.
-        if (repo.getPack(CORE_SHADER_PACK_ID) != null && !repo.getSelectedIds().contains(CORE_SHADER_PACK_ID)) {
-            repo.addPack(CORE_SHADER_PACK_ID);
-            mc.reloadResourcePacks();
-        }
+	    CoreShaderRegistration.enforcePacks(mc, repo);
     }
 	
 	public static ColoredLightEngine getInstance() {

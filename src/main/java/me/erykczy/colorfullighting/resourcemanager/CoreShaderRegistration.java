@@ -5,10 +5,12 @@ import me.erykczy.colorfullighting.ColorfulLighting;
 import net.minecraft.SharedConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.PathPackResources;
 import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.repository.Pack;
+import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.server.packs.repository.PackSource;
 import net.minecraft.world.flag.FeatureFlagSet;
 import net.minecraftforge.event.AddPackFindersEvent;
@@ -35,38 +37,85 @@ public class CoreShaderRegistration {
     private static final String BUILT_IN_PACK_FOLDER = "resourcepacks";
     private static Path cachedPackPath;
     private static final List<Pair<ResourceLocation, Component>> packs = new ArrayList<>();
+	private static final List<InternalPack> registerPacks = new ArrayList<>();
 
     public static void register(IEventBus bus) {
+		registerPacks.add(makePack(
+				ResourceLocation.parse("colorful_lighting:colorful_lighting_assets"),
+				Component.literal("Colorful Lighting Main Assets"),
+				Pack.Position.BOTTOM
+		));
+		registerPacks.add(makePack(
+				ResourceLocation.parse("colorful_lighting:colorful_lighting_core_shaders"),
+				Component.literal("Colorful Lighting Core Shaders")
+		));
+		if (ModList.get().isLoaded("embeddium")) {
+			registerPacks.add(makePack(
+					ResourceLocation.parse("colorful_lighting:colorful_lighting_embeddium_shaders"),
+					Component.literal("Colorful Lighting Sodium Shaders")
+			));
+		} else if (ModList.get().isLoaded("rubidium")) {
+			registerPacks.add(makePack(
+					ResourceLocation.parse("colorful_lighting:colorful_lighting_rubidium_shaders"),
+					Component.literal("Colorful Lighting Rubidium Shaders")
+			));
+		} else if (ModList.get().isLoaded("sodium")) {
+			registerPacks.add(makePack(
+					ResourceLocation.parse("colorful_lighting:colorful_lighting_sodium_shaders"),
+					Component.literal("Colorful Lighting Sodium Shaders")
+			));
+		}
+		
         bus.addListener(EventPriority.LOWEST, CoreShaderRegistration::addPackFinders);
     }
-
-    public static void addPackFinders(AddPackFindersEvent event) {
+	
+	private static InternalPack makePack(ResourceLocation id, MutableComponent displayName) {
+		IModFileInfo info = getPackInfo(id);
+		// Important: findResource(String... path) expects path *segments*, not a single "a/b/c" string.
+		// Passing a single string can produce a non-existent path inside the mod jar, making the pack empty.
+		Path resourcePath = info.getFile().findResource(BUILT_IN_PACK_FOLDER, id.getPath());
+		
+		return new InternalPack(
+				id, displayName,
+				info, resourcePath
+		);
+	}
+	
+	private static InternalPack makePack(ResourceLocation id, MutableComponent displayName, Pack.Position position) {
+		IModFileInfo info = getPackInfo(id);
+		// Important: findResource(String... path) expects path *segments*, not a single "a/b/c" string.
+		// Passing a single string can produce a non-existent path inside the mod jar, making the pack empty.
+		Path resourcePath = info.getFile().findResource(BUILT_IN_PACK_FOLDER, id.getPath());
+		
+		return new InternalPack(
+				id, displayName,
+				info, resourcePath,
+				position
+		);
+	}
+	
+	public static void addPackFinders(AddPackFindersEvent event) {
         if (event.getPackType() == PackType.CLIENT_RESOURCES) {
-            var id = ResourceLocation.parse("colorful_lighting:colorful_lighting_core_shaders");
-            var displayName = Component.literal("Colorful Lighting Core Shaders");
-
-            IModFileInfo info = getPackInfo(id);
-            // Important: findResource(String... path) expects path *segments*, not a single "a/b/c" string.
-            // Passing a single string can produce a non-existent path inside the mod jar, making the pack empty.
-            Path resourcePath = info.getFile().findResource(BUILT_IN_PACK_FOLDER, id.getPath());
-            if (!Files.exists(resourcePath)) {
-                ColorfulLighting.LOGGER.error(
-                        "Built-in core shader pack root not found at {} (mod file: {}). The pack will not load.",
-                        resourcePath, info.getFile().getFilePath()
-                );
-                return;
-            }
-
-            final Pack.Info packInfo = createInfoForLatest(displayName, false);
-            final Pack pack = Pack.create(
-                    ColorfulLighting.CORE_SHADER_PACK_ID, displayName,
-                    false,
-                    (path) -> new PathPackResources(path, resourcePath, true),
-                    packInfo, PackType.CLIENT_RESOURCES, Pack.Position.TOP, true, PackSource.BUILT_IN);
-            event.addRepositorySource((packConsumer) ->
-                    packConsumer.accept(pack));
-
-            seedInitialPackSelection();
+	        for (InternalPack registerPack : registerPacks) {
+		        if (!Files.exists(registerPack.resourcePath)) {
+			        ColorfulLighting.LOGGER.error(
+					        "Built-in core shader pack root not found at {} (mod file: {}). The pack will not load.",
+					        registerPack.resourcePath, registerPack.info.getFile().getFilePath()
+			        );
+			        return;
+		        }
+		        
+		        final Pack.Info packInfo = createInfoForLatest(registerPack.displayName, false);
+		        final Pack pack = Pack.create(
+				        registerPack.addID, registerPack.displayName,
+				        false,
+				        (path) -> new PathPackResources(path, registerPack.resourcePath, true),
+				        packInfo, PackType.CLIENT_RESOURCES, registerPack.position, true, PackSource.BUILT_IN);
+		        event.addRepositorySource((packConsumer) ->
+				        packConsumer.accept(pack));
+	        }
+			
+	        seedInitialPackSelection();
         }
     }
 
@@ -86,9 +135,11 @@ public class CoreShaderRegistration {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft == null || minecraft.options == null) return;
         List<String> selectedIds = minecraft.options.resourcePacks;
-        if (!selectedIds.contains(ColorfulLighting.CORE_SHADER_PACK_ID)) {
-            selectedIds.add(ColorfulLighting.CORE_SHADER_PACK_ID);
-        }
+	    for (InternalPack registerPack : registerPacks) {
+		    if (!selectedIds.contains(registerPack.id.toString())) {
+			    selectedIds.add(registerPack.id.toString());
+		    }
+	    }
     }
 
     private static Pack.Info createInfoForLatest(Component description, boolean hidden) {
@@ -180,4 +231,16 @@ public class CoreShaderRegistration {
             }
         }
     }
+	
+	public static void enforcePacks(Minecraft mc, PackRepository repo) {
+		boolean changed = false;
+		for (InternalPack registerPack : registerPacks) {
+			if (repo.getPack(registerPack.addID) != null && !repo.getSelectedIds().contains(registerPack.addID)) {
+				repo.addPack(registerPack.addID);
+				changed = true;
+			}
+		}
+		if (changed)
+			mc.reloadResourcePacks();
+	}
 }
