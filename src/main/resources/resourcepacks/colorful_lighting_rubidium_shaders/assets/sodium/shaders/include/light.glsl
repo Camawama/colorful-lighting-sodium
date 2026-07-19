@@ -23,13 +23,13 @@ vec4 _sample_colored_common(sampler2D lightMap, uint sl4, uint red8, uint green8
 
 vec4 _sample_lightmap(sampler2D lightMap, ivec2 uv) {
     uint packed_light;
-    #ifdef USE_VERTEX_COMPRESSION
+//    #ifdef USE_VERTEX_COMPRESSION
     packed_light = (uint(uv.y) << 16) | uint(uv.x);
-    #else
-    // In non-compact mode, the 16-bit light data is split into two 8-bit values.
-    // We need to reconstruct the 16-bit value here.
-    packed_light = (uint(uv.y) << 8) | uint(uv.x);
-    #endif
+//    #else
+//    // In non-compact mode, the 16-bit light data is split into two 8-bit values.
+//    // We need to reconstruct the 16-bit value here.
+//    packed_light = (uint(uv.y) << 8) | uint(uv.x);
+//    #endif
 
     // Check for our magic number in the highest 4 bits.
     if (((packed_light >> 28) & 0xFu) == 0xFu) {

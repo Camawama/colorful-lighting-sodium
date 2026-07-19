@@ -142,4 +142,22 @@ public class SodiumPackedLightData {
                 Math.max(firstData.blue8, secondData.blue8)
         );
     }
+	
+	public static int pack16(int r, int g, int b, int sky) {
+		return (sky) | (r << 4) | (g << 8) | (b << 12);
+	}
+	
+	public static int pack16(int light) {
+		int r = (light & 0xFF) >> 4;       // 4 bits (bits 4-7)
+		int g = ((light >> 8) & 0xFF) >> 4; // 4 bits (bits 12-15)
+		int b = ((light >> 20) & 0xFF) >> 4; // 4 bits (bits 24-27) <- Changed from >> 5
+		int sky = (light >> 16) & 0xF;      // 4 bits (bits 16-19)
+
+		// Bit layout:
+		// bits 0-3   : sky (4 bits)
+		// bits 4-7   : r (4 bits)
+		// bits 8-11  : g (4 bits)
+		// bits 12-15 : b (4 bits)
+		return (sky) | (r << 4) | (g << 8) | (b << 12);
+	}
 }

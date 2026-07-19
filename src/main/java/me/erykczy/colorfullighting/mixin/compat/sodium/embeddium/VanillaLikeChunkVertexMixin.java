@@ -1,19 +1,30 @@
 package me.erykczy.colorfullighting.mixin.compat.sodium.embeddium;
 
+import me.erykczy.colorfullighting.common.util.ColorRGB4;
+import me.erykczy.colorfullighting.compat.sodium.SodiumPackedLightData;
 import me.jellysquid.mods.sodium.client.render.chunk.terrain.material.Material;
 import me.jellysquid.mods.sodium.client.render.chunk.vertex.format.ChunkVertexEncoder;
 import org.lwjgl.system.MemoryUtil;
-import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Overwrite;
-import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.*;
 
 @Mixin(targets = "me.jellysquid.mods.sodium.client.render.chunk.vertex.format.impl.VanillaLikeChunkVertex", remap = false)
-public class VanillaLikeChunkVertexMixin {
-
-    @Unique
-    private static final int colorfulLighting$STRIDE = 28;
-
-    /**
+public abstract class VanillaLikeChunkVertexMixin {
+	
+	@Shadow
+	@Final
+	public static int STRIDE;
+	
+	@Shadow
+	private static int encodeLight(int light) {
+		throw new RuntimeException("stub");
+	}
+	
+	@Shadow
+	private static float encodeTexture(float value) {
+		throw new RuntimeException("stub");
+	}
+	
+	/**
      * @author Erykczy
      * @reason Overwrite the entire encoder to handle 32-bit packed colored lighting data correctly,
      * bypassing the faulty bit-shifting in the original implementation for non-compact vertices.
@@ -25,8 +36,8 @@ public class VanillaLikeChunkVertexMixin {
             MemoryUtil.memPutFloat(ptr + 4, vertex.y);
             MemoryUtil.memPutFloat(ptr + 8, vertex.z);
             MemoryUtil.memPutInt(ptr + 12, vertex.color);
-            MemoryUtil.memPutFloat(ptr + 16, colorfulLighting$encodeTexture(vertex.u));
-            MemoryUtil.memPutFloat(ptr + 20, colorfulLighting$encodeTexture(vertex.v));
+            MemoryUtil.memPutFloat(ptr + 16, encodeTexture(vertex.u));
+            MemoryUtil.memPutFloat(ptr + 20, encodeTexture(vertex.v));
 
             int drawParams = colorfulLighting$encodeDrawParameters(material, sectionIndex);
 
@@ -46,28 +57,16 @@ public class VanillaLikeChunkVertexMixin {
 
                 MemoryUtil.memPutInt(ptr + 24, drawParams | (compressedLight << 16));
             } else {
-                int vanillaLight = colorfulLighting$encodeVanillaLight(vertex.light);
+                int vanillaLight = encodeLight(vertex.light);
                 MemoryUtil.memPutInt(ptr + 24, drawParams | (vanillaLight << 16));
             }
 
-            return ptr + colorfulLighting$STRIDE;
+            return ptr + STRIDE;
         };
     }
 
     @Unique
     private static int colorfulLighting$encodeDrawParameters(Material material, int sectionIndex) {
         return (((sectionIndex & 0xFF) << 8) | (material.bits() & 0xFF));
-    }
-
-    @Unique
-    private static int colorfulLighting$encodeVanillaLight(int light) {
-        int block = light & 0xFF;
-        int sky = (light >> 16) & 0xFF;
-        return (block | (sky << 8));
-    }
-
-    @Unique
-    private static float colorfulLighting$encodeTexture(float value) {
-        return Math.min(0.99999997F, value);
     }
 }

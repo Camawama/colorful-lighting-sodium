@@ -40,9 +40,9 @@ void main() {
     vec3 translation = u_RegionOffset + _get_draw_translation(_vert_mesh_id);
     vec3 position = _vert_position + translation;
 
-#ifdef USE_FOG
+    #ifdef USE_FOG
     v_FragDistance = getFragDistance(u_FogShape, position);
-#endif
+    #endif
 
     // Transform the vertex position into model-view-projection space
     gl_Position = u_ProjectionMatrix * u_ModelViewMatrix * vec4(position, 1.0);
