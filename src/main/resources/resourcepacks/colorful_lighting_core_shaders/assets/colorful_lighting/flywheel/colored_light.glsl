@@ -24,9 +24,11 @@ int ivec2ToInt(ivec2 data) {
 
 ColoredLightIntegerData unpackColoredLightData(int packedData) {
     return ColoredLightIntegerData(
-        packedData & 0xFF, // red
-        (packedData >> 8) & 0xFF, // green
-        (packedData >> 20) & 0xFF, // blue
+        ivec3(
+            packedData, // red
+            (packedData >> 8), // green
+            (packedData >> 20) // blue
+        ) & ivec3(0xFF),
         (packedData >> 16) & 0xF, // sky 4
         (packedData >> 28) & 0xF // alpha 4
     );
@@ -38,10 +40,7 @@ bool isPackedDataColored(int packedData) {
 
 ColoredLightFloatData coloredLightData_integerToFloat(ColoredLightIntegerData data) {
     return ColoredLightFloatData(
-        vec3(data.red8 / 255.0,
-            data.green8 / 255.0,
-            data.blue8 / 255.0
-        ),
+        data.r8g8b8 / 255.0,
         data.skyLight4 / 15.0,
         data.alpha4 / 15.0
     );

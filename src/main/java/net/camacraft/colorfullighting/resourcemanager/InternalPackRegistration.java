@@ -85,6 +85,13 @@ public class InternalPackRegistration {
 				    false
 		    ));
 	    }
+//	    if (ModList.get().isLoaded("flywheel")) {
+//		    registerPacks.add(makePack(
+//				    ResourceLocation.parse("colorful_lighting:colorful_lighting_flw_shaders"),
+//				    Component.literal("Colorful Lighting Flywheel Assets"),
+//				    false
+//		    ));
+//	    }
 		
 	    bus.addListener(EventPriority.LOWEST, InternalPackRegistration::addPackFinders);
     }

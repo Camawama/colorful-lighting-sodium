@@ -105,6 +105,10 @@ public class ColorfulLightingMixinPlugin implements IMixinConfigPlugin {
             // since the mod id differs between the forks (nvidium / acedium)
             return hasClass("me.cortex.nvidium.sodiumCompat.NvidiumCompactChunkVertex");
         }
+        if (mixinClassName.contains(".iris.")) {
+            // Ensure Iris or Oculus is installed
+            return hasClass("net.irisshaders.iris.Iris");
+        }
         if (mixinClassName.contains(".embeddium.")) {
             // Ensure SPECIFICALLY embeddium is installed
             return hasClass("org.embeddedt.embeddium_integrity.MixinTaintDetector");

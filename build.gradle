@@ -123,7 +123,7 @@ dependencies {
 //    runtimeOnly fg.deobf("curse.maven:rubidium-574856:4952685")
 
     // COMPILE ONLY
-    compileOnly fg.deobf("curse.maven:oculus-581495:6020952")
+    implementation fg.deobf("curse.maven:oculus-581495:6020952")
     compileOnly fg.deobf("curse.maven:architectury-api-419699:5137938")
     // DhApi 7.0.0 — matches DH 3.x (DH 3.1.2-b reports API major 7)
     compileOnly fg.deobf("maven.modrinth:distanthorizonsapi:GgrzKRsK")
@@ -146,8 +146,8 @@ dependencies {
     compileOnly "org.valkyrienskies.core:api:+"
 
     // RUNTIME ONLY
-    runtimeOnly fg.deobf("curse.maven:cloth-config-348521:5729105")
-    runtimeOnly fg.deobf("curse.maven:immersive-portals-for-forge-355440:6368524")
+    compileOnly fg.deobf("curse.maven:cloth-config-348521:5729105")
+    compileOnly fg.deobf("curse.maven:immersive-portals-for-forge-355440:6368524")
 
     // DH 3.1.2-b for 1.20.1 (API major 7); older curse 508933:7375280 was API 5 and nonfunctional in dev
     // Swap in FWGxbEM3 (DH 3.2.0-b, also API 7) to dev-test the 3.2 textured-LOD contract
@@ -197,7 +197,8 @@ dependencies {
 //    implementation fg.deobf("curse.maven:colorwheel-1254143:8206638")
 //
 //    implementation fg.deobf("org.andrew:paco:1.0")
-//    implementation fg.deobf("a:acedium:1.0")
+    implementation fg.deobf("a:pc:1.0")
+    implementation fg.deobf("a:acedium:1.0")
 //    implementation fg.deobf("curse.maven:swampier-swamps-632591:4578599")
 }
 

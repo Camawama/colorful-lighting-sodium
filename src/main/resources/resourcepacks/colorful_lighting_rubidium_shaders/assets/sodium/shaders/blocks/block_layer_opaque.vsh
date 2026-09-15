@@ -17,8 +17,6 @@ out float v_FragDistance;
 
 uniform int u_FogShape;
 uniform vec3 u_RegionOffset;
-uniform float u_NightVibrancy;
-uniform float u_ColoredLightingEnabled;
 
 #import <sodium:include/light.glsl>
 

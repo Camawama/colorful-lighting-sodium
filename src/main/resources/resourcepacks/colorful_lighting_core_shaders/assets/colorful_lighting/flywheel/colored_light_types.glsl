@@ -1,7 +1,5 @@
 struct ColoredLightIntegerData {
-    int red8;
-    int green8;
-    int blue8;
+    ivec3 r8g8b8;
     int skyLight4;
     int alpha4;
 };

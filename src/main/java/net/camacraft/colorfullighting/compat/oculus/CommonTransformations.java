@@ -94,7 +94,7 @@ public class CommonTransformations {
 		
 		boolean isShaderPackInUse = OculusCompat.isShaderPackInUse();
 		String packName = isShaderPackInUse ? OculusCompat.getCurrentShaderPackName() : null;
-		if (OculusCompat.isShaderLegacyPatched(packName)) return;
+		if (status != 3 && OculusCompat.isShaderLegacyPatched(packName)) return;
 		
 		if (!stage.equals(TextureStage.GBUFFERS_AND_SHADOW)) {
 			if (status == 1) {
@@ -110,15 +110,51 @@ public class CommonTransformations {
 		
 		if (status == 3) {
 			if (type == PatchShaderType.VERTEX) {
+				root.rename("cl_NightVibrancy", "colorfullighting_mod_injected_u_NightVibrancy");
+				
 				TranslationUnit unit = ASTParser._getInternalInstance().parseTranslationUnit(
 						root,
 						Resources.DECODE_LIGHT_FULL
 				);
 				
 				for (int i = unit.getChildren().size() - 1; i >= 0; i--) {
-					tree.injectNode(ASTInjectionPoint.BEFORE_ALL, unit.getChildren().get(i));
+					ExternalDeclaration declr = unit.getChildren().get(i);
+					if (declr.getExternalDeclarationType() != ExternalDeclaration.ExternalDeclarationType.FUNCTION_DEFINITION) {
+						tree.injectNode(ASTInjectionPoint.BEFORE_DECLARATIONS, unit.getChildren().get(i));
+					}
+				}
+				
+				for (int i = unit.getChildren().size() - 1; i >= 0; i--) {
+					ExternalDeclaration declr = unit.getChildren().get(i);
+					if (declr.getExternalDeclarationType() == ExternalDeclaration.ExternalDeclarationType.FUNCTION_DEFINITION) {
+						tree.injectNode(ASTInjectionPoint.BEFORE_FUNCTIONS, unit.getChildren().get(i));
+					}
 				}
 			} else if (type == PatchShaderType.FRAGMENT) {
+//				TranslationUnit unit = ASTParser._getInternalInstance().parseTranslationUnit(
+//						root,
+//						Resources.BLEND_LIGHT_FULL
+//				);
+//
+//				for (int i = unit.getChildren().size() - 1; i >= 0; i--) {
+//					ExternalDeclaration declr = unit.getChildren().get(i);
+//					tree.injectNode(ASTInjectionPoint.BEFORE_FUNCTIONS, declr);
+//				}
+			}
+			
+			{
+				TranslationUnit unit = ASTParser._getInternalInstance().parseTranslationUnit(
+						root,
+						Resources.LIGHT_DATA_FULL
+				);
+				
+				for (int i = unit.getChildren().size() - 1; i >= 0; i--) {
+					ExternalDeclaration declr = unit.getChildren().get(i);
+					tree.injectNode(ASTInjectionPoint.BEFORE_FUNCTIONS, declr);
+				}
+			}
+			
+			{
 				TranslationUnit unit = ASTParser._getInternalInstance().parseTranslationUnit(
 						root,
 						Resources.BLEND_LIGHT_FULL
@@ -128,16 +164,6 @@ public class CommonTransformations {
 					ExternalDeclaration declr = unit.getChildren().get(i);
 					tree.injectNode(ASTInjectionPoint.BEFORE_FUNCTIONS, declr);
 				}
-			}
-			
-			TranslationUnit unit = ASTParser._getInternalInstance().parseTranslationUnit(
-					root,
-					Resources.BLEND_LIGHT_FULL
-			);
-			
-			for (int i = unit.getChildren().size() - 1; i >= 0; i--) {
-				ExternalDeclaration declr = unit.getChildren().get(i);
-				tree.injectNode(ASTInjectionPoint.BEFORE_FUNCTIONS, declr);
 			}
 		} else {
 			if (type == PatchShaderType.FRAGMENT) {
@@ -217,6 +243,10 @@ public class CommonTransformations {
 					);
 				}
 			}
+			
+//			if (patch == Patch.SODIUM) {
+//				root.rename("colorfullighting_mod_injected_u_NightVibrancy", "u_NightVibrancy");
+//			}
 			
 			if (status == 1) {
 				ShaderSpecificPatcher.runAll(
