@@ -110,8 +110,6 @@ public class CommonTransformations {
 		
 		if (status == 3) {
 			if (type == PatchShaderType.VERTEX) {
-				root.rename("cl_NightVibrancy", "colorfullighting_mod_injected_u_NightVibrancy");
-				
 				TranslationUnit unit = ASTParser._getInternalInstance().parseTranslationUnit(
 						root,
 						Resources.DECODE_LIGHT_FULL
@@ -141,6 +139,11 @@ public class CommonTransformations {
 //					tree.injectNode(ASTInjectionPoint.BEFORE_FUNCTIONS, declr);
 //				}
 			}
+
+			root.rename("cl_NightVibrancy", "colorfullighting_mod_injected_u_NightVibrancy");
+//			for (ReferenceExpression referenceExpression : root.nodeIndex.get(ReferenceExpression.class)) {
+//				System.out.println(referenceExpression.getIdentifier());
+//			}
 			
 			{
 				TranslationUnit unit = ASTParser._getInternalInstance().parseTranslationUnit(
