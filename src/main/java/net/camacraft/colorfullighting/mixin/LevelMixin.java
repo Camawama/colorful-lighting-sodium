@@ -30,7 +30,7 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 @Mixin(Level.class)
-public class LevelMixin implements LevelAttachments, CompatRegistry {
+public class LevelMixin implements LevelAttachments, CompatRegistry<Level> {
 	@Unique
 	LevelAccessor colorfullighting$accessor;
 	@Unique

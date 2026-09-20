@@ -7,6 +7,10 @@ vec4 minecraft_sample_vanilla_lightmap(sampler2D lightMap, ivec2 uv) {
 }
 
 vec4 sample_lightmap_colored(sampler2D lightMap, ivec2 uv) {
+//    if (true) {
+//        return vec4(vec3(colorfullighting_mod_injected_u_NightVibrancy), 1.0);
+//    }
+
     int leastSignificantShort = uv.x;
     int mostSignificantShort = uv.y;
     int red8 = (leastSignificantShort >> 0) & 0xFF;

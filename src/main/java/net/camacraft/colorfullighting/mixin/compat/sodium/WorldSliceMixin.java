@@ -4,18 +4,20 @@ import net.camacraft.colorfullighting.common.BlockEntityNbtCache;
 import net.camacraft.colorfullighting.common.ColoredLightEngine;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
+import net.camacraft.colorfullighting.compat.CompatRegistry;
 import net.camacraft.colorfullighting.compat.flywheel.FlywheelCompat;
 import net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat;
 import net.camacraft.colorfullighting.compat.valkyrienskies.VsCompat;
 import me.jellysquid.mods.sodium.client.world.WorldSlice;
 import net.camacraft.colorfullighting.compat.distanthorizons.DhColorCache;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.world.level.Level;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 
 @Mixin(WorldSlice.class)
-public class WorldSliceMixin implements LevelAttachments {
+public class WorldSliceMixin implements LevelAttachments, CompatRegistry<Level> {
 	@Shadow
 	@Final
 	public ClientLevel world;
@@ -58,5 +60,10 @@ public class WorldSliceMixin implements LevelAttachments {
 	@Override
 	public void colorfullighting$setDhColorCache(DhColorCache cache) {
 		((LevelAttachments) world).colorfullighting$setDhColorCache(cache);
+	}
+	
+	@Override
+	public <T> T colorfullighting$getCompatInstance(CompatKey<Level, T> key) {
+		return ((CompatRegistry<Level>) world).colorfullighting$getCompatInstance(key);
 	}
 }

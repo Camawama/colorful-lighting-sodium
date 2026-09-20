@@ -1,4 +1,4 @@
-package net.camacraft.colorfullighting.mixin;
+package net.camacraft.colorfullighting.mixin.engine;
 
 import net.camacraft.colorfullighting.ColorfulLighting;
 import net.camacraft.colorfullighting.accessors.BlockStateWrapper;

@@ -25,6 +25,10 @@ vec4 _sample_colored_common(sampler2D lightMap, uint sl4, uint red8, uint green8
 }
 
 vec4 _sample_lightmap(sampler2D lightMap, ivec2 uv) {
+//    if (true) {
+//        return vec4(vec3(colorfullighting_mod_injected_u_NightVibrancy), 1.0);
+//    }
+
     uint packed_light;
     #ifdef USE_VERTEX_COMPRESSION
     packed_light = (uint(uv.y) << 16) | uint(uv.x);

@@ -1,9 +1,10 @@
-package net.camacraft.colorfullighting.mixin.render;
+package net.camacraft.colorfullighting.mixin.compat.vanilla;
 
 import net.camacraft.colorfullighting.common.BlockEntityNbtCache;
 import net.camacraft.colorfullighting.common.ColoredLightEngine;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
+import net.camacraft.colorfullighting.compat.CompatRegistry;
 import net.camacraft.colorfullighting.compat.flywheel.FlywheelCompat;
 import net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat;
 import net.camacraft.colorfullighting.compat.valkyrienskies.VsCompat;
@@ -15,7 +16,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 
 @Mixin(RenderChunkRegion.class)
-public class RenderChunkRegionMixin implements LevelAttachments {
+public class RenderChunkRegionMixin implements LevelAttachments, CompatRegistry<Level> {
 	@Shadow
 	@Final
 	protected Level level;
@@ -58,5 +59,10 @@ public class RenderChunkRegionMixin implements LevelAttachments {
 	@Override
 	public void colorfullighting$setDhColorCache(DhColorCache cache) {
 		((LevelAttachments) level).colorfullighting$setDhColorCache(cache);
+	}
+	
+	@Override
+	public <T> T colorfullighting$getCompatInstance(CompatKey<Level, T> key) {
+		return ((CompatRegistry<Level>) level).colorfullighting$getCompatInstance(key);
 	}
 }
