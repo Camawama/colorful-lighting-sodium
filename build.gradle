@@ -198,7 +198,7 @@ dependencies {
 //
 //    implementation fg.deobf("org.andrew:paco:1.0")
 //    implementation fg.deobf("a:pc:1.0")
-    implementation fg.deobf("a:acedium:1.0")
+//    implementation fg.deobf("a:acedium:1.0")
 //    implementation fg.deobf("curse.maven:swampier-swamps-632591:4578599")
 }
 

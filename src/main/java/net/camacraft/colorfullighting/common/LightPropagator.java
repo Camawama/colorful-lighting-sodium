@@ -5,6 +5,7 @@ import net.camacraft.colorfullighting.ColorfulLighting;
 import net.camacraft.colorfullighting.common.accessors.BlockStateAccessor;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.PlayerAccessor;
+import net.camacraft.colorfullighting.common.engine.DefaultBlockLightEngine;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
 import net.camacraft.colorfullighting.common.util.MathExt;
 import net.camacraft.colorfullighting.common.util.ShapeOcclusion;
@@ -35,6 +36,7 @@ import static net.camacraft.colorfullighting.common.ColoredLightEngine.*;
  * It propagates decreases (decreases of light values, e.g. light source has been destroyed, solid block has been placed in the path of light).
  * Changes caused by block updates are applied on the main thread to avoid light flickering
  */
+@Deprecated(forRemoval = true)
 public class LightPropagator implements Runnable {
 	class EngineBox {
 		WeakReference<ColoredLightEngine> weakRef;
@@ -164,8 +166,8 @@ public class LightPropagator implements Runnable {
 			}
 		}
 		
-		boolean hasLightWork = !engine.blockUpdateDecreaseRequests.isEmpty() || !engine.blockUpdateIncreaseRequests.isEmpty() || !engine.chunksWaitingForPropagation.isEmpty();
-		boolean hasDarknessWork = !engine.darknessUpdateDecreaseRequests.isEmpty() || !engine.darknessUpdateIncreaseRequests.isEmpty() || !engine.chunksWaitingForDarknessPropagation.isEmpty();
+		boolean hasLightWork = engine.lightEngine.hasWork() || !engine.chunksWaitingForPropagation.isEmpty();
+		boolean hasDarknessWork = engine.darkEngine.hasWork() || !engine.chunksWaitingForDarknessPropagation.isEmpty();
 		boolean hasWork = hasLightWork || hasDarknessWork;
 		
 		// Re-read every pass so changing the config takes effect without a restart.
@@ -229,12 +231,12 @@ public class LightPropagator implements Runnable {
 				}
 				
 				progressedThisPass = false;
-				if (hasLightWork) progressedThisPass |= propagateLight(engine);
-				if (hasDarknessWork) progressedThisPass |= propagateDarkness(engine);
+				if (hasLightWork) progressedThisPass |= propagateLight(engine, engine.lightEngine);
+				if (hasDarknessWork) progressedThisPass |= propagateDarkness(engine, engine.darkEngine);
 				progressed |= progressedThisPass;
 				
-				hasLightWork = !engine.blockUpdateDecreaseRequests.isEmpty() || !engine.blockUpdateIncreaseRequests.isEmpty() || !engine.chunksWaitingForPropagation.isEmpty();
-				hasDarknessWork = !engine.darknessUpdateDecreaseRequests.isEmpty() || !engine.darknessUpdateIncreaseRequests.isEmpty() || !engine.chunksWaitingForDarknessPropagation.isEmpty();
+				hasLightWork = engine.lightEngine.hasWork() || !engine.chunksWaitingForPropagation.isEmpty();
+				hasDarknessWork = engine.darkEngine.hasWork() || !engine.chunksWaitingForDarknessPropagation.isEmpty();
 				// stop early when nothing moved: the queue is waiting on chunks to load
 			} while (running && progressedThisPass && (hasLightWork || hasDarknessWork) && System.nanoTime() < deadline);
 		} else {
@@ -274,8 +276,8 @@ public class LightPropagator implements Runnable {
 			if (!hasWork) {
 				blockedSleepMillis = MIN_BLOCKED_SLEEP_MILLIS;
 				sleepMillis = IDLE_SLEEP_MILLIS;
-			} else if (!engine.blockUpdateIncreaseRequests.isEmpty() || !engine.blockUpdateDecreaseRequests.isEmpty()
-					|| !engine.darknessUpdateIncreaseRequests.isEmpty() || !engine.darknessUpdateDecreaseRequests.isEmpty()) {
+			} else if (engine.lightEngine.hasWork()
+					|| engine.darkEngine.hasWork()) {
 				// A placed torch must light up immediately: never back off on block updates.
 				blockedSleepMillis = MIN_BLOCKED_SLEEP_MILLIS;
 				sleepMillis = MIN_BLOCKED_SLEEP_MILLIS;
@@ -314,7 +316,7 @@ public class LightPropagator implements Runnable {
         ColorRGB4 ready = lightChangesReady.get(blockPos);
         if (ready != null) return ready;
 
-        return engine.storage.getEntry(blockPos);
+        return engine.lightEngine.getColor(blockPos);
     }
 
     public ColorRGB4 getLatestDarknessColor(ColoredLightEngine engine, BlockPos blockPos) {
@@ -324,7 +326,7 @@ public class LightPropagator implements Runnable {
         ColorRGB4 ready = darknessChangesReady.get(blockPos);
         if (ready != null) return ready;
 
-        return engine.darknessStorage.getEntry(blockPos);
+        return engine.darkEngine.getColor(blockPos);
     }
 
     private void performRegionRebuild(ColoredLightEngine engine, ChunkPos centerChunk) {
@@ -370,10 +372,10 @@ public class LightPropagator implements Runnable {
                     for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
                         for(int y = engine.level.getMinSectionY(); y <= engine.level.getMaxSectionY(); y++) {
                             long pos = SectionPos.asLong(cx, y, cz);
-	                        engine.storage.removeSection(pos);
-	                        engine.darknessStorage.removeSection(pos);
-	                        engine.storage.addSection(pos);
-	                        engine.darknessStorage.addSection(pos);
+	                        engine.lightEngine.removeSection(pos);
+	                        engine.darkEngine.removeSection(pos);
+	                        engine.lightEngine.addSection(pos);
+	                        engine.darkEngine.addSection(pos);
 	                        engine.dirtySections.add(pos); // Mark as dirty so renderer updates even if no new light is found
                         }
                     }
@@ -447,9 +449,9 @@ public class LightPropagator implements Runnable {
     }
 
     private record NearestBlockRequestsResult(ColoredLightEngine.BlockRequests blockUpdate, int distanceBlocks) {}
-    private NearestBlockRequestsResult getNearestBlockRequests(ColoredLightEngine engine, PlayerAccessor player) {
+    private NearestBlockRequestsResult getNearestBlockRequests(ColoredLightEngine engine, PlayerAccessor player, DefaultBlockLightEngine blockLightEngine) {
         // find chunk nearest player
-        var iterator = engine.blockUpdateIncreaseRequests.iterator();
+        var iterator = blockLightEngine.blockUpdateIncreaseRequests.iterator();
         int minDistance = Integer.MAX_VALUE;
         ColoredLightEngine.BlockRequests nearestUpdate = null;
         while (iterator.hasNext()) {
@@ -463,9 +465,9 @@ public class LightPropagator implements Runnable {
         return nearestUpdate == null ? null : new NearestBlockRequestsResult(nearestUpdate, minDistance);
     }
 
-    private NearestBlockRequestsResult getNearestDarknessRequests(ColoredLightEngine engine, PlayerAccessor player) {
+    private NearestBlockRequestsResult getNearestDarknessRequests(ColoredLightEngine engine, PlayerAccessor player, DefaultBlockLightEngine blockLightEngine) {
         // find chunk nearest player
-        var iterator = engine.darknessUpdateIncreaseRequests.iterator();
+        var iterator = blockLightEngine.blockUpdateIncreaseRequests.iterator();
         int minDistance = Integer.MAX_VALUE;
         ColoredLightEngine.BlockRequests nearestUpdate = null;
         while (iterator.hasNext()) {
@@ -633,7 +635,7 @@ public class LightPropagator implements Runnable {
             if (!lightChangesReady.isEmpty()) {
                 synchronized (engine.storageLock) {
                     for (var entry : lightChangesReady.entrySet()) {
-	                    engine.storage.setEntryUnsafe(entry.getKey(), entry.getValue());
+	                    engine.lightEngine.storage.setEntryUnsafe(entry.getKey(), entry.getValue());
                     }
                 }
                 lightChangesReady.clear();
@@ -649,7 +651,7 @@ public class LightPropagator implements Runnable {
             if (!darknessChangesReady.isEmpty()) {
                 synchronized (engine.storageLock) {
                     for (var entry : darknessChangesReady.entrySet()) {
-	                    engine.darknessStorage.setEntryUnsafe(entry.getKey(), entry.getValue());
+	                    engine.darkEngine.storage.setEntryUnsafe(entry.getKey(), entry.getValue());
                     }
                 }
                 darknessChangesReady.clear();
@@ -721,7 +723,7 @@ public class LightPropagator implements Runnable {
         if (!lightChangesInProgress.isEmpty()) {
             synchronized (engine.storageLock) {
                 for (var entry : lightChangesInProgress.entrySet()) {
-	                engine.storage.setEntryUnsafe(entry.getKey(), entry.getValue());
+	                engine.lightEngine.storage.setEntryUnsafe(entry.getKey(), entry.getValue());
                 }
             }
             markDirty(engine, lightChangesInProgress.keySet());
@@ -731,7 +733,7 @@ public class LightPropagator implements Runnable {
         if (!darknessChangesInProgress.isEmpty()) {
             synchronized (engine.storageLock) {
                 for (var entry : darknessChangesInProgress.entrySet()) {
-	                engine.darknessStorage.setEntryUnsafe(entry.getKey(), entry.getValue());
+	                engine.darkEngine.storage.setEntryUnsafe(entry.getKey(), entry.getValue());
                 }
             }
             markDirty(engine, darknessChangesInProgress.keySet());
@@ -756,23 +758,23 @@ public class LightPropagator implements Runnable {
      * propagate light in the nearest waiting chunk, handle block light updates
      */
     /** @return true when this pass actually did work; false means the queue is blocked (chunks still loading) */
-    private boolean propagateLight(ColoredLightEngine engine) {
+    private boolean propagateLight(ColoredLightEngine engine, DefaultBlockLightEngine blockEngine) {
         PlayerAccessor player = clientAccessor.getPlayer();
         if(player == null) return false;
         boolean progressed = false;
 
         // decrease requests are always executed
-        if(!engine.blockUpdateDecreaseRequests.isEmpty()) {
+        if(!blockEngine.blockUpdateDecreaseRequests.isEmpty()) {
             progressed = true;
             Queue<ColoredLightEngine.LightUpdateRequest> newIncreaseRequests = new ArrayDeque<>();
-            propagateDecreases(engine, engine.level, engine.blockUpdateDecreaseRequests, newIncreaseRequests);
+            propagateDecreases(engine, engine.level, blockEngine.blockUpdateDecreaseRequests, newIncreaseRequests);
             propagateIncreases(engine, engine.level, newIncreaseRequests);
 
             markChangesReady();
         }
         
         var nearestChunkResult = getNearestWaitingChunk(engine, engine.level, player);
-        var nearestBlockRequests = getNearestBlockRequests(engine, player);
+        var nearestBlockRequests = getNearestBlockRequests(engine, player, blockEngine);
 
         if(nearestChunkResult != null && (nearestBlockRequests == null || nearestChunkResult.distanceBlocks() < nearestBlockRequests.distanceBlocks())) {
             // propagate chunk
@@ -792,7 +794,7 @@ public class LightPropagator implements Runnable {
             lastChunkNanos = System.nanoTime();
         }
         else if(nearestBlockRequests != null) {
-	        engine.blockUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate);
+	        blockEngine.blockUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate);
             propagateIncreases(engine, engine.level, nearestBlockRequests.blockUpdate.increaseRequests);
             markChangesReady();
             progressed = true;
@@ -801,23 +803,23 @@ public class LightPropagator implements Runnable {
     }
 
     /** @return true when this pass actually did work; false means the queue is blocked (chunks still loading) */
-    private boolean propagateDarkness(ColoredLightEngine engine) {
+    private boolean propagateDarkness(ColoredLightEngine engine, DefaultBlockLightEngine blockEngine) {
         PlayerAccessor player = clientAccessor.getPlayer();
         if(player == null) return false;
         boolean progressed = false;
 
         // decrease requests are always executed
-        if(!engine.darknessUpdateDecreaseRequests.isEmpty()) {
+        if(!blockEngine.blockUpdateDecreaseRequests.isEmpty()) {
             progressed = true;
             Queue<ColoredLightEngine.LightUpdateRequest> newIncreaseRequests = new ArrayDeque<>();
-            propagateDarknessDecreases(engine, engine.level, engine.darknessUpdateDecreaseRequests, newIncreaseRequests);
+            propagateDarknessDecreases(engine, engine.level, blockEngine.blockUpdateDecreaseRequests, newIncreaseRequests);
             propagateDarknessIncreases(engine, engine.level, newIncreaseRequests);
 
             markChangesReady();
         }
 
         var nearestChunkResult = getNearestWaitingDarknessChunk(engine, engine.level, player);
-        var nearestBlockRequests = getNearestDarknessRequests(engine, player);
+        var nearestBlockRequests = getNearestDarknessRequests(engine, player, blockEngine);
 
         if(nearestChunkResult != null && (nearestBlockRequests == null || nearestChunkResult.distanceBlocks() < nearestBlockRequests.distanceBlocks())) {
             // propagate chunk
@@ -835,7 +837,7 @@ public class LightPropagator implements Runnable {
             progressed = true;
         }
         else if(nearestBlockRequests != null) {
-	        engine.darknessUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate);
+	        blockEngine.blockUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate);
             propagateDarknessIncreases(engine, engine.level, nearestBlockRequests.blockUpdate.increaseRequests);
             markChangesReady();
             progressed = true;

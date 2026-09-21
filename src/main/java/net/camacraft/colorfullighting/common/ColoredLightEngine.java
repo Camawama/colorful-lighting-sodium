@@ -5,6 +5,8 @@ import net.camacraft.colorfullighting.common.accessors.BlockStateAccessor;
 import net.camacraft.colorfullighting.common.accessors.ClientAccessor;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
+import net.camacraft.colorfullighting.common.engine.ColoredBlockLightEngine;
+import net.camacraft.colorfullighting.common.engine.DefaultBlockLightEngine;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
 import net.camacraft.colorfullighting.common.util.ColorRGB8;
 import net.camacraft.colorfullighting.common.util.WeakList;
@@ -48,8 +50,6 @@ public class ColoredLightEngine {
 	protected final LevelAccessor level;
 	/** This level's dynamic (entity/held-item) light state; may be null for exotic levels. */
 	private final DynamicLightsCompat dynamicLights;
-	protected final ColoredLightStorage storage = new ColoredLightStorage();
-	protected final ColoredLightStorage darknessStorage = new ColoredLightStorage();
     /**
      * Guards writers against each other only. Sampling never takes it: the storages are concurrent maps
      * of volatile-published sections, so readers race with the propagator by design and lose at worst a
@@ -92,10 +92,8 @@ public class ColoredLightEngine {
      * frustum-visible ones (a ship is usually on screen even though its shipyard chunks never are).
      */
     protected volatile ViewArea[] extraRegionAreas = new ViewArea[0];
-    protected final ConcurrentLinkedQueue<LightUpdateRequest> blockUpdateDecreaseRequests = new ConcurrentLinkedQueue<>(); // those first added will be executed first (this order is required by decrease propagation algorithm)
-    protected final ConcurrentLinkedQueue<BlockRequests> blockUpdateIncreaseRequests = new ConcurrentLinkedQueue<>(); // those nearest to the player will be executed first
-    protected final ConcurrentLinkedQueue<LightUpdateRequest> darknessUpdateDecreaseRequests = new ConcurrentLinkedQueue<>();
-    protected final ConcurrentLinkedQueue<BlockRequests> darknessUpdateIncreaseRequests = new ConcurrentLinkedQueue<>();
+	DefaultBlockLightEngine lightEngine = new DefaultBlockLightEngine(true, this);
+	DefaultBlockLightEngine darkEngine = new DefaultBlockLightEngine(false, this);
     // Sets, not queues: ConcurrentLinkedQueue.remove is O(n) and ran once per propagated chunk.
     // Ordering now comes from LightPropagator.ChunkOrder instead of rescanning the collection.
     protected final Set<ChunkPos> chunksWaitingForPropagation = ConcurrentHashMap.newKeySet();
@@ -198,10 +196,8 @@ public class ColoredLightEngine {
                 thread == null ? "none" : thread.isAlive() ? "alive" : "DEAD <- the bug; run /cl purge and report your log");
         sb.append("\nchunks waiting: light ").append(chunksWaitingForPropagation.size())
                 .append(", darkness ").append(chunksWaitingForDarknessPropagation.size());
-        sb.append("\nblock updates queued: light +").append(blockUpdateIncreaseRequests.size())
-                .append(" -").append(blockUpdateDecreaseRequests.size())
-                .append(", darkness +").append(darknessUpdateIncreaseRequests.size())
-                .append(" -").append(darknessUpdateDecreaseRequests.size());
+		sb.append("\n").append(lightEngine.describeQueue());
+		sb.append("\n").append(darkEngine.describeQueue());
         int listed = 0;
         for (ChunkPos pos : chunksWaitingForPropagation) {
             if (pos.getChessboardDistance(center) > 8) continue;
@@ -346,8 +342,8 @@ public class ColoredLightEngine {
         int version = this.structureVersion.get();
 
         if (cursor.sectionPos != sectionPos || cursor.version != version) {
-            cursor.light = storage.getSection(sectionPos);
-            cursor.darkness = darknessStorage.getSection(sectionPos);
+            cursor.light = lightEngine.getSection(sectionPos);
+            cursor.darkness = darkEngine.getSection(sectionPos);
             cursor.sectionPos = sectionPos;
             cursor.version = version;
         }
@@ -460,10 +456,8 @@ public class ColoredLightEngine {
 
         // unload sections
         // remove propagation requests which are not in newArea's inner area (or an extra region's)
-        blockUpdateIncreaseRequests.removeIf(blockUpdate -> !newArea.containsBlockInner(blockUpdate.blockPos) && !extraRegionsContainBlockInner(blockUpdate.blockPos));
-        blockUpdateDecreaseRequests.removeIf(blockUpdate -> !newArea.containsBlockInner(blockUpdate.blockPos) && !extraRegionsContainBlockInner(blockUpdate.blockPos));
-        darknessUpdateIncreaseRequests.removeIf(blockUpdate -> !newArea.containsBlockInner(blockUpdate.blockPos) && !extraRegionsContainBlockInner(blockUpdate.blockPos));
-        darknessUpdateDecreaseRequests.removeIf(blockUpdate -> !newArea.containsBlockInner(blockUpdate.blockPos) && !extraRegionsContainBlockInner(blockUpdate.blockPos));
+        lightEngine.remove(newArea);
+		darkEngine.remove(newArea);
         chunksWaitingForPropagation.removeIf(chunkPos -> !newArea.containsInner(chunkPos.x, chunkPos.z) && !extraRegionsContainInner(chunkPos.x, chunkPos.z));
         chunksWaitingForDarknessPropagation.removeIf(chunkPos -> !newArea.containsInner(chunkPos.x, chunkPos.z) && !extraRegionsContainInner(chunkPos.x, chunkPos.z));
         queuedChunks.removeIf(chunkPos -> !newArea.containsInner(chunkPos.x, chunkPos.z) && !extraRegionsContainInner(chunkPos.x, chunkPos.z));
@@ -475,8 +469,8 @@ public class ColoredLightEngine {
                     if(extraRegionsContain(x, z)) continue;
                     for(int y = level.getMinSectionY(); y <= level.getMaxSectionY(); y++) {
                         long sectionPos = SectionPos.asLong(x, y, z);
-                        storage.removeSection(sectionPos);
-                        darknessStorage.removeSection(sectionPos);
+                        lightEngine.removeSection(sectionPos);
+                        darkEngine.removeSection(sectionPos);
                     }
                 }
             }
@@ -495,8 +489,8 @@ public class ColoredLightEngine {
                     if(!viewArea.contains(x, z)) { // section data is not carried over from the old area
                         for(int y = level.getMinSectionY(); y <= level.getMaxSectionY(); y++) {
                             long pos = SectionPos.asLong(x, y, z);
-                            storage.addSection(pos);
-                            darknessStorage.addSection(pos);
+                            lightEngine.addSection(pos);
+                            darkEngine.addSection(pos);
                         }
                     }
                     if(newArea.containsInner(x, z) && canEverPropagate(centerX, centerZ, viewDistance, x, z)) {
@@ -571,10 +565,8 @@ public class ColoredLightEngine {
 
         if (oldArea != null && !oldArea.equals(newArea)) {
             // Drop pending work for chunks that left every tracked area.
-            blockUpdateIncreaseRequests.removeIf(update -> oldArea.containsBlockInner(update.blockPos) && !isBlockTrackedInner(update.blockPos));
-            blockUpdateDecreaseRequests.removeIf(update -> oldArea.containsBlockInner(update.blockPos) && !isBlockTrackedInner(update.blockPos));
-            darknessUpdateIncreaseRequests.removeIf(update -> oldArea.containsBlockInner(update.blockPos) && !isBlockTrackedInner(update.blockPos));
-            darknessUpdateDecreaseRequests.removeIf(update -> oldArea.containsBlockInner(update.blockPos) && !isBlockTrackedInner(update.blockPos));
+	        lightEngine.removeAlt(oldArea);
+			darkEngine.removeAlt(oldArea);
             chunksWaitingForPropagation.removeIf(chunkPos -> oldArea.containsInner(chunkPos.x, chunkPos.z) && !isChunkTrackedInner(chunkPos.x, chunkPos.z));
             chunksWaitingForDarknessPropagation.removeIf(chunkPos -> oldArea.containsInner(chunkPos.x, chunkPos.z) && !isChunkTrackedInner(chunkPos.x, chunkPos.z));
             queuedChunks.removeIf(chunkPos -> oldArea.containsInner(chunkPos.x, chunkPos.z) && !isChunkTrackedInner(chunkPos.x, chunkPos.z));
@@ -585,8 +577,8 @@ public class ColoredLightEngine {
                         if (isColumnTracked(x, z)) continue;
                         for (int y = level.getMinSectionY(); y <= level.getMaxSectionY(); y++) {
                             long sectionPos = SectionPos.asLong(x, y, z);
-                            storage.removeSection(sectionPos);
-                            darknessStorage.removeSection(sectionPos);
+                            lightEngine.removeSection(sectionPos);
+	                        darkEngine.removeSection(sectionPos);
                         }
                     }
                 }
@@ -603,8 +595,8 @@ public class ColoredLightEngine {
                             if (viewArea.contains(x, z)) continue; // already held by the view area
                             for (int y = level.getMinSectionY(); y <= level.getMaxSectionY(); y++) {
                                 long sectionPos = SectionPos.asLong(x, y, z);
-                                storage.addSection(sectionPos);
-                                darknessStorage.addSection(sectionPos);
+                                lightEngine.addSection(sectionPos);
+                                darkEngine.addSection(sectionPos);
                             }
                         }
                     }
@@ -628,16 +620,16 @@ public class ColoredLightEngine {
         }
         return false;
     }
-
-    private boolean extraRegionsContain(int x, int z) {
+	
+	public boolean extraRegionsContain(int x, int z) {
         if (extraRegions.isEmpty()) return false;
         for (LightRegion region : extraRegions.values()) {
             if (region.area().contains(x, z)) return true;
         }
         return false;
     }
-
-    private boolean extraRegionsContainInner(int x, int z) {
+	
+	public boolean extraRegionsContainInner(int x, int z) {
         if (extraRegions.isEmpty()) return false;
         for (LightRegion region : extraRegions.values()) {
             if (region.area().containsInner(x, z)) return true;
@@ -645,16 +637,16 @@ public class ColoredLightEngine {
         return false;
     }
 
-    private boolean extraRegionsContainBlockInner(BlockPos pos) {
+    public boolean extraRegionsContainBlockInner(BlockPos pos) {
         return extraRegionsContainInner(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ()));
     }
 
     /** Whether the chunk is an inner (actively updated) chunk of the view area or any extra region. */
-    private boolean isChunkTrackedInner(int x, int z) {
+    public boolean isChunkTrackedInner(int x, int z) {
         return viewArea.containsInner(x, z) || extraRegionsContainInner(x, z);
     }
 
-    private boolean isBlockTrackedInner(BlockPos pos) {
+    public boolean isBlockTrackedInner(BlockPos pos) {
         return isChunkTrackedInner(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ()));
     }
 
@@ -670,68 +662,10 @@ public class ColoredLightEngine {
         if (!isChunkTrackedInner(sectionPos.x(), sectionPos.z())) return;
 
         BlockRequests increaseRequests = new BlockRequests(blockPos);
-        handleBlockUpdate(level, increaseRequests.increaseRequests, blockUpdateDecreaseRequests, blockPos);
-        if (!increaseRequests.increaseRequests.isEmpty()) {
-            blockUpdateIncreaseRequests.add(increaseRequests);
-        }
+        lightEngine.handleBlockUpdate(level, increaseRequests, blockPos);
 
         BlockRequests darknessIncreaseRequests = new BlockRequests(blockPos);
-        handleDarknessUpdate(level, darknessIncreaseRequests.increaseRequests, darknessUpdateDecreaseRequests, blockPos);
-        if (!darknessIncreaseRequests.increaseRequests.isEmpty()) {
-            darknessUpdateIncreaseRequests.add(darknessIncreaseRequests);
-        }
-    }
-
-    private void handleBlockUpdate(LevelAccessor level, Queue<LightUpdateRequest> increaseRequests, Queue<LightUpdateRequest> decreaseRequests, BlockPos blockPos) {
-        ColorRGB4 lightColor = storage.getEntry(blockPos);
-        if (lightColor == null) lightColor = ColorRGB4.fromRGB4(0,0,0);
-
-        if(lightColor.red4 == 0 && lightColor.green4 == 0 && lightColor.blue4 == 0)
-            requestLightPullIn(increaseRequests, blockPos);  // block probably destroyed/replaced with transparent, light pull in might be needed
-        else
-            decreaseRequests.add(new LightUpdateRequest(blockPos, lightColor, false)); // block probably placed/replaced with non-transparent, light might need to be decreased
-
-        // propagate light if new blockState emits light (single lookup for both brightness and color)
-        BlockStateAccessor blockState = level.getBlockState(blockPos);
-        if (blockState != null && Config.getEmissionBrightness(level, blockPos, blockState) > 0)
-            increaseRequests.add(new LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos, blockState), false, true, false));
-    }
-
-    private void handleDarknessUpdate(LevelAccessor level, Queue<LightUpdateRequest> increaseRequests, Queue<LightUpdateRequest> decreaseRequests, BlockPos blockPos) {
-        ColorRGB4 darknessColor = darknessStorage.getEntry(blockPos);
-        if (darknessColor == null) darknessColor = ColorRGB4.fromRGB4(0,0,0);
-
-        if(darknessColor.red4 == 0 && darknessColor.green4 == 0 && darknessColor.blue4 == 0)
-            requestDarknessPullIn(increaseRequests, blockPos);
-        else
-            decreaseRequests.add(new LightUpdateRequest(blockPos, darknessColor, false));
-
-        // propagate darkness if new blockState absorbs light (single lookup)
-        BlockStateAccessor blockState = level.getBlockState(blockPos);
-        if (blockState != null && Config.getAbsorption(level, blockPos, blockState) > 0)
-            increaseRequests.add(new LightUpdateRequest(blockPos, Config.getAbsorptionColor(level, blockPos, blockState), false, true, false));
-    }
-
-    private void requestLightPullIn(Queue<LightUpdateRequest> increaseRequests, BlockPos blockPos) {
-        for(var direction : Direction.values()) {
-            BlockPos neighbourPos = blockPos.relative(direction);
-            ColorRGB4 neighbourLight = storage.getEntry(neighbourPos);
-            if(neighbourLight == null) continue;
-
-            if(neighbourLight.red4 == 0 && neighbourLight.green4 == 0 && neighbourLight.blue4 == 0) continue;
-            increaseRequests.add(new LightUpdateRequest(neighbourPos, null, true, false, true));
-        }
-    }
-
-    private void requestDarknessPullIn(Queue<LightUpdateRequest> increaseRequests, BlockPos blockPos) {
-        for(var direction : Direction.values()) {
-            BlockPos neighbourPos = blockPos.relative(direction);
-            ColorRGB4 neighbourDarkness = darknessStorage.getEntry(neighbourPos);
-            if(neighbourDarkness == null) continue;
-
-            if(neighbourDarkness.red4 == 0 && neighbourDarkness.green4 == 0 && neighbourDarkness.blue4 == 0) continue;
-            increaseRequests.add(new LightUpdateRequest(neighbourPos, null, true, false, true));
-        }
+	    darkEngine.handleBlockUpdate(level, darknessIncreaseRequests, blockPos);
     }
 
     public void onLightUpdate() {
@@ -799,7 +733,7 @@ public class ColoredLightEngine {
 
     /** Diagnostics: sections currently stored (view area plus extra regions). */
     public int debugStoredSectionCount() {
-        return storage.sectionCount();
+        return lightEngine.sectionCount();
     }
 
     /** Diagnostics: chunks queued or already propagated for the current coverage. */
@@ -814,11 +748,11 @@ public class ColoredLightEngine {
     }
 
     public ColoredLightSection dhGetLightSection(long sectionPos) {
-        return storage.getSection(sectionPos);
+        return lightEngine.getSection(sectionPos);
     }
 
     public ColoredLightSection dhGetDarknessSection(long sectionPos) {
-        return darknessStorage.getSection(sectionPos);
+        return darkEngine.getSection(sectionPos);
     }
 
     /**
@@ -826,7 +760,7 @@ public class ColoredLightEngine {
      * re-mesh only the sections whose baked tint went stale, instead of the whole world.
      */
     public void forEachPopulatedSection(java.util.function.LongConsumer action) {
-        storage.forEachPopulatedSection(action);
+        lightEngine.forEachPopulatedSection(action);
     }
 
     /**
@@ -895,17 +829,13 @@ public class ColoredLightEngine {
 			lightPropagator = null;
 			lightPropagatorThread = null;
 		}
-		storage.clear();
-		darknessStorage.clear();
+		lightEngine.clear();
+		darkEngine.clear();
 		structureVersion.incrementAndGet();
 		viewArea = new ViewArea();
 		extraRegions.clear(); // region owners (e.g. VS compat) re-sync them on the next tick
 		extraRegionAreas = new ViewArea[0];
 		dirtySections.clear();
-		blockUpdateIncreaseRequests.clear();
-		blockUpdateDecreaseRequests.clear();
-		darknessUpdateIncreaseRequests.clear();
-		darknessUpdateDecreaseRequests.clear();
 		chunksWaitingForPropagation.clear();
 		chunksWaitingForDarknessPropagation.clear();
 		queuedChunks.clear();
@@ -931,11 +861,11 @@ public class ColoredLightEngine {
     }
 
     public static class LightUpdateRequest {
-        BlockPos blockPos;
-        ColorRGB4 lightColor;
-        boolean force;
-        boolean checkSource;
-        boolean repropagate;
+        public final BlockPos blockPos;
+	    public ColorRGB4 lightColor;
+	    public final boolean force;
+	    public final boolean checkSource;
+	    public final boolean repropagate;
 
         public LightUpdateRequest(BlockPos blockPos, ColorRGB4 lightColor, boolean force) {
             this(blockPos, lightColor, force, false, false);
