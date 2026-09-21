@@ -1,82 +1,18 @@
 package net.camacraft.colorfullighting.accessors;
 
-import net.camacraft.colorfullighting.common.accessors.BlockStateAccessor;
-import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
-import net.minecraft.core.BlockPos;
-import net.minecraft.resources.ResourceKey;
-import net.minecraft.world.level.EmptyBlockGetter;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
-import org.jetbrains.annotations.NotNull;
 
 /**
  * To be converted into a static utility class and renamed to BlockStateHelper
  */
-@Deprecated(forRemoval = true)
-public class BlockStateWrapper implements BlockStateAccessor {
-    final BlockState blockState;
-
-    public BlockStateWrapper(@NotNull BlockState blockState) {
-        this.blockState = blockState;
-    }
-
-    @Override
-    public ResourceKey<Block> getBlockKey() {
-        return blockState.getBlockHolder().unwrapKey().get();
-    }
-
-    @Override
-    public Block getBlock() {
-        return blockState.getBlock();
-    }
-
-    @Override
-    public int getLightEmission() {
-        return blockState.getLightEmission(EmptyBlockGetter.INSTANCE, BlockPos.ZERO);
-    }
-
-    @Override
-    public int getLightBlock() {
-        return blockState.getLightBlock(EmptyBlockGetter.INSTANCE, BlockPos.ZERO);
-    }
-
-    @Override
-    public int getLightEmission(LevelAccessor level, BlockPos pos) {
-        if(level instanceof LevelWrapper levelWrapper)
-            return blockState.getLightEmission(levelWrapper.getWrappedLevel(), pos);
-        return getLightEmission();
-    }
-
-    @Override
-    public int getLightBlock(LevelAccessor level, BlockPos pos) {
-        if(level instanceof LevelWrapper levelWrapper)
-            return blockState.getLightBlock(levelWrapper.getWrappedLevel(), pos);
-        return getLightBlock();
-    }
-
-    @Override
-    public boolean isAir() {
-        return blockState.isAir();
-    }
-
-    @Override
-    public String getPropertiesAsString() {
-        return blockState.getValues().toString();
-    }
-
-    @Override
-    public String getPropertyString(String propertyName) {
-        for (Property<?> prop : blockState.getProperties()) {
+public class BlockStateWrapper {
+    public static String getPropertyString(BlockState state, String propertyName) {
+        for (Property<?> prop : state.getProperties()) {
             if (prop.getName().equals(propertyName)) {
-                return blockState.getValue(prop).toString();
+                return state.getValue(prop).toString();
             }
         }
         return null;
-    }
-
-    @Override
-    public BlockState getBlockState() {
-        return blockState;
     }
 }

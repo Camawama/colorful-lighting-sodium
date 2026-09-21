@@ -1,6 +1,7 @@
 package net.camacraft.colorfullighting.common.config;
 
-import net.camacraft.colorfullighting.common.accessors.BlockStateAccessor;
+import net.camacraft.colorfullighting.accessors.BlockStateWrapper;
+import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -51,9 +52,9 @@ public final class StateCondition {
         return names.length;
     }
 
-    public boolean matches(BlockStateAccessor blockState) {
+    public boolean matches(BlockState blockState) {
         for (int i = 0; i < names.length; i++) {
-            String actual = blockState.getPropertyString(names[i]);
+            String actual = BlockStateWrapper.getPropertyString(blockState, names[i]);
             if (actual == null || !actual.equals(values[i])) return false;
         }
         return true;

@@ -4,10 +4,10 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
-import net.camacraft.colorfullighting.common.accessors.BlockStateAccessor;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.nbt.TagParser;
+import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -80,7 +80,7 @@ public final class VariantList<T> {
      *                   variants with an NBT condition can never match a null tag
      */
     @Nullable
-    public T resolve(@Nullable BlockStateAccessor blockState, @Nullable CompoundTag nbt) {
+    public T resolve(@Nullable BlockState blockState, @Nullable CompoundTag nbt) {
         for (LightVariant<T> variant : variants) {
             if (variant.state() != StateCondition.ALWAYS) {
                 if (blockState == null || !variant.state().matches(blockState)) continue;

@@ -61,6 +61,7 @@ public class ClientEventListener {
 	    
 	    LevelAttachments attachments = (LevelAttachments) event.level;
 		ColoredLightEngine engine = attachments.colorfullighting$getEngine();
+		engine.tick();
 		engine.updateViewArea(viewArea);
 
 	    // If this level was remote until now (Immersive Portals), hand its coverage over from the

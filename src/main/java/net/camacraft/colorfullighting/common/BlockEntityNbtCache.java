@@ -1,13 +1,13 @@
 package net.camacraft.colorfullighting.common;
 
 import net.camacraft.colorfullighting.ColorfulLighting;
-import net.camacraft.colorfullighting.common.accessors.BlockStateAccessor;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import org.jetbrains.annotations.Nullable;
 
@@ -174,7 +174,7 @@ public final class BlockEntityNbtCache {
         LevelAccessor level = ColorfulLighting.clientAccessor == null ? null : ColorfulLighting.clientAccessor.getLevel();
         if (level == null) return;
         BlockPos pos = BlockPos.of(packedPos);
-        BlockStateAccessor blockState = level.getBlockState(pos);
+	    BlockState blockState = level.getBlockState(pos);
         if (blockState == null) {
             tracked.seeded = false; // resolve once the chunk is reachable, on a later tick
             return;

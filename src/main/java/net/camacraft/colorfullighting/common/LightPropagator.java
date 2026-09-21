@@ -2,7 +2,6 @@ package net.camacraft.colorfullighting.common;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.camacraft.colorfullighting.ColorfulLighting;
-import net.camacraft.colorfullighting.common.accessors.BlockStateAccessor;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.PlayerAccessor;
 import net.camacraft.colorfullighting.common.engine.DefaultBlockLightEngine;
@@ -783,7 +782,7 @@ public class LightPropagator implements Runnable {
 
     private boolean propagateIncrease(ColoredLightEngine engine, Queue<ColoredLightEngine.LightUpdateRequest> increaseRequests, LightUpdateRequest request, LevelAccessor level) {
         if (request.checkSource) {
-             BlockStateAccessor blockState = level.getBlockState(request.blockPos);
+	        BlockState blockState = level.getBlockState(request.blockPos);
              if (blockState == null || Config.getEmissionBrightness(level, request.blockPos, blockState) == 0) {
                  return false;
              }
@@ -808,9 +807,9 @@ public class LightPropagator implements Runnable {
 	    engine.lightEngine.changesInProgress.put(request.blockPos, newLightColor);
 
         // Cache source block state and geometry info once, not per-direction
-        BlockStateAccessor sourceState = level.getBlockState(request.blockPos);
+	    BlockState sourceState = level.getBlockState(request.blockPos);
         boolean sourceStateExists = sourceState != null;
-        BlockState sourceBlockState = sourceStateExists ? sourceState.getBlockState() : null;
+        BlockState sourceBlockState = sourceStateExists ? sourceState : null;
         boolean sourceOccludes = sourceStateExists && sourceBlockState.useShapeForLightOcclusion();
         boolean sourceDynamic = sourceStateExists && ShapeOcclusion.isDynamicShapeBlocker(sourceBlockState);
         ColorRGB4 sourceBaseTransmittance = sourceStateExists ? Config.getColoredLightTransmittance(level, request.blockPos, sourceState) : ColorRGB4.WHITE;
@@ -822,13 +821,13 @@ public class LightPropagator implements Runnable {
         for(var direction : Direction.values()) {
             BlockPos neighbourPos = request.blockPos.relative(direction);
             if(!level.isInBounds(neighbourPos)) continue;
-            BlockStateAccessor neighbourState = level.getBlockState(neighbourPos);
+	        BlockState neighbourState = level.getBlockState(neighbourPos);
             if(neighbourState == null) return false; // section might have got unloaded and propagation should stop
 
             // Start with vanilla light blocking
-            int lightBlocked = Math.max(1, neighbourState.getLightBlock(level, neighbourPos));
+            int lightBlocked = Math.max(1, neighbourState.getLightBlock(level.getLevel(), neighbourPos));
 
-            BlockState neighborBlockState = neighbourState.getBlockState();
+            BlockState neighborBlockState = neighbourState;
             boolean neighbourDynamic = ShapeOcclusion.isDynamicShapeBlocker(neighborBlockState);
 
             // Override with custom absorption if it's defined.
@@ -913,7 +912,7 @@ public class LightPropagator implements Runnable {
 
     private boolean propagateDarknessIncrease(ColoredLightEngine engine, Queue<LightUpdateRequest> increaseRequests, LightUpdateRequest request, LevelAccessor level) {
         if (request.checkSource) {
-             BlockStateAccessor blockState = level.getBlockState(request.blockPos);
+	         BlockState blockState = level.getBlockState(request.blockPos);
              if (blockState == null || Config.getAbsorption(level, request.blockPos, blockState) == 0) {
                  return false;
              }
@@ -938,21 +937,21 @@ public class LightPropagator implements Runnable {
 	    engine.darkEngine.changesInProgress.put(request.blockPos, newDarknessColor);
 
         // Cache source block state and geometry info once, not per-direction
-        BlockStateAccessor sourceState = level.getBlockState(request.blockPos);
+	    BlockState sourceState = level.getBlockState(request.blockPos);
         boolean sourceStateExists = sourceState != null;
-        BlockState sourceBlockState = sourceStateExists ? sourceState.getBlockState() : null;
+        BlockState sourceBlockState = sourceStateExists ? sourceState : null;
         boolean sourceOccludes = sourceStateExists && sourceBlockState.useShapeForLightOcclusion();
         boolean sourceDynamic = sourceStateExists && ShapeOcclusion.isDynamicShapeBlocker(sourceBlockState);
 
         for(var direction : Direction.values()) {
             BlockPos neighbourPos = request.blockPos.relative(direction);
             if(!level.isInBounds(neighbourPos)) continue;
-            BlockStateAccessor neighbourState = level.getBlockState(neighbourPos);
+	        BlockState neighbourState = level.getBlockState(neighbourPos);
             if(neighbourState == null) return false; // section might have got unloaded and propagation should stop
 
-            int lightBlocked = Math.max(1, neighbourState.getLightBlock(level, neighbourPos));
+            int lightBlocked = Math.max(1, neighbourState.getLightBlock(level.getLevel(), neighbourPos));
 
-            BlockState neighborBlockState = neighbourState.getBlockState();
+            BlockState neighborBlockState = neighbourState;
             boolean neighbourDynamic = ShapeOcclusion.isDynamicShapeBlocker(neighborBlockState);
 
             if (sourceStateExists) {
@@ -1013,8 +1012,8 @@ public class LightPropagator implements Runnable {
         if(oldLightColor == null) return false; // section might have got unloaded and propagation should stop
 	    
 	    blockLightEngine.changesInProgress.put(request.blockPos, ColorRGB4.fromRGB4(0, 0, 0));
-
-        BlockStateAccessor blockState = level.getBlockState(request.blockPos);
+	    
+	    BlockState blockState = level.getBlockState(request.blockPos);
         if(blockState == null) return false; // section might have got unloaded and propagation should stop
         // repropagate removed light (single lookup for both value and color)
         if(blockLightEngine.getValue(level, request.blockPos, blockState) > 0) {

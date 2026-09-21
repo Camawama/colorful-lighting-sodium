@@ -1,11 +1,9 @@
 package net.camacraft.colorfullighting.common;
 
 import net.camacraft.colorfullighting.ColorfulLighting;
-import net.camacraft.colorfullighting.common.accessors.BlockStateAccessor;
 import net.camacraft.colorfullighting.common.accessors.ClientAccessor;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
-import net.camacraft.colorfullighting.common.engine.ColoredBlockLightEngine;
 import net.camacraft.colorfullighting.common.engine.DefaultBlockLightEngine;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
 import net.camacraft.colorfullighting.common.util.ColorRGB8;
@@ -21,7 +19,6 @@ import net.camacraft.colorfullighting.compat.distanthorizons.DhColorCache;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.packs.repository.PackRepository;
@@ -45,6 +42,7 @@ import java.util.function.Consumer;
  */
 public class ColoredLightEngine {
 	private static final WeakList<ColoredLightEngine> TRACKED = new WeakList<>(new ArrayList<>());
+	private static final boolean USE_THREAD = true;
 	
 	private final ClientAccessor clientAccessor;
 	protected final LevelAccessor level;
@@ -791,10 +789,14 @@ public class ColoredLightEngine {
         
         if (enabled) {
             lightPropagator = new LightPropagator(this);
-            lightPropagatorThread = new Thread(lightPropagator, "CL-LightPropagator");
-            lightPropagatorThread.setPriority(Thread.MIN_PRIORITY);
-	        running = true;
-	        lightPropagatorThread.start();
+			if (USE_THREAD) {
+				lightPropagatorThread = new Thread(lightPropagator, "CL-LightPropagator");
+				lightPropagatorThread.setPriority(Thread.MIN_PRIORITY);
+				running = true;
+				lightPropagatorThread.start();
+			} else {
+				running = true;
+			}
 			
             // Log the setting actually in force: an invalid or clobbered config value is corrected
             // silently by Forge, so the file on disk is not evidence of what the engine is using.
@@ -808,23 +810,25 @@ public class ColoredLightEngine {
 	private void clear() {
 		if(lightPropagator != null) {
 			running = false;
-			lightPropagator.stop();
-			try {
-				lightPropagatorThread.join(MAX_BLOCKED_SLEEP_MILLIS);
-			} catch (InterruptedException e) {
-				throw new RuntimeException(e);
-			}
-			if (lightPropagatorThread.isAlive()) {
-				lightPropagatorThread.interrupt();
-			}
-//			if (lightPropagatorThread.isAlive()) {
-//				lightPropagatorThread.stop();
-//			}
-			if (lightPropagatorThread.isAlive()) {
+			if (lightPropagatorThread != null) {
+				lightPropagator.stop();
 				try {
-					lightPropagatorThread.join(MAX_BLOCKED_SLEEP_MILLIS * 4);
+					lightPropagatorThread.join(MAX_BLOCKED_SLEEP_MILLIS);
 				} catch (InterruptedException e) {
 					throw new RuntimeException(e);
+				}
+				if (lightPropagatorThread.isAlive()) {
+					lightPropagatorThread.interrupt();
+				}
+//				if (lightPropagatorThread.isAlive()) {
+//					lightPropagatorThread.stop();
+//				}
+				if (lightPropagatorThread.isAlive()) {
+					try {
+						lightPropagatorThread.join(MAX_BLOCKED_SLEEP_MILLIS * 4);
+					} catch (InterruptedException e) {
+						throw new RuntimeException(e);
+					}
 				}
 			}
 			lightPropagator = null;
@@ -886,4 +890,10 @@ public class ColoredLightEngine {
     }
 
     public record DelayedChunkUpdate(ChunkPos chunkPos, long executeTime) {}
+	
+	public void tick() {
+		if (lightPropagatorThread == null) {
+			lightPropagator.doWork();
+		}
+	}
 }

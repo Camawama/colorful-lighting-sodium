@@ -1,10 +1,8 @@
 package net.camacraft.colorfullighting.mixin.engine;
 
 import net.camacraft.colorfullighting.ColorfulLighting;
-import net.camacraft.colorfullighting.accessors.BlockStateWrapper;
 import net.camacraft.colorfullighting.common.ColoredLightEngine;
 import net.camacraft.colorfullighting.common.Config;
-import net.camacraft.colorfullighting.common.accessors.BlockStateAccessor;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LightEngineAccessor;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
@@ -34,23 +32,21 @@ public class LightEngineMixin implements LightEngineAccessor {
         }
         if(!Minecraft.getInstance().isSameThread()) return; // only client side
         LevelAccessor clientLevel = ColorfulLighting.clientAccessor.getLevel();
-        BlockStateAccessor blockState1 = new BlockStateWrapper(state1);
-        BlockStateAccessor blockState2 = new BlockStateWrapper(state2);
-        if(clientLevel == null) return;
-        ColorRGB4 color1 = Config.getColorEmission(clientLevel, pos, blockState1);
-        ColorRGB4 color2 = Config.getColorEmission(clientLevel, pos, blockState2);
+		if(clientLevel == null) return;
+        ColorRGB4 color1 = Config.getColorEmission(clientLevel, pos, state1);
+        ColorRGB4 color2 = Config.getColorEmission(clientLevel, pos, state2);
         if(!color1.equals(color2)) {
             cir.setReturnValue(true);
             return;
         }
-        color1 = Config.getColoredLightTransmittance(clientLevel, pos, blockState1);
-        color2 = Config.getColoredLightTransmittance(clientLevel, pos, blockState2);
+        color1 = Config.getColoredLightTransmittance(clientLevel, pos, state1);
+        color2 = Config.getColoredLightTransmittance(clientLevel, pos, state2);
         if(!color1.equals(color2)) {
             cir.setReturnValue(true);
             return;
         }
-        int absorption1 = Config.getLightAbsorption(clientLevel, pos, blockState1);
-        int absorption2 = Config.getLightAbsorption(clientLevel, pos, blockState2);
+        int absorption1 = Config.getLightAbsorption(clientLevel, pos, state1);
+        int absorption2 = Config.getLightAbsorption(clientLevel, pos, state2);
         if(absorption1 != absorption2) {
             cir.setReturnValue(true);
         }

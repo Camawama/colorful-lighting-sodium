@@ -1,9 +1,7 @@
 package net.camacraft.colorfullighting.mixin.render;
 
-import net.camacraft.colorfullighting.accessors.BlockStateWrapper;
 import net.camacraft.colorfullighting.common.ColoredLightEngine;
 import net.camacraft.colorfullighting.common.Config;
-import net.camacraft.colorfullighting.common.accessors.BlockStateAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelRendererAccessor;
 import net.camacraft.colorfullighting.common.util.ColorRGB8;
@@ -49,7 +47,7 @@ public class LevelRendererMixin implements LevelRendererAccessor {
 
         int skyLight = level.getBrightness(LightLayer.SKY, pos);
         if(state.emissiveRendering(level, pos)) {
-            BlockStateAccessor stateAccessor = new BlockStateWrapper(state);
+	        BlockState stateAccessor = state;
             if (Config.getEmissionBrightness(stateAccessor) > 0) {
                 var emission = Config.getLightColor(state);
                 cir.setReturnValue(PackedLightData.packData(skyLight, ColorRGB8.fromRGB4(emission)));

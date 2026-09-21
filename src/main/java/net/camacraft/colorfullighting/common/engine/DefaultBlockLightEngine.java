@@ -1,11 +1,11 @@
 package net.camacraft.colorfullighting.common.engine;
 
 import net.camacraft.colorfullighting.common.*;
-import net.camacraft.colorfullighting.common.accessors.BlockStateAccessor;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
@@ -59,7 +59,7 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 			blockUpdateDecreaseRequests.add(new ColoredLightEngine.LightUpdateRequest(blockPos, lightColor, false)); // block probably placed/replaced with non-transparent, light might need to be decreased
 		
 		// propagate light if new blockState emits light (single lookup for both brightness and color)
-		BlockStateAccessor blockState = level.getBlockState(blockPos);
+		BlockState blockState = level.getBlockState(blockPos);
 		
 		int emission = forLight ? Config.getEmissionBrightness(level, blockPos, blockState) : Config.getAbsorption(level, blockPos, blockState);
 		
@@ -127,12 +127,12 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 	}
 	
 	@Override
-	public int getValue(LevelAccessor level, BlockPos blockPos, BlockStateAccessor blockState) {
+	public int getValue(LevelAccessor level, BlockPos blockPos, BlockState blockState) {
 		return forLight ? Config.getEmissionBrightness(level, blockPos, blockState) : Config.getAbsorption(level, blockPos, blockState);
 	}
 	
 	@Override
-	public ColorRGB4 getColor(LevelAccessor level, BlockPos blockPos, BlockStateAccessor blockState) {
+	public ColorRGB4 getColor(LevelAccessor level, BlockPos blockPos, BlockState blockState) {
 		return forLight ? Config.getColorEmission(level, blockPos, blockState) : Config.getAbsorptionColor(level, blockPos, blockState);
 	}
 	

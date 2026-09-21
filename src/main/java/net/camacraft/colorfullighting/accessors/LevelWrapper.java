@@ -4,8 +4,6 @@ import net.camacraft.colorfullighting.api.CLClientLevel;
 import net.camacraft.colorfullighting.common.BlockEntityNbtCache;
 import net.camacraft.colorfullighting.common.ColoredLightEngine;
 import net.camacraft.colorfullighting.common.Config;
-import net.camacraft.colorfullighting.common.accessors.*;
-import net.camacraft.colorfullighting.common.accessors.BlockStateAccessor;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.ClientLevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
@@ -19,6 +17,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ChunkStatus;
 import org.jetbrains.annotations.NotNull;
@@ -98,7 +97,7 @@ public class LevelWrapper implements LevelAccessor, LevelAttachments {
         chunk.findBlocks(
                 (blockState, blockPos) -> // individual block filter
                         blockState.getLightEmission(chunk, blockPos) != 0 ||
-                        Config.getEmissionBrightness(this, blockPos, new BlockStateWrapper(blockState)) != 0,
+                        Config.getEmissionBrightness(this, blockPos, blockState) != 0,
                 (blockPos, blockState) -> // for each found light source
                         consumer.accept(new BlockPos(blockPos))
         );
@@ -109,16 +108,16 @@ public class LevelWrapper implements LevelAccessor, LevelAttachments {
         ChunkAccess chunk = level.getChunk(chunkPos.x, chunkPos.z);
         chunk.findBlocks(
                 (blockState, blockPos) -> // individual block filter
-                        Config.getAbsorption(this, blockPos, new BlockStateWrapper(blockState)) > 0,
+                        Config.getAbsorption(this, blockPos, blockState) > 0,
                 (blockPos, blockState) -> // for each found light source
                         consumer.accept(new BlockPos(blockPos))
         );
     }
 
-    private static final BlockStateAccessor AIR_STATE = new BlockStateWrapper(net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+    private static final BlockState AIR_STATE = net.minecraft.world.level.block.Blocks.AIR.defaultBlockState();
 
     @Override
-    public BlockStateAccessor getBlockState(BlockPos pos) {
+    public BlockState getBlockState(BlockPos pos) {
         var chunk = level.getChunkSource().getChunk(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ()), ChunkStatus.FULL, false);
         if(chunk == null) {
             // see hasChunk: an absent block-less shipyard chunk is known to be air
@@ -135,7 +134,7 @@ public class LevelWrapper implements LevelAccessor, LevelAttachments {
         // race exists with getBlockState too (AsyncParticles rethrows for non-particle threads), so
         // treat it like an unloaded section and let the propagation retry via the dirty path.
         try {
-            return new BlockStateWrapper(section.getStates().get(pos.getX() & 15, pos.getY() & 15, pos.getZ() & 15));
+            return section.getStates().get(pos.getX() & 15, pos.getY() & 15, pos.getZ() & 15);
         } catch (RuntimeException e) {
             return null;
         }

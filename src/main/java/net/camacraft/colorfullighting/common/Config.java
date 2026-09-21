@@ -1,7 +1,7 @@
 package net.camacraft.colorfullighting.common;
 
 import com.google.gson.JsonElement;
-import net.camacraft.colorfullighting.common.accessors.BlockStateAccessor;
+import net.camacraft.colorfullighting.accessors.BlockStateWrapper;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
 import net.camacraft.colorfullighting.common.api.ApiProviderRegistry;
@@ -117,8 +117,8 @@ public class Config {
     }
 
     public static ColorRGB4 getColorEmission(@NotNull LevelAccessor level, BlockPos pos) { return getColorEmission(level, pos, level.getBlockState(pos)); }
-    public static ColorRGB4 getColorEmission(@NotNull LevelAccessor level, BlockPos pos, @NotNull BlockStateAccessor blockState) {
-        float lightEmission = blockState.getLightEmission(level, pos)/15.0f;
+    public static ColorRGB4 getColorEmission(@NotNull LevelAccessor level, BlockPos pos, @NotNull BlockState blockState) {
+        float lightEmission = blockState.getLightEmission(level.getLevel(), pos)/15.0f;
         Block block = blockState.getBlock();
 
         // Light blocks placed by dynamic lighting mods (Lively Lighting) are colored by the
@@ -136,7 +136,7 @@ public class Config {
             ColorEmitter emitter = config.resolve(blockState, nbtFor(level, config, pos));
             if (emitter != null) {
                 ColorRGB4 color = emitter.autoColor
-                        ? AutoEmitterColors.get(blockState.getBlockState(), level.getLevel(), pos)
+                        ? AutoEmitterColors.get(blockState, level.getLevel(), pos)
                         : emitter.color();
                 return color.mul(emitter.overriddenBrightness4 < 0 ? lightEmission : emitter.overriddenBrightness4 / 15.0f);
             }
@@ -144,7 +144,7 @@ public class Config {
         // API providers: dynamic colors JSON cannot express. Run after explicit emitters.json
         // config (user/pack intent wins) and before the automatic texture heuristic.
         if (lightEmission > 0 && ApiProviderRegistry.hasBlockProviders()) {
-            ColorRGB4 providerColor = ApiProviderRegistry.getBlockColor(level.getLevel(), pos, blockState.getBlockState());
+            ColorRGB4 providerColor = ApiProviderRegistry.getBlockColor(level.getLevel(), pos, blockState);
             if (providerColor != null) {
                 return providerColor.mul(lightEmission);
             }
@@ -152,25 +152,25 @@ public class Config {
 
         // unconfigured light source (typically modded): derive the color from its texture
         if (lightEmission > 0 && ColorfulLightingConfig.autoEmitterColors()) {
-            return AutoEmitterColors.get(blockState.getBlockState(), level.getLevel(), pos).mul(lightEmission);
+            return AutoEmitterColors.get(blockState, level.getLevel(), pos).mul(lightEmission);
         }
         return defaultColor.mul(lightEmission);
     }
 
     @Nullable
-    public static ColorEmitter resolveEmitter(@NotNull BlockStateAccessor blockState, @Nullable CompoundTag nbt) {
+    public static ColorEmitter resolveEmitter(@NotNull BlockState blockState, @Nullable CompoundTag nbt) {
         VariantList<ColorEmitter> config = colorEmitters.get(blockState.getBlock());
         return config == null ? null : config.resolve(blockState, nbt);
     }
 
     @Nullable
-    public static ColorFilter resolveFilter(@NotNull BlockStateAccessor blockState, @Nullable CompoundTag nbt) {
+    public static ColorFilter resolveFilter(@NotNull BlockState blockState, @Nullable CompoundTag nbt) {
         VariantList<ColorFilter> config = colorFilters.get(blockState.getBlock());
         return config == null ? null : config.resolve(blockState, nbt);
     }
 
     @Nullable
-    public static ColorEmitter resolveAbsorber(@NotNull BlockStateAccessor blockState, @Nullable CompoundTag nbt) {
+    public static ColorEmitter resolveAbsorber(@NotNull BlockState blockState, @Nullable CompoundTag nbt) {
         VariantList<ColorEmitter> config = colorAbsorbers.get(blockState.getBlock());
         return config == null ? null : config.resolve(blockState, nbt);
     }
@@ -208,10 +208,6 @@ public class Config {
         return 1.0f - normalizedDist;
     }
 
-	@Deprecated
-    public static ColorRGB4 getLightColor(@NotNull BlockStateAccessor blockState) {
-        return getLightColor(blockState.getBlockState());
-    }
     /** Position-less lookup used by the block renderers; auto colors resolve untinted here. */
     public static ColorRGB4 getLightColor(@NotNull BlockState blockState) {
         VariantList<ColorEmitter> config = colorEmitters.get(blockState.getBlock());
@@ -237,7 +233,7 @@ public class Config {
         var blockState = level.getBlockState(pos);
         return blockState == null ? defaultValue : getColoredLightTransmittance(level, pos, blockState);
     }
-    public static ColorRGB4 getColoredLightTransmittance(@NotNull LevelAccessor level, BlockPos pos, @NotNull BlockStateAccessor blockState) {
+    public static ColorRGB4 getColoredLightTransmittance(@NotNull LevelAccessor level, BlockPos pos, @NotNull BlockState blockState) {
         VariantList<ColorFilter> config = colorFilters.get(blockState.getBlock());
         if(config == null) return ColorRGB4.WHITE;
         ColorFilter filter = config.resolve(blockState, nbtFor(level, config, pos));
@@ -252,22 +248,22 @@ public class Config {
      * instead of as a ceiling clamp; the propagator uses this to pick how to apply the color
      * returned by {@link #getColoredLightTransmittance}.
      */
-    public static boolean isMultiplyFilter(@NotNull LevelAccessor level, BlockPos pos, @NotNull BlockStateAccessor blockState) {
+    public static boolean isMultiplyFilter(@NotNull LevelAccessor level, BlockPos pos, @NotNull BlockState blockState) {
         VariantList<ColorFilter> config = colorFilters.get(blockState.getBlock());
         if(config == null) return false;
         ColorFilter filter = config.resolve(blockState, nbtFor(level, config, pos));
         return filter != null && filter.multiply;
     }
 
-    public static ColorRGB4 getColoredLightTransmittance(@NotNull LevelAccessor level, BlockPos pos, @NotNull BlockStateAccessor blockState, Direction direction) {
+    public static ColorRGB4 getColoredLightTransmittance(@NotNull LevelAccessor level, BlockPos pos, @NotNull BlockState blockState, Direction direction) {
         ColorRGB4 baseColor = getColoredLightTransmittance(level, pos, blockState);
         if (baseColor.equals(ColorRGB4.WHITE)) return baseColor; // No filter
 
         // Check for Glass Pane logic
-        String north = blockState.getPropertyString("north");
-        String south = blockState.getPropertyString("south");
-        String east = blockState.getPropertyString("east");
-        String west = blockState.getPropertyString("west");
+        String north = BlockStateWrapper.getPropertyString(blockState, "north");
+        String south = BlockStateWrapper.getPropertyString(blockState, "south");
+        String east = BlockStateWrapper.getPropertyString(blockState, "east");
+        String west = BlockStateWrapper.getPropertyString(blockState, "west");
 
         if (north != null && south != null && east != null && west != null) {
             // It's a pane-like block
@@ -291,7 +287,7 @@ public class Config {
         return baseColor;
     }
 
-    public static int getLightAbsorption(@NotNull LevelAccessor level, BlockPos pos, @NotNull BlockStateAccessor blockState) {
+    public static int getLightAbsorption(@NotNull LevelAccessor level, BlockPos pos, @NotNull BlockState blockState) {
         VariantList<ColorFilter> config = colorFilters.get(blockState.getBlock());
         if(config == null) return -1;
         ColorFilter filter = config.resolve(blockState, nbtFor(level, config, pos));
@@ -302,7 +298,7 @@ public class Config {
         var blockState = level.getBlockState(pos);
         return blockState == null ? defaultValue : getEmissionBrightness(level, pos, blockState);
     }
-    public static int getEmissionBrightness(@NotNull LevelAccessor level, BlockPos pos, @NotNull BlockStateAccessor blockState) {
+    public static int getEmissionBrightness(@NotNull LevelAccessor level, BlockPos pos, @NotNull BlockState blockState) {
         VariantList<ColorEmitter> config = colorEmitters.get(blockState.getBlock());
         if(config != null) {
             ColorEmitter emitter = config.resolve(blockState, nbtFor(level, config, pos));
@@ -310,10 +306,10 @@ public class Config {
                 return emitter.overriddenBrightness4;
             }
         }
-        return blockState.getLightEmission(level, pos);
+        return blockState.getLightEmission(level.getLevel(), pos);
     }
     /** Position-less lookup used by the block renderers; NBT rules cannot resolve here and fall through to the default. */
-    public static int getEmissionBrightness(BlockStateAccessor blockState) {
+    public static int getEmissionBrightness(BlockState blockState) {
         VariantList<ColorEmitter> config = colorEmitters.get(blockState.getBlock());
         if(config != null) {
             ColorEmitter emitter = config.resolve(blockState, null);
@@ -324,7 +320,7 @@ public class Config {
         return blockState.getLightEmission();
     }
 
-    public static int getAbsorption(LevelAccessor level, BlockPos blockPos, BlockStateAccessor blockState) {
+    public static int getAbsorption(LevelAccessor level, BlockPos blockPos, BlockState blockState) {
         VariantList<ColorEmitter> config = colorAbsorbers.get(blockState.getBlock());
         if(config != null) {
             ColorEmitter emitter = config.resolve(blockState, nbtFor(level, config, blockPos));
@@ -339,7 +335,7 @@ public class Config {
         return getAbsorptionColor(level, blockPos, level.getBlockState(blockPos));
     }
 
-    public static ColorRGB4 getAbsorptionColor(LevelAccessor level, BlockPos pos, BlockStateAccessor blockState) {
+    public static ColorRGB4 getAbsorptionColor(LevelAccessor level, BlockPos pos, BlockState blockState) {
         float absorption = getAbsorption(level, pos, blockState) / 15.0f;
         VariantList<ColorEmitter> config = colorAbsorbers.get(blockState.getBlock());
         if(config != null) {
