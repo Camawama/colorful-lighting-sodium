@@ -136,7 +136,7 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 		return forLight ? Config.getColorEmission(level, blockPos, blockState) : Config.getAbsorptionColor(level, blockPos, blockState);
 	}
 	
-	// PROPAGATION LOGIC
+	// CODE REGION: PROPAGATION LOGIC
 	public ConcurrentHashMap<BlockPos, ColorRGB4> changesInProgress = new ConcurrentHashMap<>();
 	public final ConcurrentHashMap<BlockPos, ColorRGB4> changesReady = new ConcurrentHashMap<>();
 	public final Lock changesReadyLock = new ReentrantLock();
