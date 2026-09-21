@@ -51,18 +51,6 @@ public class LightPropagator implements Runnable {
 	}
 	
     /**
-     * light changes that are not yet ready to be visible on main thread
-     */
-    private ConcurrentHashMap<BlockPos, ColorRGB4> lightChangesInProgress = new ConcurrentHashMap<>();
-    private ConcurrentHashMap<BlockPos, ColorRGB4> darknessChangesInProgress = new ConcurrentHashMap<>();
-    /**
-     * light changes ready to be visible on main thread
-     */
-    private final ConcurrentHashMap<BlockPos, ColorRGB4> lightChangesReady = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<BlockPos, ColorRGB4> darknessChangesReady = new ConcurrentHashMap<>();
-    private final Lock lightChangesReadyLock = new ReentrantLock();
-    private final Lock darknessChangesReadyLock = new ReentrantLock();
-    /**
      * Sections touched by the matching ready batch, computed on this thread when the batch is published
      * rather than on the render thread when it is applied. Each guarded by the lock of its batch, so a
      * section mark is never visible to the renderer before the storage write it belongs to.
@@ -84,16 +72,16 @@ public class LightPropagator implements Runnable {
     private long blockedSleepMillis = MIN_BLOCKED_SLEEP_MILLIS;
     private int lastChunksRemaining = -1;
 
-    public boolean hasReadyLightChanges() {
-        return !this.lightChangesReady.isEmpty();
+    public boolean hasReadyLightChanges(ColoredLightEngine engine) {
+        return !engine.lightEngine.changesReady.isEmpty();
     }
 
-    public boolean hasReadyDarknessChanges() {
-        return !this.darknessChangesReady.isEmpty();
+    public boolean hasReadyDarknessChanges(ColoredLightEngine engine) {
+        return !engine.darkEngine.changesReady.isEmpty();
     }
 
-    public boolean hasReadyChanges() {
-        return hasReadyLightChanges() || hasReadyDarknessChanges();
+    public boolean hasReadyChanges(ColoredLightEngine engine) {
+        return hasReadyLightChanges(engine) || hasReadyDarknessChanges(engine);
     }
 	
 	EngineBox box;
@@ -250,7 +238,7 @@ public class LightPropagator implements Runnable {
 			}
 		}
 		
-		if (this.hasReadyChanges()) {
+		if (this.hasReadyChanges(engine)) {
 			Minecraft.getInstance().execute(engine::onLightUpdate);
 		}
 		
@@ -301,29 +289,22 @@ public class LightPropagator implements Runnable {
 		shutdown = true;
     }
 
-    private void addLightColorChange(BlockPos blockPos, ColorRGB4 color) {
-        lightChangesInProgress.put(blockPos, color);
-    }
-
-    private void addDarknessColorChange(BlockPos blockPos, ColorRGB4 color) {
-        darknessChangesInProgress.put(blockPos, color);
-    }
 
     public ColorRGB4 getLatestLightColor(ColoredLightEngine engine, BlockPos blockPos) {
-        ColorRGB4 inProgress = lightChangesInProgress.get(blockPos);
+        ColorRGB4 inProgress = engine.lightEngine.changesInProgress.get(blockPos);
         if (inProgress != null) return inProgress;
         
-        ColorRGB4 ready = lightChangesReady.get(blockPos);
+        ColorRGB4 ready = engine.lightEngine.changesReady.get(blockPos);
         if (ready != null) return ready;
 
         return engine.lightEngine.getColor(blockPos);
     }
 
     public ColorRGB4 getLatestDarknessColor(ColoredLightEngine engine, BlockPos blockPos) {
-        ColorRGB4 inProgress = darknessChangesInProgress.get(blockPos);
+        ColorRGB4 inProgress = engine.darkEngine.changesInProgress.get(blockPos);
         if (inProgress != null) return inProgress;
 
-        ColorRGB4 ready = darknessChangesReady.get(blockPos);
+        ColorRGB4 ready = engine.darkEngine.changesReady.get(blockPos);
         if (ready != null) return ready;
 
         return engine.darkEngine.getColor(blockPos);
@@ -337,32 +318,32 @@ public class LightPropagator implements Runnable {
         int maxChunkZ = centerChunk.z + radius;
 
         // 0. Clear pending changes for the region to avoid contaminating the rebuild with stale data
-        lightChangesInProgress.entrySet().removeIf(entry -> {
+        engine.lightEngine.changesInProgress.entrySet().removeIf(entry -> {
             ChunkPos pos = new ChunkPos(entry.getKey());
             return pos.x >= minChunkX && pos.x <= maxChunkX && pos.z >= minChunkZ && pos.z <= maxChunkZ;
         });
-        darknessChangesInProgress.entrySet().removeIf(entry -> {
+        engine.darkEngine.changesInProgress.entrySet().removeIf(entry -> {
             ChunkPos pos = new ChunkPos(entry.getKey());
             return pos.x >= minChunkX && pos.x <= maxChunkX && pos.z >= minChunkZ && pos.z <= maxChunkZ;
         });
         
-        lightChangesReadyLock.lock();
+        engine.lightEngine.changesReadyLock.lock();
         try {
-            lightChangesReady.entrySet().removeIf(entry -> {
+            engine.lightEngine.changesReady.entrySet().removeIf(entry -> {
                 ChunkPos pos = new ChunkPos(entry.getKey());
                 return pos.x >= minChunkX && pos.x <= maxChunkX && pos.z >= minChunkZ && pos.z <= maxChunkZ;
             });
         } finally {
-            lightChangesReadyLock.unlock();
+            engine.lightEngine.changesReadyLock.unlock();
         }
-        darknessChangesReadyLock.lock();
+        engine.darkEngine.changesReadyLock.lock();
         try {
-            darknessChangesReady.entrySet().removeIf(entry -> {
+            engine.darkEngine.changesReady.entrySet().removeIf(entry -> {
                 ChunkPos pos = new ChunkPos(entry.getKey());
                 return pos.x >= minChunkX && pos.x <= maxChunkX && pos.z >= minChunkZ && pos.z <= maxChunkZ;
             });
         } finally {
-            darknessChangesReadyLock.unlock();
+            engine.darkEngine.changesReadyLock.unlock();
         }
 
         // 1. Clear storage for the 3x3 region and mark dirty
@@ -630,35 +611,35 @@ public class LightPropagator implements Runnable {
      * apply ready light changes to storage
      */
     protected void applyReadyChanges(ColoredLightEngine engine) {
-        lightChangesReadyLock.lock();
+	    engine.lightEngine.changesReadyLock.lock();
         try {
-            if (!lightChangesReady.isEmpty()) {
+            if (!engine.lightEngine.changesReady.isEmpty()) {
                 synchronized (engine.storageLock) {
-                    for (var entry : lightChangesReady.entrySet()) {
+                    for (var entry : engine.lightEngine.changesReady.entrySet()) {
 	                    engine.lightEngine.storage.setEntryUnsafe(entry.getKey(), entry.getValue());
                     }
                 }
-                lightChangesReady.clear();
+                engine.lightEngine.changesReady.clear();
             }
             // After the writes above, so the renderer never rebuilds a section before its colours land.
             publishDirtySections(engine, lightReadyDirtySections);
         } finally {
-            lightChangesReadyLock.unlock();
+	        engine.lightEngine.changesReadyLock.unlock();
         }
-
-        darknessChangesReadyLock.lock();
+	    
+	    engine.darkEngine.changesReadyLock.lock();
         try {
-            if (!darknessChangesReady.isEmpty()) {
+            if (!engine.darkEngine.changesReady.isEmpty()) {
                 synchronized (engine.storageLock) {
-                    for (var entry : darknessChangesReady.entrySet()) {
+                    for (var entry : engine.darkEngine.changesReady.entrySet()) {
 	                    engine.darkEngine.storage.setEntryUnsafe(entry.getKey(), entry.getValue());
                     }
                 }
-                darknessChangesReady.clear();
+                engine.darkEngine.changesReady.clear();
             }
             publishDirtySections(engine, darknessReadyDirtySections);
         } finally {
-            darknessChangesReadyLock.unlock();
+            engine.darkEngine.changesReadyLock.unlock();
         }
     }
 
@@ -678,29 +659,29 @@ public class LightPropagator implements Runnable {
     /**
      * move light changes in progress to collection of ready light changes
      */
-    private void markChangesReady() {
-        if (!lightChangesInProgress.isEmpty()) {
-            lightChangesReadyLock.lock();
+    private void markChangesReady(ColoredLightEngine engine) {
+        if (!engine.lightEngine.changesInProgress.isEmpty()) {
+	        engine.lightEngine.changesReadyLock.lock();
             try {
-                for (var entry : lightChangesInProgress.entrySet()) {
-                    markReady(lightChangesReady, lightReadyDirtySections, entry.getKey(), entry.getValue());
+                for (var entry : engine.lightEngine.changesInProgress.entrySet()) {
+                    markReady(engine.lightEngine.changesReady, lightReadyDirtySections, entry.getKey(), entry.getValue());
                 }
             } finally {
-                lightChangesReadyLock.unlock();
+	            engine.lightEngine.changesReadyLock.unlock();
             }
-            lightChangesInProgress = new ConcurrentHashMap<>();
+            engine.lightEngine.changesInProgress = new ConcurrentHashMap<>();
         }
 
-        if (!darknessChangesInProgress.isEmpty()) {
-            darknessChangesReadyLock.lock();
+        if (!engine.darkEngine.changesInProgress.isEmpty()) {
+	        engine.darkEngine.changesReadyLock.lock();
             try {
-                for (var entry : darknessChangesInProgress.entrySet()) {
-                    markReady(darknessChangesReady, darknessReadyDirtySections, entry.getKey(), entry.getValue());
+                for (var entry : engine.darkEngine.changesInProgress.entrySet()) {
+                    markReady(engine.darkEngine.changesReady, darknessReadyDirtySections, entry.getKey(), entry.getValue());
                 }
             } finally {
-                darknessChangesReadyLock.unlock();
+	            engine.darkEngine.changesReadyLock.unlock();
             }
-            darknessChangesInProgress = new ConcurrentHashMap<>();
+            engine.darkEngine.changesInProgress = new ConcurrentHashMap<>();
         }
     }
 
@@ -720,24 +701,24 @@ public class LightPropagator implements Runnable {
      * apply light changes in progress directly to storage
      */
     private void applyChangesDirectly(ColoredLightEngine engine) {
-        if (!lightChangesInProgress.isEmpty()) {
+        if (!engine.lightEngine.changesInProgress.isEmpty()) {
             synchronized (engine.storageLock) {
-                for (var entry : lightChangesInProgress.entrySet()) {
+                for (var entry : engine.lightEngine.changesInProgress.entrySet()) {
 	                engine.lightEngine.storage.setEntryUnsafe(entry.getKey(), entry.getValue());
                 }
             }
-            markDirty(engine, lightChangesInProgress.keySet());
-            lightChangesInProgress.clear();
+            markDirty(engine, engine.lightEngine.changesInProgress.keySet());
+            engine.lightEngine.changesInProgress.clear();
         }
 
-        if (!darknessChangesInProgress.isEmpty()) {
+        if (!engine.darkEngine.changesInProgress.isEmpty()) {
             synchronized (engine.storageLock) {
-                for (var entry : darknessChangesInProgress.entrySet()) {
+                for (var entry : engine.darkEngine.changesInProgress.entrySet()) {
 	                engine.darkEngine.storage.setEntryUnsafe(entry.getKey(), entry.getValue());
                 }
             }
-            markDirty(engine, darknessChangesInProgress.keySet());
-            darknessChangesInProgress.clear();
+            markDirty(engine, engine.darkEngine.changesInProgress.keySet());
+            engine.darkEngine.changesInProgress.clear();
         }
     }
 
@@ -770,7 +751,7 @@ public class LightPropagator implements Runnable {
             propagateDecreases(engine, engine.level, blockEngine.blockUpdateDecreaseRequests, newIncreaseRequests);
             propagateIncreases(engine, engine.level, newIncreaseRequests);
 
-            markChangesReady();
+            markChangesReady(engine);
         }
         
         var nearestChunkResult = getNearestWaitingChunk(engine, engine.level, player);
@@ -796,7 +777,7 @@ public class LightPropagator implements Runnable {
         else if(nearestBlockRequests != null) {
 	        blockEngine.blockUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate);
             propagateIncreases(engine, engine.level, nearestBlockRequests.blockUpdate.increaseRequests);
-            markChangesReady();
+            markChangesReady(engine);
             progressed = true;
         }
         return progressed;
@@ -815,7 +796,7 @@ public class LightPropagator implements Runnable {
             propagateDarknessDecreases(engine, engine.level, blockEngine.blockUpdateDecreaseRequests, newIncreaseRequests);
             propagateDarknessIncreases(engine, engine.level, newIncreaseRequests);
 
-            markChangesReady();
+            markChangesReady(engine);
         }
 
         var nearestChunkResult = getNearestWaitingDarknessChunk(engine, engine.level, player);
@@ -839,7 +820,7 @@ public class LightPropagator implements Runnable {
         else if(nearestBlockRequests != null) {
 	        blockEngine.blockUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate);
             propagateDarknessIncreases(engine, engine.level, nearestBlockRequests.blockUpdate.increaseRequests);
-            markChangesReady();
+            markChangesReady(engine);
             progressed = true;
         }
         return progressed;
@@ -892,7 +873,7 @@ public class LightPropagator implements Runnable {
 
         // if light color didn't change (check is ignored if request is forced)
         if(!request.force && newLightColor.red4 == oldLightColor.red4 && newLightColor.green4 == oldLightColor.green4 && newLightColor.blue4 == oldLightColor.blue4) return true;
-        addLightColorChange(request.blockPos, newLightColor);
+	    engine.lightEngine.changesInProgress.put(request.blockPos, newLightColor);
 
         // Cache source block state and geometry info once, not per-direction
         BlockStateAccessor sourceState = level.getBlockState(request.blockPos);
@@ -1022,7 +1003,7 @@ public class LightPropagator implements Runnable {
 
         // if light color didn't change (check is ignored if request is forced)
         if(!request.force && newDarknessColor.red4 == oldDarknessColor.red4 && newDarknessColor.green4 == oldDarknessColor.green4 && newDarknessColor.blue4 == oldDarknessColor.blue4) return true;
-        addDarknessColorChange(request.blockPos, newDarknessColor);
+	    engine.darkEngine.changesInProgress.put(request.blockPos, newDarknessColor);
 
         // Cache source block state and geometry info once, not per-direction
         BlockStateAccessor sourceState = level.getBlockState(request.blockPos);
@@ -1115,8 +1096,8 @@ public class LightPropagator implements Runnable {
     private boolean propagateDecrease(ColoredLightEngine engine, Queue<ColoredLightEngine.LightUpdateRequest> increaseRequests, Queue<ColoredLightEngine.LightUpdateRequest> decreaseRequests, ColoredLightEngine.LightUpdateRequest request, LevelAccessor level) {
         ColorRGB4 oldLightColor = getLatestLightColor(engine, request.blockPos);
         if(oldLightColor == null) return false; // section might have got unloaded and propagation should stop
-
-        addLightColorChange(request.blockPos, ColorRGB4.fromRGB4(0, 0, 0));
+	    
+	    engine.lightEngine.changesInProgress.put(request.blockPos, ColorRGB4.fromRGB4(0, 0, 0));
 
         BlockStateAccessor blockState = level.getBlockState(request.blockPos);
         if(blockState == null) return false; // section might have got unloaded and propagation should stop
@@ -1156,8 +1137,8 @@ public class LightPropagator implements Runnable {
     private boolean propagateDarknessDecrease(ColoredLightEngine engine, Queue<ColoredLightEngine.LightUpdateRequest> increaseRequests, Queue<ColoredLightEngine.LightUpdateRequest> decreaseRequests, ColoredLightEngine.LightUpdateRequest request, LevelAccessor level) {
         ColorRGB4 oldDarknessColor = getLatestDarknessColor(engine, request.blockPos);
         if(oldDarknessColor == null) return false; // section might have got unloaded and propagation should stop
-
-        addDarknessColorChange(request.blockPos, ColorRGB4.fromRGB4(0, 0, 0));
+	    
+	    engine.darkEngine.changesInProgress.put(request.blockPos, ColorRGB4.fromRGB4(0, 0, 0));
 
         BlockStateAccessor blockState = level.getBlockState(request.blockPos);
         if(blockState == null) return false; // section might have got unloaded and propagation should stop

@@ -3,6 +3,7 @@ package net.camacraft.colorfullighting.common.engine;
 import net.camacraft.colorfullighting.common.ColoredLightEngine;
 import net.camacraft.colorfullighting.common.ColoredLightSection;
 import net.camacraft.colorfullighting.common.ViewArea;
+import net.camacraft.colorfullighting.common.accessors.BlockStateAccessor;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
 import net.minecraft.core.BlockPos;
@@ -34,4 +35,8 @@ public abstract class ColoredBlockLightEngine {
 	public abstract boolean hasWork();
 	
 	public abstract ColorRGB4 getColor(BlockPos blockPos);
+	
+	public abstract int getValue(LevelAccessor level, BlockPos blockPos, BlockStateAccessor blockState);
+	
+	public abstract ColorRGB4 getColor(LevelAccessor level, BlockPos blockPos, BlockStateAccessor blockState);
 }

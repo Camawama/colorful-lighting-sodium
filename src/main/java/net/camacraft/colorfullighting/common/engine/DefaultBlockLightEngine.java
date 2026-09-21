@@ -8,7 +8,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 
 import java.util.Queue;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.LongConsumer;
 
 public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
@@ -122,4 +125,19 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 	public ColorRGB4 getColor(BlockPos blockPos) {
 		return storage.getEntry(blockPos);
 	}
+	
+	@Override
+	public int getValue(LevelAccessor level, BlockPos blockPos, BlockStateAccessor blockState) {
+		return forLight ? Config.getEmissionBrightness(level, blockPos, blockState) : Config.getAbsorption(level, blockPos, blockState);
+	}
+	
+	@Override
+	public ColorRGB4 getColor(LevelAccessor level, BlockPos blockPos, BlockStateAccessor blockState) {
+		return forLight ? Config.getColorEmission(level, blockPos, blockState) : Config.getAbsorptionColor(level, blockPos, blockState);
+	}
+	
+	// PROPAGATION LOGIC
+	public ConcurrentHashMap<BlockPos, ColorRGB4> changesInProgress = new ConcurrentHashMap<>();
+	public final ConcurrentHashMap<BlockPos, ColorRGB4> changesReady = new ConcurrentHashMap<>();
+	public final Lock changesReadyLock = new ReentrantLock();
 }
