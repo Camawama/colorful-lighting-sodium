@@ -24,8 +24,6 @@ import java.util.List;
 import java.lang.ref.WeakReference;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 import static net.camacraft.colorfullighting.ColorfulLighting.clientAccessor;
 import static net.camacraft.colorfullighting.common.ColoredLightEngine.*;
@@ -406,7 +404,8 @@ public class LightPropagator implements Runnable {
 
         propagateIncreases(engine, engine.level, increaseRequests);
         propagateDarknessIncreases(engine, engine.level, darknessIncreaseRequests);
-        applyChangesDirectly(engine);
+	    applyChangesDirectly(engine, engine.lightEngine);
+	    applyChangesDirectly(engine, engine.darkEngine);
     }
 
     private void checkNeighborAndAdd(ColoredLightEngine engine, Queue<ColoredLightEngine.LightUpdateRequest> requests, int start, int end, int y, int fixed, boolean isZFixed) {
@@ -610,36 +609,21 @@ public class LightPropagator implements Runnable {
     /**
      * apply ready light changes to storage
      */
-    protected void applyReadyChanges(ColoredLightEngine engine) {
-	    engine.lightEngine.changesReadyLock.lock();
+    protected void applyReadyChanges(ColoredLightEngine engine, DefaultBlockLightEngine blockEngine) {
+	    blockEngine.changesReadyLock.lock();
         try {
-            if (!engine.lightEngine.changesReady.isEmpty()) {
+            if (!blockEngine.changesReady.isEmpty()) {
                 synchronized (engine.storageLock) {
-                    for (var entry : engine.lightEngine.changesReady.entrySet()) {
-	                    engine.lightEngine.storage.setEntryUnsafe(entry.getKey(), entry.getValue());
+                    for (var entry : blockEngine.changesReady.entrySet()) {
+	                    blockEngine.storage.setEntryUnsafe(entry.getKey(), entry.getValue());
                     }
                 }
-                engine.lightEngine.changesReady.clear();
+	            blockEngine.changesReady.clear();
             }
             // After the writes above, so the renderer never rebuilds a section before its colours land.
             publishDirtySections(engine, lightReadyDirtySections);
         } finally {
-	        engine.lightEngine.changesReadyLock.unlock();
-        }
-	    
-	    engine.darkEngine.changesReadyLock.lock();
-        try {
-            if (!engine.darkEngine.changesReady.isEmpty()) {
-                synchronized (engine.storageLock) {
-                    for (var entry : engine.darkEngine.changesReady.entrySet()) {
-	                    engine.darkEngine.storage.setEntryUnsafe(entry.getKey(), entry.getValue());
-                    }
-                }
-                engine.darkEngine.changesReady.clear();
-            }
-            publishDirtySections(engine, darknessReadyDirtySections);
-        } finally {
-            engine.darkEngine.changesReadyLock.unlock();
+	        blockEngine.changesReadyLock.unlock();
         }
     }
 
@@ -659,29 +643,17 @@ public class LightPropagator implements Runnable {
     /**
      * move light changes in progress to collection of ready light changes
      */
-    private void markChangesReady(ColoredLightEngine engine) {
-        if (!engine.lightEngine.changesInProgress.isEmpty()) {
-	        engine.lightEngine.changesReadyLock.lock();
+    private void markChangesReady(DefaultBlockLightEngine blockEngine) {
+        if (!blockEngine.changesInProgress.isEmpty()) {
+	        blockEngine.changesReadyLock.lock();
             try {
-                for (var entry : engine.lightEngine.changesInProgress.entrySet()) {
-                    markReady(engine.lightEngine.changesReady, lightReadyDirtySections, entry.getKey(), entry.getValue());
+                for (var entry : blockEngine.changesInProgress.entrySet()) {
+                    markReady(blockEngine.changesReady, lightReadyDirtySections, entry.getKey(), entry.getValue());
                 }
             } finally {
-	            engine.lightEngine.changesReadyLock.unlock();
+	            blockEngine.changesReadyLock.unlock();
             }
-            engine.lightEngine.changesInProgress = new ConcurrentHashMap<>();
-        }
-
-        if (!engine.darkEngine.changesInProgress.isEmpty()) {
-	        engine.darkEngine.changesReadyLock.lock();
-            try {
-                for (var entry : engine.darkEngine.changesInProgress.entrySet()) {
-                    markReady(engine.darkEngine.changesReady, darknessReadyDirtySections, entry.getKey(), entry.getValue());
-                }
-            } finally {
-	            engine.darkEngine.changesReadyLock.unlock();
-            }
-            engine.darkEngine.changesInProgress = new ConcurrentHashMap<>();
+	        blockEngine.changesInProgress = new ConcurrentHashMap<>();
         }
     }
 
@@ -700,25 +672,15 @@ public class LightPropagator implements Runnable {
     /**
      * apply light changes in progress directly to storage
      */
-    private void applyChangesDirectly(ColoredLightEngine engine) {
-        if (!engine.lightEngine.changesInProgress.isEmpty()) {
+    private void applyChangesDirectly(ColoredLightEngine engine, DefaultBlockLightEngine blockLightEngine) {
+        if (!blockLightEngine.changesInProgress.isEmpty()) {
             synchronized (engine.storageLock) {
-                for (var entry : engine.lightEngine.changesInProgress.entrySet()) {
-	                engine.lightEngine.storage.setEntryUnsafe(entry.getKey(), entry.getValue());
+                for (var entry : blockLightEngine.changesInProgress.entrySet()) {
+	                blockLightEngine.storage.setEntryUnsafe(entry.getKey(), entry.getValue());
                 }
             }
-            markDirty(engine, engine.lightEngine.changesInProgress.keySet());
-            engine.lightEngine.changesInProgress.clear();
-        }
-
-        if (!engine.darkEngine.changesInProgress.isEmpty()) {
-            synchronized (engine.storageLock) {
-                for (var entry : engine.darkEngine.changesInProgress.entrySet()) {
-	                engine.darkEngine.storage.setEntryUnsafe(entry.getKey(), entry.getValue());
-                }
-            }
-            markDirty(engine, engine.darkEngine.changesInProgress.keySet());
-            engine.darkEngine.changesInProgress.clear();
+            markDirty(engine, blockLightEngine.changesInProgress.keySet());
+	        blockLightEngine.changesInProgress.clear();
         }
     }
 
@@ -750,8 +712,9 @@ public class LightPropagator implements Runnable {
             Queue<ColoredLightEngine.LightUpdateRequest> newIncreaseRequests = new ArrayDeque<>();
             propagateDecreases(engine, engine.level, blockEngine.blockUpdateDecreaseRequests, newIncreaseRequests);
             propagateIncreases(engine, engine.level, newIncreaseRequests);
-
-            markChangesReady(engine);
+	        
+	        markChangesReady(engine.lightEngine);
+//	        markChangesReady(engine.darkEngine);
         }
         
         var nearestChunkResult = getNearestWaitingChunk(engine, engine.level, player);
@@ -769,7 +732,8 @@ public class LightPropagator implements Runnable {
             }));
             propagateIncreases(engine, engine.level, increaseRequests);
             // new chunks' light propagation is not synchronized with main thread
-            applyChangesDirectly(engine);
+	        applyChangesDirectly(engine, engine.lightEngine);
+//	        applyChangesDirectly(engine, engine.darkEngine);
             progressed = true;
             drainChunks++;
             lastChunkNanos = System.nanoTime();
@@ -777,7 +741,8 @@ public class LightPropagator implements Runnable {
         else if(nearestBlockRequests != null) {
 	        blockEngine.blockUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate);
             propagateIncreases(engine, engine.level, nearestBlockRequests.blockUpdate.increaseRequests);
-            markChangesReady(engine);
+	        markChangesReady(engine.lightEngine);
+//	        markChangesReady(engine.darkEngine);
             progressed = true;
         }
         return progressed;
@@ -795,8 +760,9 @@ public class LightPropagator implements Runnable {
             Queue<ColoredLightEngine.LightUpdateRequest> newIncreaseRequests = new ArrayDeque<>();
             propagateDarknessDecreases(engine, engine.level, blockEngine.blockUpdateDecreaseRequests, newIncreaseRequests);
             propagateDarknessIncreases(engine, engine.level, newIncreaseRequests);
-
-            markChangesReady(engine);
+			
+//	        markChangesReady(engine.lightEngine);
+	        markChangesReady(engine.darkEngine);
         }
 
         var nearestChunkResult = getNearestWaitingDarknessChunk(engine, engine.level, player);
@@ -814,13 +780,15 @@ public class LightPropagator implements Runnable {
             }));
             propagateDarknessIncreases(engine, engine.level, increaseRequests);
             // new chunks' darkness propagation is not synchronized with main thread
-            applyChangesDirectly(engine);
+//	        applyChangesDirectly(engine, engine.lightEngine);
+	        applyChangesDirectly(engine, engine.darkEngine);
             progressed = true;
         }
         else if(nearestBlockRequests != null) {
 	        blockEngine.blockUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate);
             propagateDarknessIncreases(engine, engine.level, nearestBlockRequests.blockUpdate.increaseRequests);
-            markChangesReady(engine);
+//	        markChangesReady(engine.lightEngine);
+	        markChangesReady(engine.darkEngine);
             progressed = true;
         }
         return progressed;

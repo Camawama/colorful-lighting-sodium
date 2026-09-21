@@ -671,7 +671,8 @@ public class ColoredLightEngine {
     public void onLightUpdate() {
         if (!enabled) return;
         
-        lightPropagator.applyReadyChanges(this);
+        lightPropagator.applyReadyChanges(this, lightEngine);
+        lightPropagator.applyReadyChanges(this, darkEngine);
 
         long[] sectionsToUpdate;
         synchronized (dirtySections) {
