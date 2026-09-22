@@ -24,13 +24,7 @@ public abstract class AbstractColoredLightEngine {
 		return lightInterface;
 	}
 	
-	public abstract void remove(ViewArea newArea);
-	
-	public abstract void removeSection(long sectionPos);
-	
-	public abstract void addSection(long pos);
-	
-	public abstract void removeAlt(ViewArea oldArea);
+	public abstract void enableChunk(ChunkPos pos, boolean enabled);
 	
 	public abstract long[] applyReadyChanges();
 	
@@ -42,13 +36,9 @@ public abstract class AbstractColoredLightEngine {
 	
 	public abstract void rebuildChunk(ChunkPos chunkPos, long delay);
 	
-	public abstract void queuePropagation(ChunkPos chunkPos);
-	
 	public LevelAccessor getLevel() {
 		return lightInterface.getLevel();
 	}
-	
-	public abstract Object getStorageLock();
 	
 	public abstract void tick();
 	

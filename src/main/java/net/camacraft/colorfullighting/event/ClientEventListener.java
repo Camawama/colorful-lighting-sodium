@@ -12,7 +12,6 @@ import net.camacraft.colorfullighting.compat.oculus.cmd.PackArgumentType;
 import net.camacraft.colorfullighting.compat.oculus.cmd.ShaderPackName;
 import net.camacraft.colorfullighting.compat.valkyrienskies.VsCompat;
 import net.camacraft.colorfullighting.compat.distanthorizons.DhCompat;
-import net.camacraft.colorfullighting.compat.immersiveportals.ImmersivePortalsCompat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
@@ -50,23 +49,19 @@ public class ClientEventListener {
 		    if (dynamicLights != null) dynamicLights.clientTick(clientLevel);
 	    }
 		
-	    ChunkPos pos = player.getChunkPos();
-	    int renderDistance = ColorfulLighting.clientAccessor.getRenderDistance();
-	    ViewArea viewArea = new ViewArea(
-			    pos.x - renderDistance,
-			    pos.z - renderDistance,
-			    pos.x + renderDistance,
-			    pos.z + renderDistance
-	    );
+//	    ChunkPos pos = player.getChunkPos();
+//	    int renderDistance = ColorfulLighting.clientAccessor.getRenderDistance();
+//	    ViewArea viewArea = new ViewArea(
+//			    pos.x - renderDistance,
+//			    pos.z - renderDistance,
+//			    pos.x + renderDistance,
+//			    pos.z + renderDistance
+//	    );
 	    
 	    LevelAttachments attachments = (LevelAttachments) event.level;
 		ColoredLightEngine engine = attachments.colorfullighting$getEngine();
-		engine.tick();
-		engine.updateViewArea(viewArea);
-
-	    // If this level was remote until now (Immersive Portals), hand its coverage over from the
-	    // portal cells to the view area just established above. Must stay after updateViewArea.
-	    ImmersivePortalsCompat.onCurrentLevelTick(event.level);
+//		engine.updateViewArea(viewArea);
+	    engine.tick();
 
 	    // Keep a light region alive for every loaded Valkyrien Skies ship (no-op without VS).
 	    VsCompat compat = attachments.colorfullighting$getVSCompat();
@@ -125,17 +120,6 @@ public class ClientEventListener {
         if (!event.getLevel().isClientSide()) return;
         if (event.getChunk() instanceof LevelChunk chunk) {
 	        ((LevelAttachments) event.getLevel()).colorfullighting$getNbtCache().onChunkLoaded(chunk);
-            if (chunk.getLevel() instanceof ClientLevel clientLevel) {
-                ImmersivePortalsCompat.onChunkLoad(clientLevel, chunk.getPos());
-            }
-        }
-    }
-
-    @SubscribeEvent
-    public void onChunkUnload(ChunkEvent.Unload event) {
-        if (!event.getLevel().isClientSide()) return;
-        if (event.getChunk() instanceof LevelChunk chunk && chunk.getLevel() instanceof ClientLevel clientLevel) {
-            ImmersivePortalsCompat.onChunkUnload(clientLevel, chunk.getPos());
         }
     }
 

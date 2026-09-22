@@ -1,5 +1,6 @@
 package net.camacraft.colorfullighting.common;
 
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.camacraft.colorfullighting.ColorfulLighting;
 import net.camacraft.colorfullighting.common.accessors.ClientAccessor;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
@@ -7,8 +8,6 @@ import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
 import net.camacraft.colorfullighting.common.engine.AbstractColoredLightEngine;
 import net.camacraft.colorfullighting.common.engine.AbstractColoredLightSection;
 import net.camacraft.colorfullighting.common.engine.CLEngine;
-import net.camacraft.colorfullighting.common.engine.cl.ColoredLightSection;
-import net.camacraft.colorfullighting.common.engine.ColoredLightStorage;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
 import net.camacraft.colorfullighting.common.util.ColorRGB8;
 import net.camacraft.colorfullighting.common.util.WeakList;
@@ -22,7 +21,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
-import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
@@ -51,33 +49,13 @@ public class ColoredLightEngine {
      */
     protected final AtomicInteger structureVersion = new AtomicInteger();
 	protected final ThreadLocal<SectionCursor> sectionCursor = ThreadLocal.withInitial(SectionCursor::new);
-	private ViewArea viewArea = new ViewArea();
-    /**
-     * Extra light regions beyond the player's view area, keyed by owner (a Valkyrien Skies ship id,
-     * or a remote-level chunk cell — see the key namespaces below). Written and read on the client
-     * thread only, like viewArea. Regions may touch each other and the view area (adjacent cells
-     * share border columns); overlap is safe because {@link ColoredLightStorage#addSection} never
-     * replaces an existing section.
-     */
-    private final Map<Long, LightRegion> extraRegions = new HashMap<>();
 
-    /**
-     * Region keys carry their owner in the top two bits so independent owners can each reconcile
-     * their own regions every tick (see {@link #syncExtraRegions(long, Map)}) without removing one
-     * another's.
-     */
-    public static final long REGION_NAMESPACE_MASK = 0xC000_0000_0000_0000L;
-    /** Default namespace: Valkyrien Skies ship ids (nonnegative, so their top bits are clear). */
-    public static final long REGION_NAMESPACE_DEFAULT = 0L;
-    /** Loaded-chunk cells of levels the player is not in (Immersive Portals compat). */
-    public static final long REGION_NAMESPACE_REMOTE_LEVEL = 0x4000_0000_0000_0000L;
     /**
      * The extra regions' areas, republished on every change for threads that must not touch the map:
      * the propagator's ChunkOrder reads this to prioritise region chunks the way it prioritises
      * frustum-visible ones (a ship is usually on screen even though its shipyard chunks never are).
      */
 	private AbstractColoredLightEngine engine;
-    protected volatile ViewArea[] extraRegionAreas = new ViewArea[0];
     /**
      * Chunks already queued for this view area. Replaces the old "skip anything in the previous inner
      * area" rule, which could never re-queue a chunk that was skipped because the server had not sent
@@ -250,8 +228,23 @@ public class ColoredLightEngine {
 		return frustum;
 	}
 	
-	public ViewArea[] getExtraRegionAreas() {
-		return extraRegionAreas;
+	LongOpenHashSet enabledChunks;
+	
+	public void setChunkList(LongOpenHashSet enabledLights) {
+		if (this.enabledChunks == null) {
+			this.enabledChunks = enabledLights;
+		} else {
+			// TODO: use logger
+			System.err.println("Setting a list of chunks on an engine that already has a list of chunks");
+		}
+	}
+	
+	public void setChunkEnabled(ChunkPos pos, boolean enabled) {
+		engine.enableChunk(pos, enabled);
+	}
+	
+	public LongOpenHashSet getChunkList() {
+		return enabledChunks;
 	}
 	
 	/**
@@ -339,203 +332,9 @@ public class ColoredLightEngine {
         return ColorRGB8.linearInterpolation(c0, c1, z);
     }
 
-
-    /**
-     * Whether every neighbour of this chunk is one the server will send, so the chunk can eventually
-     * propagate.
-     *
-     * <p>ViewArea is a square, but since 1.18 the server sends chunks inside a disc
-     * ({@link ChunkMap#isChunkInRange}). Propagating a chunk needs all eight of its neighbours loaded,
-     * so chunks near the square's corners could never propagate: they sat in the queue for the entire
-     * session, kept it permanently non-empty, and were re-sorted by every ChunkOrder rebuild. Measured
-     * at render distance 24, 336 of the 2209 queued chunks were unpropagatable.
-     *
-     * <p>Callers pass the client's effective render distance. When a server's view distance is larger
-     * this is conservative and skips a sliver at the square's corners - chunks the renderer culls by
-     * euclidean distance anyway, so nothing visible is lost.
-     */
-    private static boolean canEverPropagate(int centerX, int centerZ, int viewDistance, int x, int z) {
-        for (int dx = -1; dx <= 1; ++dx) {
-            for (int dz = -1; dz <= 1; ++dz) {
-                if (!ChunkMap.isChunkInRange(x + dx, z + dz, centerX, centerZ, viewDistance)) return false;
-            }
-        }
-        return true;
-    }
-
-    public void updateViewArea(ViewArea newArea) {
-        if (!enabled) return;
-        if(viewArea.equals(newArea)) return;
-
-        // unload sections
-        // remove propagation requests which are not in newArea's inner area (or an extra region's)
-        engine.remove(newArea);
-        queuedChunks.removeIf(chunkPos -> !newArea.containsInner(chunkPos.x, chunkPos.z) && !extraRegionsContainInner(chunkPos.x, chunkPos.z));
-        // remove sections from storage
-        synchronized (engine.getStorageLock()) {
-            for(int x = viewArea.minX; x <= viewArea.maxX; ++x) {
-                for(int z = viewArea.minZ; z <= viewArea.maxZ; ++z) {
-                    if(newArea.contains(x, z)) continue;
-                    if(extraRegionsContain(x, z)) continue;
-                    for(int y = level.getMinSectionY(); y <= level.getMaxSectionY(); y++) {
-                        long sectionPos = SectionPos.asLong(x, y, z);
-                        engine.removeSection(sectionPos);
-                    }
-                }
-            }
-        }
-        structureVersion.incrementAndGet();
-
-        // load sections
-        // add sections to storage and queue chunks for propagation
-        // ViewArea is centred on the player and spans +/- the effective render distance.
-        int centerX = (newArea.minX + newArea.maxX) / 2;
-        int centerZ = (newArea.minZ + newArea.maxZ) / 2;
-        int viewDistance = (newArea.maxX - newArea.minX) / 2;
-        synchronized (engine.getStorageLock()) {
-            for(int x = newArea.minX; x <= newArea.maxX; ++x) {
-                for(int z = newArea.minZ; z <= newArea.maxZ; ++z) {
-                    if(!viewArea.contains(x, z)) { // section data is not carried over from the old area
-                        for(int y = level.getMinSectionY(); y <= level.getMaxSectionY(); y++) {
-                            long pos = SectionPos.asLong(x, y, z);
-                            engine.addSection(pos);
-                        }
-                    }
-                    if(newArea.containsInner(x, z) && canEverPropagate(centerX, centerZ, viewDistance, x, z)) {
-                        ChunkPos chunkPos = new ChunkPos(x, z);
-                        if(queuedChunks.add(chunkPos)) { // not already queued or propagated for this area
-                            engine.queuePropagation(chunkPos);
-                        }
-                    }
-                }
-            }
-        }
-        structureVersion.incrementAndGet();
-        viewArea = newArea;
-    }
-
-    /**
-     * A rectangle of chunks to keep colored light data for, plus the chunks inside it that actually
-     * contain blocks and therefore need propagation (for a ship: its active chunk set). Chunks in the
-     * area but not queued act like ViewArea's border: they hold data written by propagation from the
-     * queued chunks but are never propagated themselves.
-     */
-    public record LightRegion(ViewArea area, Set<ChunkPos> chunksToQueue) {}
-
-    /**
-     * Reconciles the extra regions in {@link #REGION_NAMESPACE_DEFAULT} with {@code desired}.
-     * Callers may pass the same LightRegion instances every tick; unchanged regions are skipped by
-     * identity before equality. Client thread only, like {@link #updateViewArea}.
-     */
-    public void syncExtraRegions(Map<Long, LightRegion> desired) {
-        syncExtraRegions(REGION_NAMESPACE_DEFAULT, desired);
-    }
-
-    /**
-     * Same as {@link #syncExtraRegions(Map)} but reconciles only the regions whose keys carry the
-     * given namespace bits, so independent owners (VS ships, remote-level cells) can each sync
-     * every tick without wiping the other's regions. Every key in {@code desired} must carry the
-     * namespace.
-     */
-    public void syncExtraRegions(long namespace, Map<Long, LightRegion> desired) {
-        if (!enabled) return;
-        if (extraRegions.isEmpty() && desired.isEmpty()) return;
-
-        boolean changed = false;
-        for (Long key : List.copyOf(extraRegions.keySet())) {
-            if ((key & REGION_NAMESPACE_MASK) != namespace) continue;
-            LightRegion target = desired.get(key);
-            LightRegion current = extraRegions.get(key);
-            if (current == target || current.equals(target)) continue;
-            applyRegionChange(level, key, target);
-            changed = true;
-        }
-        for (Map.Entry<Long, LightRegion> entry : desired.entrySet()) {
-            if (!extraRegions.containsKey(entry.getKey())) {
-                applyRegionChange(level, entry.getKey(), entry.getValue());
-                changed = true;
-            }
-        }
-        if (changed) {
-            extraRegionAreas = extraRegions.values().stream().map(LightRegion::area).toArray(ViewArea[]::new);
-        }
-    }
-
-    private void applyRegionChange(LevelAccessor level, Long key, LightRegion target) {
-        LightRegion current = extraRegions.get(key);
-        ViewArea oldArea = current == null ? null : current.area();
-        ViewArea newArea = target == null ? null : target.area();
-
-        // Update the map first so the tracked-elsewhere checks below see the final state.
-        if (target == null) extraRegions.remove(key);
-        else extraRegions.put(key, target);
-
-        if (oldArea != null && !oldArea.equals(newArea)) {
-            // Drop pending work for chunks that left every tracked area.
-	        engine.removeAlt(oldArea);
-            queuedChunks.removeIf(chunkPos -> oldArea.containsInner(chunkPos.x, chunkPos.z) && !isChunkTrackedInner(chunkPos.x, chunkPos.z));
-
-            synchronized (engine.getStorageLock()) {
-                for (int x = oldArea.minX; x <= oldArea.maxX; ++x) {
-                    for (int z = oldArea.minZ; z <= oldArea.maxZ; ++z) {
-                        if (isColumnTracked(x, z)) continue;
-                        for (int y = level.getMinSectionY(); y <= level.getMaxSectionY(); y++) {
-                            long sectionPos = SectionPos.asLong(x, y, z);
-                            engine.removeSection(sectionPos);
-                        }
-                    }
-                }
-            }
-            structureVersion.incrementAndGet();
-        }
-
-        if (target != null) {
-            if (!newArea.equals(oldArea)) {
-                synchronized (engine.getStorageLock()) {
-                    for (int x = newArea.minX; x <= newArea.maxX; ++x) {
-                        for (int z = newArea.minZ; z <= newArea.maxZ; ++z) {
-                            if (oldArea != null && oldArea.contains(x, z)) continue;
-                            if (viewArea.contains(x, z)) continue; // already held by the view area
-                            for (int y = level.getMinSectionY(); y <= level.getMaxSectionY(); y++) {
-                                long sectionPos = SectionPos.asLong(x, y, z);
-                                engine.addSection(sectionPos);
-                            }
-                        }
-                    }
-                }
-                structureVersion.incrementAndGet();
-            }
-            for (ChunkPos chunkPos : target.chunksToQueue()) {
-                if (!newArea.containsInner(chunkPos.x, chunkPos.z)) continue;
-                if (queuedChunks.add(chunkPos)) {
-                    engine.queuePropagation(chunkPos);
-                }
-            }
-        }
-    }
-
-	// no harm in having this be public
-    public static boolean inAnyArea(ViewArea[] areas, int x, int z) {
-        for (ViewArea area : areas) {
-            if (area.contains(x, z)) return true;
-        }
-        return false;
-    }
-	
-	public boolean extraRegionsContain(int x, int z) {
-        if (extraRegions.isEmpty()) return false;
-        for (LightRegion region : extraRegions.values()) {
-            if (region.area().contains(x, z)) return true;
-        }
-        return false;
-    }
-	
 	public boolean extraRegionsContainInner(int x, int z) {
-        if (extraRegions.isEmpty()) return false;
-        for (LightRegion region : extraRegions.values()) {
-            if (region.area().containsInner(x, z)) return true;
-        }
-        return false;
+		if (enabledChunks == null) return false;
+        return enabledChunks.contains(ChunkPos.asLong(x, z));
     }
 
     public boolean extraRegionsContainBlockInner(BlockPos pos) {
@@ -544,16 +343,11 @@ public class ColoredLightEngine {
 
     /** Whether the chunk is an inner (actively updated) chunk of the view area or any extra region. */
     public boolean isChunkTrackedInner(int x, int z) {
-        return viewArea.containsInner(x, z) || extraRegionsContainInner(x, z);
+        return extraRegionsContainInner(x, z);
     }
 
     public boolean isBlockTrackedInner(BlockPos pos) {
         return isChunkTrackedInner(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ()));
-    }
-
-    /** Whether the section column is held by the view area (incl. border) or any extra region. */
-    private boolean isColumnTracked(int x, int z) {
-        return viewArea.contains(x, z) || extraRegionsContain(x, z);
     }
 
     public void onBlockLightPropertiesChanged(BlockPos blockPos) {
@@ -615,12 +409,6 @@ public class ColoredLightEngine {
     public int debugQueuedChunkCount() {
         return queuedChunks.size();
     }
-
-    /** Diagnostics: the view area as chunk bounds, or "none" before the first level tick. */
-    public String debugViewArea() {
-        if (viewArea.maxX < viewArea.minX) return "none";
-        return "[" + viewArea.minX + ".." + viewArea.maxX + ", " + viewArea.minZ + ".." + viewArea.maxZ + "]";
-    }
 	
 	public AbstractColoredLightSection getSection(boolean forLight, long pos) {
 		return engine.getSection(forLight, pos);
@@ -634,7 +422,8 @@ public class ColoredLightEngine {
      * Client thread (viewArea is client-thread state, like updateViewArea).
      */
     public boolean dhIsSectionCaptureSafe(long sectionPos) {
-        return viewArea.containsInner(SectionPos.x(sectionPos), SectionPos.z(sectionPos));
+//        return viewArea.containsInner(SectionPos.x(sectionPos), SectionPos.z(sectionPos));
+	    return isChunkTrackedInner(SectionPos.x(sectionPos), SectionPos.z(sectionPos));
     }
     
     public void rebuildChunk(ChunkPos chunkPos) {
@@ -668,9 +457,6 @@ public class ColoredLightEngine {
 		}
 		engine = createEngine(level.getLevel(), clientAccessor);
 		structureVersion.incrementAndGet();
-		viewArea = new ViewArea();
-		extraRegions.clear(); // region owners (e.g. VS compat) re-sync them on the next tick
-		extraRegionAreas = new ViewArea[0];
 		queuedChunks.clear();
 		
 		if (FlywheelCompat.isAvailable()) {

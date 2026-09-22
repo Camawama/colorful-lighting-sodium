@@ -11,6 +11,7 @@
     "LevelChunkMixin",
 	  "engine.LevelLightEngineMixin",
 	  "engine.LightEngineMixin",
+	  "engine.LightEngineSync",
     "LevelMixin",
     "render.LiquidBlockRendererMixin",
     "render.LevelRendererMixin",

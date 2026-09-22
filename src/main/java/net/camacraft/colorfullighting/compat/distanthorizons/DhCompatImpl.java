@@ -213,7 +213,8 @@ final class DhCompatImpl {
         int kept = 0;
         long[] safe = new long[sectionPositions.length];
         for (long pos : sectionPositions) {
-            if (engine.dhIsSectionCaptureSafe(pos)) safe[kept++] = pos;
+            if (engine.dhIsSectionCaptureSafe(pos))
+				safe[kept++] = pos;
         }
         if (kept == 0) return;
         final long[] positions = java.util.Arrays.copyOf(safe, kept);

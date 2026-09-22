@@ -144,43 +144,35 @@ public class CLEngine extends AbstractColoredLightEngine {
 		return red << 8 | green << 4 | blue;
 	}
 	
-	@Override
-	public void queuePropagation(ChunkPos chunkPos) {
-		chunksWaitingForPropagation.add(chunkPos);
-		chunksWaitingForDarknessPropagation.add(chunkPos);
-	}
-	
-	@Override
-	public Object getStorageLock() {
-		return storageLock;
-	}
-	
-	@Override
-	public void remove(ViewArea newArea) {
-		lightEngine.remove(newArea);
-		darkEngine.remove(newArea);
-		chunksWaitingForPropagation.removeIf(chunkPos -> !newArea.containsInner(chunkPos.x, chunkPos.z) && !lightInterface.extraRegionsContainInner(chunkPos.x, chunkPos.z));
-		chunksWaitingForDarknessPropagation.removeIf(chunkPos -> !newArea.containsInner(chunkPos.x, chunkPos.z) && !lightInterface.extraRegionsContainInner(chunkPos.x, chunkPos.z));
-	}
-	
-	@Override
-	public void removeAlt(ViewArea oldArea) {
-		lightEngine.removeAlt(oldArea);
-		darkEngine.removeAlt(oldArea);
-		chunksWaitingForPropagation.removeIf(chunkPos -> oldArea.containsInner(chunkPos.x, chunkPos.z) && !lightInterface.isChunkTrackedInner(chunkPos.x, chunkPos.z));
-		chunksWaitingForDarknessPropagation.removeIf(chunkPos -> oldArea.containsInner(chunkPos.x, chunkPos.z) && !lightInterface.isChunkTrackedInner(chunkPos.x, chunkPos.z));
-	}
-	
-	@Override
 	public void removeSection(long sectionPos) {
 		lightEngine.removeSection(sectionPos);
 		darkEngine.removeSection(sectionPos);
 	}
 	
-	@Override
 	public void addSection(long pos) {
 		lightEngine.addSection(pos);
 		darkEngine.addSection(pos);
+	}
+	
+	@Override
+	public void enableChunk(ChunkPos pos, boolean enabled) {
+		if (enabled) {
+			int x = pos.x;
+			int z = pos.z;
+			for(int y = getLevel().getMinSectionY(); y <= getLevel().getMaxSectionY(); y++) {
+				long sectionPos = SectionPos.asLong(x, y, z);
+				addSection(sectionPos);
+			}
+			chunksWaitingForPropagation.add(pos);
+			chunksWaitingForDarknessPropagation.add(pos);
+		} else {
+			int x = pos.x;
+			int z = pos.z;
+			for(int y = getLevel().getMinSectionY(); y <= getLevel().getMaxSectionY(); y++) {
+				long sectionPos = SectionPos.asLong(x, y, z);
+				removeSection(sectionPos);
+			}
+		}
 	}
 	
 	@Override

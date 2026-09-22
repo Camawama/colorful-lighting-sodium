@@ -470,12 +470,10 @@ public class LightPropagator implements Runnable {
 
             List<ChunkPos> visible = new ArrayList<>();
             List<ChunkPos> hidden = new ArrayList<>();
-            ViewArea[] regionAreas = engine.lightInterface.getExtraRegionAreas(); // volatile read; written on the client thread
             for (ChunkPos chunkPos : waiting) {
-                // Extra-region chunks count as visible: a ship is usually on screen even though
-                // its shipyard chunks never pass the frustum test at their real coordinates.
-                boolean inView = inAnyArea(regionAreas, chunkPos.x, chunkPos.z)
-                        || (currentFrustum != null && currentFrustum.isVisible(new AABB(
+				// TODO: we may need to have some method of overriding what counts as "visible"
+	            // or maybe we should just propagate everything but be lazy for things that "aren't" visible
+                boolean inView = (currentFrustum != null && currentFrustum.isVisible(new AABB(
                                 chunkPos.getMinBlockX(), minY, chunkPos.getMinBlockZ(),
                                 chunkPos.getMaxBlockX() + 1, maxY, chunkPos.getMaxBlockZ() + 1)));
                 (inView ? visible : hidden).add(chunkPos);

@@ -13,6 +13,7 @@ import net.minecraft.world.level.Level;
  * exactly like in the world. This class deliberately references no VS types — it is safe to load
  * when VS is absent; everything VS-specific lives in {@link VsCompatImpl}, loaded on first tick.
  */
+@Deprecated(forRemoval = true)
 public final class VsCompat {
     private static boolean available;
     /**
