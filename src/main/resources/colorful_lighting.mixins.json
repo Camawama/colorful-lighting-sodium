@@ -84,7 +84,8 @@
     "compat.subtleeffects.SplashParticleMixin",
     "compat.subtleeffects.SplashRippleParticleMixin",
     "compat.truedarkness.LightTextureMixin",
-    "render.SpriteContentsAccessor"
+    "render.SpriteContentsAccessor",
+	  "compat.dev.DHMixin"
   ],
   "injectors": {
     "defaultRequire": 1

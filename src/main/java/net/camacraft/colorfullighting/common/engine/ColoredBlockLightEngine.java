@@ -8,8 +8,6 @@ import net.camacraft.colorfullighting.common.util.ColorRGB4;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
 
-import java.util.function.LongConsumer;
-
 public abstract class ColoredBlockLightEngine {
 	public abstract String describeQueue();
 	
@@ -17,7 +15,7 @@ public abstract class ColoredBlockLightEngine {
 	
 	public abstract void removeAlt(ViewArea newArea);
 	
-	public abstract void handleBlockUpdate(LevelAccessor level, ColoredLightEngine.BlockRequests increaseRequests, BlockPos blockPos);
+	public abstract void handleBlockUpdate(LevelAccessor level, CLEngineInnerClasses.BlockRequests increaseRequests, BlockPos blockPos);
 	
 	public abstract ColoredLightSection getSection(long sectionPos);
 	
@@ -26,8 +24,6 @@ public abstract class ColoredBlockLightEngine {
 	public abstract void addSection(long pos);
 	
 	public abstract int sectionCount();
-	
-	public abstract void forEachPopulatedSection(LongConsumer action);
 	
 	public abstract void clear();
 	

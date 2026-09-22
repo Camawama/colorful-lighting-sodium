@@ -1,10 +1,14 @@
-package net.camacraft.colorfullighting.common;
+package net.camacraft.colorfullighting.common.engine.cl;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.camacraft.colorfullighting.ColorfulLighting;
+import net.camacraft.colorfullighting.common.ColorfulLightingConfig;
+import net.camacraft.colorfullighting.common.Config;
+import net.camacraft.colorfullighting.common.ViewArea;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.PlayerAccessor;
-import net.camacraft.colorfullighting.common.engine.DefaultBlockLightEngine;
+import net.camacraft.colorfullighting.common.engine.CLEngine;
+import net.camacraft.colorfullighting.common.engine.CLEngineInnerClasses;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
 import net.camacraft.colorfullighting.common.util.MathExt;
 import net.camacraft.colorfullighting.common.util.ShapeOcclusion;
@@ -14,6 +18,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.shapes.Shapes;
@@ -26,6 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static net.camacraft.colorfullighting.ColorfulLighting.clientAccessor;
 import static net.camacraft.colorfullighting.common.ColoredLightEngine.*;
+import static net.camacraft.colorfullighting.common.engine.CLEngineInnerClasses.*;
 
 /**
  * LightPropagator calculates changes to light values. It runs on another thread to avoid lag on the main thread.
@@ -33,16 +39,15 @@ import static net.camacraft.colorfullighting.common.ColoredLightEngine.*;
  * It propagates decreases (decreases of light values, e.g. light source has been destroyed, solid block has been placed in the path of light).
  * Changes caused by block updates are applied on the main thread to avoid light flickering
  */
-@Deprecated(forRemoval = true)
 public class LightPropagator implements Runnable {
 	class EngineBox {
-		WeakReference<ColoredLightEngine> weakRef;
+		WeakReference<CLEngine> weakRef;
 		
-		public EngineBox(ColoredLightEngine engine) {
+		public EngineBox(CLEngine engine) {
 			this.weakRef = new WeakReference<>(engine);
 		}
 		
-		public ColoredLightEngine getEngine() {
+		public CLEngine getEngine() {
 			return weakRef.get();
 		}
 	}
@@ -62,21 +67,21 @@ public class LightPropagator implements Runnable {
     private long blockedSleepMillis = MIN_BLOCKED_SLEEP_MILLIS;
     private int lastChunksRemaining = -1;
 
-    public boolean hasReadyLightChanges(ColoredLightEngine engine) {
+    public boolean hasReadyLightChanges(CLEngine engine) {
         return !engine.lightEngine.changesReady.isEmpty();
     }
 
-    public boolean hasReadyDarknessChanges(ColoredLightEngine engine) {
+    public boolean hasReadyDarknessChanges(CLEngine engine) {
         return !engine.darkEngine.changesReady.isEmpty();
     }
 
-    public boolean hasReadyChanges(ColoredLightEngine engine) {
+    public boolean hasReadyChanges(CLEngine engine) {
         return hasReadyLightChanges(engine) || hasReadyDarknessChanges(engine);
     }
 	
 	EngineBox box;
 	
-	public LightPropagator(ColoredLightEngine engine) {
+	public LightPropagator(CLEngine engine) {
 		box = new EngineBox(engine);
 	}
 	
@@ -124,8 +129,8 @@ public class LightPropagator implements Runnable {
     }
 
 	// outlined: try to prevent reference from existing while thread sleeps
-	protected long doWork() {
-		ColoredLightEngine engine = box.getEngine();
+	public long doWork() {
+		CLEngine engine = box.getEngine();
 		// if our engine no longer exists, or is not using this propagator anymore, then thread is ready to die
 		if (engine == null || engine.lightPropagator != this) {
 			running = false;
@@ -134,9 +139,9 @@ public class LightPropagator implements Runnable {
 		
 		// Process delayed chunk updates
 		long now = System.currentTimeMillis();
-		Iterator<ColoredLightEngine.DelayedChunkUpdate> it = engine.delayedChunkUpdates.iterator();
+		Iterator<DelayedChunkUpdate> it = engine.delayedChunkUpdates.iterator();
 		while (it.hasNext()) {
-			ColoredLightEngine.DelayedChunkUpdate update = it.next();
+			DelayedChunkUpdate update = it.next();
 			if (now >= update.executeTime()) {
 				it.remove();
 				engine.pendingDelayedUpdates.remove(update.chunkPos());
@@ -224,12 +229,12 @@ public class LightPropagator implements Runnable {
 					engine.dirtySections.addAll(engine.sectionsToRebuildLater);
 				}
 				engine.sectionsToRebuildLater.clear();
-				Minecraft.getInstance().execute(engine::onLightUpdate);
+				Minecraft.getInstance().execute(engine.lightInterface::onLightUpdate);
 			}
 		}
 		
 		if (this.hasReadyChanges(engine)) {
-			Minecraft.getInstance().execute(engine::onLightUpdate);
+			Minecraft.getInstance().execute(engine.lightInterface::onLightUpdate);
 		}
 		
 		if (hasWork && progressed) {
@@ -290,7 +295,9 @@ public class LightPropagator implements Runnable {
         return engine.getColor(blockPos);
     }
 
-    private void performRegionRebuild(ColoredLightEngine engine, ChunkPos centerChunk) {
+    private void performRegionRebuild(CLEngine engine, ChunkPos centerChunk) {
+	    LevelAccessor level = engine.getLevel();
+		
         int radius = 1; // 3x3 area
         int minChunkX = centerChunk.x - radius;
         int maxChunkX = centerChunk.x + radius;
@@ -331,7 +338,7 @@ public class LightPropagator implements Runnable {
             synchronized (engine.dirtySections) {
                 for (int cx = minChunkX; cx <= maxChunkX; cx++) {
                     for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
-                        for(int y = engine.level.getMinSectionY(); y <= engine.level.getMaxSectionY(); y++) {
+                        for(int y = level.getMinSectionY(); y <= level.getMaxSectionY(); y++) {
                             long pos = SectionPos.asLong(cx, y, cz);
 	                        engine.lightEngine.removeSection(pos);
 	                        engine.darkEngine.removeSection(pos);
@@ -343,7 +350,7 @@ public class LightPropagator implements Runnable {
                 }
             }
         }
-	    engine.structureVersion.incrementAndGet();
+	    engine.lightInterface.incrementStructureVersion();
 
         Queue<LightUpdateRequest> increaseRequests = new ArrayDeque<>();
         Queue<LightUpdateRequest> darknessIncreaseRequests = new ArrayDeque<>();
@@ -351,18 +358,18 @@ public class LightPropagator implements Runnable {
         // 2. Find internal sources for all chunks in region
         for (int cx = minChunkX; cx <= maxChunkX; cx++) {
             for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
-	            engine.level.findLightSources(new ChunkPos(cx, cz), (blockPos -> {
-                    increaseRequests.add(new LightUpdateRequest(blockPos, Config.getColorEmission(engine.level, blockPos), false, true, false));
+	            level.findLightSources(new ChunkPos(cx, cz), (blockPos -> {
+                    increaseRequests.add(new LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false, true, false));
                 }));
-	            engine.level.findDarknessSources(new ChunkPos(cx, cz), (blockPos -> {
-                    darknessIncreaseRequests.add(new LightUpdateRequest(blockPos, Config.getAbsorptionColor(engine.level, blockPos), false, true, false));
+	            level.findDarknessSources(new ChunkPos(cx, cz), (blockPos -> {
+                    darknessIncreaseRequests.add(new LightUpdateRequest(blockPos, Config.getAbsorptionColor(level, blockPos), false, true, false));
                 }));
             }
         }
 
         // 3. Pull from neighbors OUTSIDE the region
-        int minBlockY = engine.level.getMinSectionY() * 16;
-        int maxBlockY = (engine.level.getMaxSectionY() + 1) * 16 - 1;
+        int minBlockY = level.getMinSectionY() * 16;
+        int maxBlockY = (level.getMaxSectionY() + 1) * 16 - 1;
 
         int regionMinBlockX = minChunkX * 16;
         int regionMaxBlockX = (maxChunkX * 16) + 15;
@@ -384,30 +391,30 @@ public class LightPropagator implements Runnable {
 	        checkNeighborAndAdd(engine.darkEngine, darknessIncreaseRequests, regionMinBlockZ, regionMaxBlockZ, y, regionMaxBlockX + 1, false);
         }
 
-        propagateIncreases(engine, engine.level, increaseRequests);
-        propagateDarknessIncreases(engine, engine.level, darknessIncreaseRequests);
+        propagateIncreases(engine, level, increaseRequests);
+        propagateDarknessIncreases(engine, level, darknessIncreaseRequests);
 	    applyChangesDirectly(engine, engine.lightEngine);
 	    applyChangesDirectly(engine, engine.darkEngine);
     }
 
-    private void checkNeighborAndAdd(DefaultBlockLightEngine lightEngine, Queue<ColoredLightEngine.LightUpdateRequest> requests, int start, int end, int y, int fixed, boolean isZFixed) {
+    private void checkNeighborAndAdd(DefaultBlockLightEngine lightEngine, Queue<LightUpdateRequest> requests, int start, int end, int y, int fixed, boolean isZFixed) {
         for (int i = start; i <= end; i++) {
             BlockPos pos = isZFixed ? new BlockPos(i, y, fixed) : new BlockPos(fixed, y, i);
             ColorRGB4 color = getLatestLightColor(lightEngine, pos);
             if (color != null && (color.red4 > 0 || color.green4 > 0 || color.blue4 > 0)) {
-                requests.add(new ColoredLightEngine.LightUpdateRequest(pos, color, true));
+                requests.add(new LightUpdateRequest(pos, color, true));
             }
         }
     }
 
-    private record NearestBlockRequestsResult(ColoredLightEngine.BlockRequests blockUpdate, int distanceBlocks) {}
+    private record NearestBlockRequestsResult(BlockRequests blockUpdate, int distanceBlocks) {}
     private NearestBlockRequestsResult getNearestBlockRequests(PlayerAccessor player, DefaultBlockLightEngine blockLightEngine) {
         // find chunk nearest player
         var iterator = blockLightEngine.blockUpdateIncreaseRequests.iterator();
         int minDistance = Integer.MAX_VALUE;
-        ColoredLightEngine.BlockRequests nearestUpdate = null;
+	    BlockRequests nearestUpdate = null;
         while (iterator.hasNext()) {
-            ColoredLightEngine.BlockRequests update = iterator.next();
+	        BlockRequests update = iterator.next();
             int distance = update.blockPos.distManhattan(player.getBlockPos());
             if (distance < minDistance) {
                 minDistance = distance;
@@ -437,13 +444,13 @@ public class LightPropagator implements Runnable {
         private long rebuiltAtNanos = Long.MIN_VALUE;
         private ChunkPos rebuiltCenter;
 
-        NearestChunkResult next(ColoredLightEngine engine, LevelAccessor level, PlayerAccessor player, Set<ChunkPos> waiting) {
+        NearestChunkResult next(CLEngine engine, LevelAccessor level, PlayerAccessor player, Set<ChunkPos> waiting) {
             if (waiting.isEmpty()) return null;
             ChunkPos center = player.getChunkPos();
             long now = System.nanoTime();
             // Deliberately not rebuilding on cursor exhaustion: when every remaining chunk is
             // still loading, that would rebuild on every poll and reinstate the O(n)-per-poll cost.
-            if (!center.equals(rebuiltCenter) || now - rebuiltAtNanos > ColoredLightEngine.CHUNK_ORDER_TTL_NANOS) {
+            if (!center.equals(rebuiltCenter) || now - rebuiltAtNanos > CHUNK_ORDER_TTL_NANOS) {
                 rebuild(engine, level, center, waiting, now);
             }
 
@@ -456,23 +463,23 @@ public class LightPropagator implements Runnable {
             return null;
         }
 
-        private void rebuild(ColoredLightEngine engine, LevelAccessor level, ChunkPos center, Set<ChunkPos> waiting, long now) {
+        private void rebuild(CLEngine engine, LevelAccessor level, ChunkPos center, Set<ChunkPos> waiting, long now) {
             order.clear();
             cursor = 0;
             rebuiltAtNanos = now;
             rebuiltCenter = center;
 
-            Frustum currentFrustum = engine.frustum;
+            Frustum currentFrustum = engine.lightInterface.getFrustum();
             int minY = level.getLevel().getMinBuildHeight();
             int maxY = level.getLevel().getMaxBuildHeight();
 
             List<ChunkPos> visible = new ArrayList<>();
             List<ChunkPos> hidden = new ArrayList<>();
-            ViewArea[] regionAreas = engine.extraRegionAreas; // volatile read; written on the client thread
+            ViewArea[] regionAreas = engine.lightInterface.getExtraRegionAreas(); // volatile read; written on the client thread
             for (ChunkPos chunkPos : waiting) {
                 // Extra-region chunks count as visible: a ship is usually on screen even though
                 // its shipyard chunks never pass the frustum test at their real coordinates.
-                boolean inView = ColoredLightEngine.inAnyArea(regionAreas, chunkPos.x, chunkPos.z)
+                boolean inView = inAnyArea(regionAreas, chunkPos.x, chunkPos.z)
                         || (currentFrustum != null && currentFrustum.isVisible(new AABB(
                                 chunkPos.getMinBlockX(), minY, chunkPos.getMinBlockZ(),
                                 chunkPos.getMaxBlockX() + 1, maxY, chunkPos.getMaxBlockZ() + 1)));
@@ -492,9 +499,9 @@ public class LightPropagator implements Runnable {
     /** Count of passes that threw; the thread survives them (see run()). */
     private int propagatorErrors;
 
-    private static String levelName(ColoredLightEngine engine) {
+    private static String levelName(CLEngine engine) {
         try {
-            var level = engine.level.getLevel();
+            var level = engine.getLevel().getLevel();
             return level == null ? "unknown" : level.dimension().location().getPath();
         } catch (Throwable t) {
             return "unknown";
@@ -506,13 +513,13 @@ public class LightPropagator implements Runnable {
      * ({@code hasChunkAndNeighbours}), so a stuck-near-the-player stall shows WHICH neighbour
      * lookup keeps failing. Rate-limited; silent for the normal far-corner starvation.
      */
-    private void logIfStuckNearPlayer(ColoredLightEngine engine) {
+    private void logIfStuckNearPlayer(CLEngine engine) {
         long nowMillis = System.currentTimeMillis();
         if (nowMillis - lastStuckLogMillis < 30_000L) return;
         // "Near the player" only means something in the player's own dimension. A remote level
         // (Immersive Portals) legitimately keeps chunks waiting next to the player's coordinates
         // forever, since those chunks belong to a different world; that used to log every 30s.
-        if (Minecraft.getInstance().level != engine.level.getLevel()) return;
+        if (Minecraft.getInstance().level != engine.getLevel().getLevel()) return;
         PlayerAccessor player = clientAccessor.getPlayer();
         if (player == null) return;
         ChunkPos center = player.getChunkPos();
@@ -540,7 +547,7 @@ public class LightPropagator implements Runnable {
             boolean first = true;
             for (int ox = -1; ox <= 1; ++ox) {
                 for (int oz = -1; oz <= 1; ++oz) {
-                    if (!engine.level.hasChunk(new ChunkPos(pos.x + ox, pos.z + oz))) {
+                    if (!engine.getLevel().hasChunk(new ChunkPos(pos.x + ox, pos.z + oz))) {
                         if (!first) detail.append(' ');
                         detail.append(ox).append(',').append(oz);
                         first = false;
@@ -554,18 +561,18 @@ public class LightPropagator implements Runnable {
                 levelName(engine), engine.chunksWaitingForPropagation.size(), detail);
     }
 
-    private NearestChunkResult getNearestWaitingChunk(ColoredLightEngine engine, LevelAccessor level, PlayerAccessor player) {
+    private NearestChunkResult getNearestWaitingChunk(CLEngine engine, LevelAccessor level, PlayerAccessor player) {
         return lightChunkOrder.next(engine, level, player, engine.chunksWaitingForPropagation);
     }
 
-    private NearestChunkResult getNearestWaitingDarknessChunk(ColoredLightEngine engine, LevelAccessor level, PlayerAccessor player) {
+    private NearestChunkResult getNearestWaitingDarknessChunk(CLEngine engine, LevelAccessor level, PlayerAccessor player) {
         return darknessChunkOrder.next(engine, level, player, engine.chunksWaitingForDarknessPropagation);
     }
 
     /**
      * apply ready light changes to storage
      */
-    protected void applyReadyChanges(ColoredLightEngine engine, DefaultBlockLightEngine blockEngine) {
+    public void applyReadyChanges(CLEngine engine, DefaultBlockLightEngine blockEngine) {
 	    blockEngine.changesReadyLock.lock();
         try {
             if (!blockEngine.changesReady.isEmpty()) {
@@ -588,7 +595,7 @@ public class LightPropagator implements Runnable {
      * batch that was just applied, because performRegionRebuild drops ready entries without dropping
      * their marks; a redundant section rebuild is harmless, a missing one is not.
      */
-    private void publishDirtySections(ColoredLightEngine engine, LongOpenHashSet batchDirtySections) {
+    private void publishDirtySections(CLEngine engine, LongOpenHashSet batchDirtySections) {
         if (batchDirtySections.isEmpty()) return;
         synchronized (engine.dirtySections) {
 	        engine.dirtySections.addAll(batchDirtySections);
@@ -628,7 +635,7 @@ public class LightPropagator implements Runnable {
     /**
      * apply light changes in progress directly to storage
      */
-    private void applyChangesDirectly(ColoredLightEngine engine, DefaultBlockLightEngine blockLightEngine) {
+    private void applyChangesDirectly(CLEngine engine, DefaultBlockLightEngine blockLightEngine) {
         if (!blockLightEngine.changesInProgress.isEmpty()) {
             synchronized (engine.storageLock) {
                 for (var entry : blockLightEngine.changesInProgress.entrySet()) {
@@ -645,7 +652,7 @@ public class LightPropagator implements Runnable {
      * across batches, and an add that hits an existing entry is far cheaper than growing a fresh set.
      * Runs on the propagator thread, after the storage writes the marks refer to.
      */
-    private void markDirty(ColoredLightEngine engine, Set<BlockPos> changedBlocks) {
+    private void markDirty(CLEngine engine, Set<BlockPos> changedBlocks) {
         synchronized (engine.dirtySections) {
             for (BlockPos blockPos : changedBlocks) {
                 SectionPos.aroundAndAtBlockPos(blockPos, engine.dirtySections::add);
@@ -657,7 +664,7 @@ public class LightPropagator implements Runnable {
      * propagate light in the nearest waiting chunk, handle block light updates
      */
     /** @return true when this pass actually did work; false means the queue is blocked (chunks still loading) */
-    private boolean propagateLight(ColoredLightEngine engine, DefaultBlockLightEngine blockEngine) {
+    private boolean propagateLight(CLEngine engine, DefaultBlockLightEngine blockEngine) {
         PlayerAccessor player = clientAccessor.getPlayer();
         if(player == null) return false;
         boolean progressed = false;
@@ -665,15 +672,15 @@ public class LightPropagator implements Runnable {
         // decrease requests are always executed
         if(!blockEngine.blockUpdateDecreaseRequests.isEmpty()) {
             progressed = true;
-            Queue<ColoredLightEngine.LightUpdateRequest> newIncreaseRequests = new ArrayDeque<>();
-            propagateDecreases(blockEngine, engine.level, blockEngine.blockUpdateDecreaseRequests, newIncreaseRequests);
-            propagateIncreases(engine, engine.level, newIncreaseRequests);
+            Queue<LightUpdateRequest> newIncreaseRequests = new ArrayDeque<>();
+            propagateDecreases(blockEngine, engine.getLevel(), blockEngine.blockUpdateDecreaseRequests, newIncreaseRequests);
+            propagateIncreases(engine, engine.getLevel(), newIncreaseRequests);
 	        
 	        markChangesReady(engine.lightEngine);
 //	        markChangesReady(engine.darkEngine);
         }
         
-        var nearestChunkResult = getNearestWaitingChunk(engine, engine.level, player);
+        var nearestChunkResult = getNearestWaitingChunk(engine, engine.getLevel(), player);
         var nearestBlockRequests = getNearestBlockRequests(player, blockEngine);
 
         if(nearestChunkResult != null && (nearestBlockRequests == null || nearestChunkResult.distanceBlocks() < nearestBlockRequests.distanceBlocks())) {
@@ -681,12 +688,12 @@ public class LightPropagator implements Runnable {
             ChunkPos chunkPos = nearestChunkResult.chunkPos();
             engine.chunksWaitingForPropagation.remove(chunkPos);
 
-            Queue<ColoredLightEngine.LightUpdateRequest> increaseRequests = new ArrayDeque<>();
+            Queue<LightUpdateRequest> increaseRequests = new ArrayDeque<>();
             // find light sources and request their propagation
-	        engine.level.findLightSources(chunkPos, (blockPos -> {
-                increaseRequests.add(new ColoredLightEngine.LightUpdateRequest(blockPos, Config.getColorEmission(engine.level, blockPos), false, true, false));
+	        engine.getLevel().findLightSources(chunkPos, (blockPos -> {
+                increaseRequests.add(new LightUpdateRequest(blockPos, Config.getColorEmission(engine.getLevel(), blockPos), false, true, false));
             }));
-            propagateIncreases(engine, engine.level, increaseRequests);
+            propagateIncreases(engine, engine.getLevel(), increaseRequests);
             // new chunks' light propagation is not synchronized with main thread
 	        applyChangesDirectly(engine, engine.lightEngine);
 //	        applyChangesDirectly(engine, engine.darkEngine);
@@ -696,7 +703,7 @@ public class LightPropagator implements Runnable {
         }
         else if(nearestBlockRequests != null) {
 	        blockEngine.blockUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate);
-            propagateIncreases(engine, engine.level, nearestBlockRequests.blockUpdate.increaseRequests);
+            propagateIncreases(engine, engine.getLevel(), nearestBlockRequests.blockUpdate.increaseRequests);
 	        markChangesReady(engine.lightEngine);
 //	        markChangesReady(engine.darkEngine);
             progressed = true;
@@ -705,7 +712,7 @@ public class LightPropagator implements Runnable {
     }
 
     /** @return true when this pass actually did work; false means the queue is blocked (chunks still loading) */
-    private boolean propagateDarkness(ColoredLightEngine engine, DefaultBlockLightEngine blockEngine) {
+    private boolean propagateDarkness(CLEngine engine, DefaultBlockLightEngine blockEngine) {
         PlayerAccessor player = clientAccessor.getPlayer();
         if(player == null) return false;
         boolean progressed = false;
@@ -713,15 +720,15 @@ public class LightPropagator implements Runnable {
         // decrease requests are always executed
         if(!blockEngine.blockUpdateDecreaseRequests.isEmpty()) {
             progressed = true;
-            Queue<ColoredLightEngine.LightUpdateRequest> newIncreaseRequests = new ArrayDeque<>();
-	        propagateDecreases(blockEngine, engine.level, blockEngine.blockUpdateDecreaseRequests, newIncreaseRequests);
-            propagateDarknessIncreases(engine, engine.level, newIncreaseRequests);
+            Queue<LightUpdateRequest> newIncreaseRequests = new ArrayDeque<>();
+	        propagateDecreases(blockEngine, engine.getLevel(), blockEngine.blockUpdateDecreaseRequests, newIncreaseRequests);
+            propagateDarknessIncreases(engine, engine.getLevel(), newIncreaseRequests);
 			
 //	        markChangesReady(engine.lightEngine);
 	        markChangesReady(engine.darkEngine);
         }
 
-        var nearestChunkResult = getNearestWaitingDarknessChunk(engine, engine.level, player);
+        var nearestChunkResult = getNearestWaitingDarknessChunk(engine, engine.getLevel(), player);
         var nearestBlockRequests = getNearestBlockRequests(player, blockEngine);
 
         if(nearestChunkResult != null && (nearestBlockRequests == null || nearestChunkResult.distanceBlocks() < nearestBlockRequests.distanceBlocks())) {
@@ -729,12 +736,12 @@ public class LightPropagator implements Runnable {
             ChunkPos chunkPos = nearestChunkResult.chunkPos();
 	        engine.chunksWaitingForDarknessPropagation.remove(chunkPos);
 
-            Queue<ColoredLightEngine.LightUpdateRequest> increaseRequests = new ArrayDeque<>();
+            Queue<LightUpdateRequest> increaseRequests = new ArrayDeque<>();
             // find darkness sources and request their propagation
-	        engine.level.findDarknessSources(chunkPos, (blockPos -> {
-                increaseRequests.add(new ColoredLightEngine.LightUpdateRequest(blockPos, Config.getAbsorptionColor(engine.level, blockPos), false, true, false));
+	        engine.getLevel().findDarknessSources(chunkPos, (blockPos -> {
+                increaseRequests.add(new LightUpdateRequest(blockPos, Config.getAbsorptionColor(engine.getLevel(), blockPos), false, true, false));
             }));
-            propagateDarknessIncreases(engine, engine.level, increaseRequests);
+            propagateDarknessIncreases(engine, engine.getLevel(), increaseRequests);
             // new chunks' darkness propagation is not synchronized with main thread
 //	        applyChangesDirectly(engine, engine.lightEngine);
 	        applyChangesDirectly(engine, engine.darkEngine);
@@ -742,7 +749,7 @@ public class LightPropagator implements Runnable {
         }
         else if(nearestBlockRequests != null) {
 	        blockEngine.blockUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate);
-            propagateDarknessIncreases(engine, engine.level, nearestBlockRequests.blockUpdate.increaseRequests);
+            propagateDarknessIncreases(engine, engine.getLevel(), nearestBlockRequests.blockUpdate.increaseRequests);
 //	        markChangesReady(engine.lightEngine);
 	        markChangesReady(engine.darkEngine);
             progressed = true;
@@ -753,13 +760,13 @@ public class LightPropagator implements Runnable {
     /**
      * Handles all increase propagation requests.
      */
-    private void propagateIncreases(ColoredLightEngine engine, LevelAccessor level, Queue<ColoredLightEngine.LightUpdateRequest> requests) {
+    private void propagateIncreases(CLEngine engine, LevelAccessor level, Queue<LightUpdateRequest> requests) {
         while(!requests.isEmpty()) {
             propagateIncrease(engine, requests, requests.poll(), level);
         }
     }
 
-    private void propagateDarknessIncreases(ColoredLightEngine engine, LevelAccessor level, Queue<ColoredLightEngine.LightUpdateRequest> requests) {
+    private void propagateDarknessIncreases(CLEngine engine, LevelAccessor level, Queue<LightUpdateRequest> requests) {
         while(!requests.isEmpty()) {
             propagateDarknessIncrease(engine, requests, requests.poll(), level);
         }
@@ -773,7 +780,7 @@ public class LightPropagator implements Runnable {
         );
     }
 
-    private boolean propagateIncrease(ColoredLightEngine engine, Queue<ColoredLightEngine.LightUpdateRequest> increaseRequests, LightUpdateRequest request, LevelAccessor level) {
+    private boolean propagateIncrease(CLEngine engine, Queue<LightUpdateRequest> increaseRequests, LightUpdateRequest request, LevelAccessor level) {
         if (request.checkSource) {
 	        BlockState blockState = level.getBlockState(request.blockPos);
              if (blockState == null || Config.getEmissionBrightness(level, request.blockPos, blockState) == 0) {
@@ -903,7 +910,7 @@ public class LightPropagator implements Runnable {
         return true;
     }
 
-    private boolean propagateDarknessIncrease(ColoredLightEngine engine, Queue<LightUpdateRequest> increaseRequests, LightUpdateRequest request, LevelAccessor level) {
+    private boolean propagateDarknessIncrease(CLEngine engine, Queue<LightUpdateRequest> increaseRequests, LightUpdateRequest request, LevelAccessor level) {
         if (request.checkSource) {
 	         BlockState blockState = level.getBlockState(request.blockPos);
              if (blockState == null || Config.getAbsorption(level, request.blockPos, blockState) == 0) {
@@ -975,7 +982,7 @@ public class LightPropagator implements Runnable {
             // if no more color to propagate
             if(attenuated.red4 == 0 && attenuated.green4 == 0 && attenuated.blue4 == 0) continue;
 
-            increaseRequests.add(new ColoredLightEngine.LightUpdateRequest(neighbourPos, attenuated, false));
+            increaseRequests.add(new LightUpdateRequest(neighbourPos, attenuated, false));
         }
         return true;
     }
@@ -983,10 +990,10 @@ public class LightPropagator implements Runnable {
     /**
      * Handles all decrease propagation requests.
      */
-    private void propagateDecreases(DefaultBlockLightEngine blockLightEngine, LevelAccessor level, Queue<ColoredLightEngine.LightUpdateRequest> decreaseRequests, Queue<ColoredLightEngine.LightUpdateRequest> increaseRequests) {
+    private void propagateDecreases(DefaultBlockLightEngine blockLightEngine, LevelAccessor level, Queue<LightUpdateRequest> decreaseRequests, Queue<LightUpdateRequest> increaseRequests) {
         Map<BlockPos, ColorRGB4> visited = new HashMap<>();
         while(!decreaseRequests.isEmpty()) {
-            ColoredLightEngine.LightUpdateRequest req = decreaseRequests.poll();
+            LightUpdateRequest req = decreaseRequests.poll();
             ColorRGB4 prev = visited.get(req.blockPos);
             if (prev != null && prev.red4 >= req.lightColor.red4 && prev.green4 >= req.lightColor.green4 && prev.blue4 >= req.lightColor.blue4) {
                 continue;
@@ -1000,7 +1007,7 @@ public class LightPropagator implements Runnable {
         }
     }
 
-    private boolean propagateDecrease(DefaultBlockLightEngine blockLightEngine, Queue<ColoredLightEngine.LightUpdateRequest> increaseRequests, Queue<ColoredLightEngine.LightUpdateRequest> decreaseRequests, ColoredLightEngine.LightUpdateRequest request, LevelAccessor level) {
+    private boolean propagateDecrease(DefaultBlockLightEngine blockLightEngine, Queue<LightUpdateRequest> increaseRequests, Queue<LightUpdateRequest> decreaseRequests, LightUpdateRequest request, LevelAccessor level) {
         ColorRGB4 oldLightColor = getLatestLightColor(blockLightEngine, request.blockPos);
         if(oldLightColor == null) return false; // section might have got unloaded and propagation should stop
 	    
@@ -1010,7 +1017,7 @@ public class LightPropagator implements Runnable {
         if(blockState == null) return false; // section might have got unloaded and propagation should stop
         // repropagate removed light (single lookup for both value and color)
         if(blockLightEngine.getValue(level, request.blockPos, blockState) > 0) {
-            increaseRequests.add(new ColoredLightEngine.LightUpdateRequest(request.blockPos, blockLightEngine.getColor(level, request.blockPos, blockState), false, true, false));
+            increaseRequests.add(new LightUpdateRequest(request.blockPos, blockLightEngine.getColor(level, request.blockPos, blockState), false, true, false));
         }
 
         // attenuation
@@ -1025,7 +1032,7 @@ public class LightPropagator implements Runnable {
 
             if(!repropagateNeighbours) {
                 // propagate decrease
-                decreaseRequests.add(new ColoredLightEngine.LightUpdateRequest(neighbourPos, neighbourLightDecrease, false));
+                decreaseRequests.add(new LightUpdateRequest(neighbourPos, neighbourLightDecrease, false));
             }
             else {
                 ColorRGB4 neighbourLightColor = getLatestLightColor(blockLightEngine, neighbourPos);
@@ -1035,7 +1042,7 @@ public class LightPropagator implements Runnable {
                     continue;
 
                 // force neighbour to propagate light to the region that has been just cleared (decreased)
-                increaseRequests.add(new ColoredLightEngine.LightUpdateRequest(neighbourPos, null, true, false, true));
+                increaseRequests.add(new LightUpdateRequest(neighbourPos, null, true, false, true));
             }
         }
         return true;
