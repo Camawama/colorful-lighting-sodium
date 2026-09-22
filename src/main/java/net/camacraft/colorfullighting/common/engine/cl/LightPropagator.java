@@ -305,33 +305,8 @@ public class LightPropagator implements Runnable {
         int maxChunkZ = centerChunk.z + radius;
 
         // 0. Clear pending changes for the region to avoid contaminating the rebuild with stale data
-        engine.lightEngine.changesInProgress.entrySet().removeIf(entry -> {
-            ChunkPos pos = new ChunkPos(entry.getKey());
-            return pos.x >= minChunkX && pos.x <= maxChunkX && pos.z >= minChunkZ && pos.z <= maxChunkZ;
-        });
-        engine.darkEngine.changesInProgress.entrySet().removeIf(entry -> {
-            ChunkPos pos = new ChunkPos(entry.getKey());
-            return pos.x >= minChunkX && pos.x <= maxChunkX && pos.z >= minChunkZ && pos.z <= maxChunkZ;
-        });
-        
-        engine.lightEngine.changesReadyLock.lock();
-        try {
-            engine.lightEngine.changesReady.entrySet().removeIf(entry -> {
-                ChunkPos pos = new ChunkPos(entry.getKey());
-                return pos.x >= minChunkX && pos.x <= maxChunkX && pos.z >= minChunkZ && pos.z <= maxChunkZ;
-            });
-        } finally {
-            engine.lightEngine.changesReadyLock.unlock();
-        }
-        engine.darkEngine.changesReadyLock.lock();
-        try {
-            engine.darkEngine.changesReady.entrySet().removeIf(entry -> {
-                ChunkPos pos = new ChunkPos(entry.getKey());
-                return pos.x >= minChunkX && pos.x <= maxChunkX && pos.z >= minChunkZ && pos.z <= maxChunkZ;
-            });
-        } finally {
-            engine.darkEngine.changesReadyLock.unlock();
-        }
+        clearChanges(engine.lightEngine, minChunkX, minChunkZ, maxChunkX, maxChunkZ);
+        clearChanges(engine.darkEngine, minChunkX, minChunkZ, maxChunkX, maxChunkZ);
 
         // 1. Clear storage for the 3x3 region and mark dirty
         synchronized (engine.storageLock) {
@@ -340,10 +315,8 @@ public class LightPropagator implements Runnable {
                     for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
                         for(int y = level.getMinSectionY(); y <= level.getMaxSectionY(); y++) {
                             long pos = SectionPos.asLong(cx, y, cz);
-	                        engine.lightEngine.removeSection(pos);
-	                        engine.darkEngine.removeSection(pos);
-	                        engine.lightEngine.addSection(pos);
-	                        engine.darkEngine.addSection(pos);
+							refreshSection(engine.lightEngine, pos);
+							refreshSection(engine.darkEngine, pos);
 	                        engine.dirtySections.add(pos); // Mark as dirty so renderer updates even if no new light is found
                         }
                     }
@@ -396,8 +369,30 @@ public class LightPropagator implements Runnable {
 	    applyChangesDirectly(engine, engine.lightEngine);
 	    applyChangesDirectly(engine, engine.darkEngine);
     }
-
-    private void checkNeighborAndAdd(DefaultBlockLightEngine lightEngine, Queue<LightUpdateRequest> requests, int start, int end, int y, int fixed, boolean isZFixed) {
+	
+	private void refreshSection(DefaultBlockLightEngine lightEngine, long pos) {
+		lightEngine.removeSection(pos);
+		lightEngine.addSection(pos);
+	}
+	
+	private void clearChanges(DefaultBlockLightEngine lightEngine, int minChunkX, int minChunkZ, int maxChunkX, int maxChunkZ) {
+		lightEngine.changesInProgress.entrySet().removeIf(entry -> {
+			ChunkPos pos = new ChunkPos(entry.getKey());
+			return pos.x >= minChunkX && pos.x <= maxChunkX && pos.z >= minChunkZ && pos.z <= maxChunkZ;
+		});
+		
+		lightEngine.changesReadyLock.lock();
+		try {
+			lightEngine.changesReady.entrySet().removeIf(entry -> {
+				ChunkPos pos = new ChunkPos(entry.getKey());
+				return pos.x >= minChunkX && pos.x <= maxChunkX && pos.z >= minChunkZ && pos.z <= maxChunkZ;
+			});
+		} finally {
+			lightEngine.changesReadyLock.unlock();
+		}
+	}
+	
+	private void checkNeighborAndAdd(DefaultBlockLightEngine lightEngine, Queue<LightUpdateRequest> requests, int start, int end, int y, int fixed, boolean isZFixed) {
         for (int i = start; i <= end; i++) {
             BlockPos pos = isZFixed ? new BlockPos(i, y, fixed) : new BlockPos(fixed, y, i);
             ColorRGB4 color = getLatestLightColor(lightEngine, pos);
