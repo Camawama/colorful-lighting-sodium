@@ -5,6 +5,7 @@ import net.camacraft.colorfullighting.common.ViewArea;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.engine.cl.ColoredLightSection;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
 
 /*
@@ -25,6 +26,8 @@ public abstract class AbstractColoredLightEngine {
 	}
 	
 	public abstract void enableChunk(ChunkPos pos, boolean enabled);
+	
+	public abstract void setSectionEnabled(SectionPos pos, boolean enabled);
 	
 	public abstract long[] applyReadyChanges();
 	

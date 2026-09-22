@@ -243,6 +243,10 @@ public class ColoredLightEngine {
 		engine.enableChunk(pos, enabled);
 	}
 	
+	public void setSectionEnabled(SectionPos pos, boolean enabled) {
+		engine.setSectionEnabled(pos, enabled);
+	}
+	
 	public LongOpenHashSet getChunkList() {
 		return enabledChunks;
 	}
@@ -332,18 +336,14 @@ public class ColoredLightEngine {
         return ColorRGB8.linearInterpolation(c0, c1, z);
     }
 
-	public boolean extraRegionsContainInner(int x, int z) {
-		if (enabledChunks == null) return false;
-        return enabledChunks.contains(ChunkPos.asLong(x, z));
-    }
-
     public boolean extraRegionsContainBlockInner(BlockPos pos) {
-        return extraRegionsContainInner(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ()));
+        return isChunkTrackedInner(SectionPos.blockToSectionCoord(pos.getX()), SectionPos.blockToSectionCoord(pos.getZ()));
     }
 
     /** Whether the chunk is an inner (actively updated) chunk of the view area or any extra region. */
     public boolean isChunkTrackedInner(int x, int z) {
-        return extraRegionsContainInner(x, z);
+	    if (enabledChunks == null) return false;
+	    return enabledChunks.contains(ChunkPos.asLong(x, z));
     }
 
     public boolean isBlockTrackedInner(BlockPos pos) {

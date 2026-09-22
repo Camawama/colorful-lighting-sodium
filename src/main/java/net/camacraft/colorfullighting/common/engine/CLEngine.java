@@ -15,6 +15,8 @@ import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -173,6 +175,15 @@ public class CLEngine extends AbstractColoredLightEngine {
 				removeSection(sectionPos);
 			}
 		}
+	}
+	
+	@Override
+	public void setSectionEnabled(SectionPos pos, boolean enabled) {
+//		if (enabled) {
+//			removeSection(pos.asLong());
+//		} else {
+//			addSection(pos.asLong());
+//		}
 	}
 	
 	@Override

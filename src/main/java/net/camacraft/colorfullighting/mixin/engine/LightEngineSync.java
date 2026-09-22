@@ -28,8 +28,8 @@ public class LightEngineSync {
 	
 	@Unique
 	final LongOpenHashSet enabledLights = new LongOpenHashSet();
-//	@Unique
-//	final HashSet<SectionPos> enabledSections = new HashSet<>();
+	@Unique
+	final HashSet<SectionPos> enabledSections = new HashSet<>();
 	
 	private boolean enable;
 	ColoredLightEngine engine;
@@ -64,13 +64,13 @@ public class LightEngineSync {
 		}
 	}
 	
-//	@Inject(at = @At("HEAD"), method = "updateSectionStatus")
-//	public void preUpdateSection(SectionPos pPos, boolean pIsEmpty, CallbackInfo ci) {
-//		if (enabled) {
-//			if (pIsEmpty) enabledSections.remove(pPos);
-//			else enabledSections.add(pPos);
-//
-//			engine.setSectionEnabled(pos, enabled);
-//		}
-//	}
+	@Inject(at = @At("HEAD"), method = "updateSectionStatus")
+	public void preUpdateSection(SectionPos pPos, boolean pIsEmpty, CallbackInfo ci) {
+		if (enable) {
+			if (pIsEmpty) enabledSections.remove(pPos);
+			else enabledSections.add(pPos);
+
+			engine.setSectionEnabled(pPos, !pIsEmpty);
+		}
+	}
 }
