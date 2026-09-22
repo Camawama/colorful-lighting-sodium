@@ -47,13 +47,6 @@ public class LightPropagator implements Runnable {
 		}
 	}
 	
-    /**
-     * Sections touched by the matching ready batch, computed on this thread when the batch is published
-     * rather than on the render thread when it is applied. Each guarded by the lock of its batch, so a
-     * section mark is never visible to the renderer before the storage write it belongs to.
-     */
-    private final LongOpenHashSet lightReadyDirtySections = new LongOpenHashSet();
-    private final LongOpenHashSet darknessReadyDirtySections = new LongOpenHashSet();
     private boolean running;
     private volatile boolean shutdown = false;
 
@@ -584,7 +577,7 @@ public class LightPropagator implements Runnable {
 	            blockEngine.changesReady.clear();
             }
             // After the writes above, so the renderer never rebuilds a section before its colours land.
-            publishDirtySections(engine, lightReadyDirtySections);
+            publishDirtySections(engine, blockEngine.readyDirtySections);
         } finally {
 	        blockEngine.changesReadyLock.unlock();
         }
@@ -611,7 +604,7 @@ public class LightPropagator implements Runnable {
 	        blockEngine.changesReadyLock.lock();
             try {
                 for (var entry : blockEngine.changesInProgress.entrySet()) {
-                    markReady(blockEngine.changesReady, lightReadyDirtySections, entry.getKey(), entry.getValue());
+                    markReady(blockEngine.changesReady, blockEngine.readyDirtySections, entry.getKey(), entry.getValue());
                 }
             } finally {
 	            blockEngine.changesReadyLock.unlock();

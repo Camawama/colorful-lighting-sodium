@@ -36,6 +36,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 
+// TODO: rename to ColoredLightInterface
 /**
  * Class responsible for managing light color values in the client's world and sampling those values.
  * Most work is delegated to LightPropagator thread.

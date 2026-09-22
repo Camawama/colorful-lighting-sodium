@@ -1,5 +1,6 @@
 package net.camacraft.colorfullighting.common.engine;
 
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.camacraft.colorfullighting.common.*;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
@@ -15,8 +16,8 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.LongConsumer;
 
 public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
-	boolean forLight;
-	ColoredLightEngine engine;
+	public final boolean forLight;
+	public final ColoredLightEngine engine;
 	
 	public DefaultBlockLightEngine(boolean forLight, ColoredLightEngine engine) {
 		this.forLight = forLight;
@@ -140,4 +141,5 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 	public ConcurrentHashMap<BlockPos, ColorRGB4> changesInProgress = new ConcurrentHashMap<>();
 	public final ConcurrentHashMap<BlockPos, ColorRGB4> changesReady = new ConcurrentHashMap<>();
 	public final Lock changesReadyLock = new ReentrantLock();
+	public final LongOpenHashSet readyDirtySections = new LongOpenHashSet();
 }
