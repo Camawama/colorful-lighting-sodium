@@ -1,11 +1,12 @@
-package net.camacraft.colorfullighting.common;
+package net.camacraft.colorfullighting.common.engine.cl;
 
+import net.camacraft.colorfullighting.common.engine.AbstractColoredLightSection;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
 
 /**
  * Stores light color for each block in the section
  */
-public class ColoredLightSection {
+public class ColoredLightSection extends AbstractColoredLightSection {
     private static final int LAYER_SIZE = 6144; // = 16 * 16 * 16 * 1.5
 
     /**

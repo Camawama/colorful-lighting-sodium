@@ -1,7 +1,8 @@
 package net.camacraft.colorfullighting.compat.distanthorizons;
 
 import net.camacraft.colorfullighting.ColorfulLighting;
-import net.camacraft.colorfullighting.common.ColoredLightSection;
+import net.camacraft.colorfullighting.common.engine.AbstractColoredLightSection;
+import net.camacraft.colorfullighting.common.engine.cl.ColoredLightSection;
 import net.minecraft.core.SectionPos;
 
 import javax.annotation.Nullable;
@@ -180,7 +181,7 @@ public final class DhColorCache {
      * recaptured) on the next change anyway.
      */
     @Nullable
-    public static Entry buildEntry(@Nullable ColoredLightSection light, @Nullable ColoredLightSection darkness) {
+    public static Entry buildEntry(@Nullable AbstractColoredLightSection light, @Nullable AbstractColoredLightSection darkness) {
         if (light == null && darkness == null) return null;
         // Each 4x4x4 cluster keeps its dominant (most colorful, then brightest) block's HUE at the
         // cluster's AVERAGE net level. The hue must be a single block's (averaging RGB over

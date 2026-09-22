@@ -2,10 +2,10 @@ package net.camacraft.colorfullighting.common.engine;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.camacraft.colorfullighting.common.ColoredLightEngine;
-import net.camacraft.colorfullighting.common.ColoredLightSection;
 import net.camacraft.colorfullighting.common.ViewArea;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
+import net.camacraft.colorfullighting.common.engine.cl.ColoredLightSection;
 import net.camacraft.colorfullighting.common.engine.cl.DefaultBlockLightEngine;
 import net.camacraft.colorfullighting.common.engine.cl.LightPropagator;
 import net.camacraft.colorfullighting.compat.distanthorizons.DhColorCache;
@@ -206,7 +206,7 @@ public class CLEngine extends AbstractColoredLightEngine {
 	}
 	
 	@Override
-	public ColoredLightSection getSection(boolean forLight, long pos) {
+	public AbstractColoredLightSection getSection(boolean forLight, long pos) {
 		return (forLight ? lightEngine : darkEngine).getSection(pos);
 	}
 	

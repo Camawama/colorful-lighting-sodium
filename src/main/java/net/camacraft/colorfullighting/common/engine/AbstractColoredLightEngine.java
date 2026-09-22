@@ -1,11 +1,10 @@
 package net.camacraft.colorfullighting.common.engine;
 
 import net.camacraft.colorfullighting.common.ColoredLightEngine;
-import net.camacraft.colorfullighting.common.ColoredLightSection;
 import net.camacraft.colorfullighting.common.ViewArea;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
+import net.camacraft.colorfullighting.common.engine.cl.ColoredLightSection;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
 
 /*
@@ -37,7 +36,7 @@ public abstract class AbstractColoredLightEngine {
 	
 	public abstract int sectionCount();
 	
-	public abstract ColoredLightSection getSection(boolean forLight, long pos);
+	public abstract AbstractColoredLightSection getSection(boolean forLight, long pos);
 	
 	public abstract void blockUpdated(LevelAccessor level, BlockPos blockPos);
 	

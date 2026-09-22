@@ -7,7 +7,8 @@ import com.seibel.distanthorizons.api.methods.events.abstractEvents.DhApiAfterDh
 import com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhApiEventParam;
 import net.camacraft.colorfullighting.ColorfulLighting;
 import net.camacraft.colorfullighting.common.ColoredLightEngine;
-import net.camacraft.colorfullighting.common.ColoredLightSection;
+import net.camacraft.colorfullighting.common.engine.AbstractColoredLightSection;
+import net.camacraft.colorfullighting.common.engine.cl.ColoredLightSection;
 import net.camacraft.colorfullighting.common.ColorfulLightingConfig;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
 import net.minecraft.client.Minecraft;
@@ -226,8 +227,8 @@ final class DhCompatImpl {
             ColoredLightEngine liveEngine = engineRef.get();
             if (liveEngine == null) return;
             for (long pos : positions) {
-                ColoredLightSection light = liveEngine.getSection(true, pos);
-                ColoredLightSection darkness = liveEngine.getSection(false, pos);
+	            AbstractColoredLightSection light = liveEngine.getSection(true, pos);
+	            AbstractColoredLightSection darkness = liveEngine.getSection(false, pos);
                 if (light == null && darkness == null) continue; // left the view area; keep what we remembered
                 // darkness matters even with zero net light: absorbers (end portals) must darken LODs
                 cache.store(pos, DhColorCache.buildEntry(light, darkness));

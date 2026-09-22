@@ -3,9 +3,7 @@ package net.camacraft.colorfullighting.common.engine.cl;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.camacraft.colorfullighting.common.*;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
-import net.camacraft.colorfullighting.common.engine.AbstractColoredLightEngine;
-import net.camacraft.colorfullighting.common.engine.CLEngineInnerClasses;
-import net.camacraft.colorfullighting.common.engine.ColoredBlockLightEngine;
+import net.camacraft.colorfullighting.common.engine.*;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -88,7 +86,7 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 	}
 	
 	@Override
-	public ColoredLightSection getSection(long sectionPos) {
+	public AbstractColoredLightSection getSection(long sectionPos) {
 		return storage.getSection(sectionPos);
 	}
 	

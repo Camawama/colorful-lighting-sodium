@@ -5,20 +5,19 @@ import net.camacraft.colorfullighting.common.accessors.ClientAccessor;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
 import net.camacraft.colorfullighting.common.engine.AbstractColoredLightEngine;
+import net.camacraft.colorfullighting.common.engine.AbstractColoredLightSection;
 import net.camacraft.colorfullighting.common.engine.CLEngine;
-import net.camacraft.colorfullighting.common.engine.cl.DefaultBlockLightEngine;
-import net.camacraft.colorfullighting.common.engine.cl.LightPropagator;
+import net.camacraft.colorfullighting.common.engine.cl.ColoredLightSection;
+import net.camacraft.colorfullighting.common.engine.ColoredLightStorage;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
 import net.camacraft.colorfullighting.common.util.ColorRGB8;
 import net.camacraft.colorfullighting.common.util.WeakList;
 import net.camacraft.colorfullighting.compat.distanthorizons.DhCompat;
-import net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat;
 import net.camacraft.colorfullighting.compat.flywheel.FlywheelCompat;
 import net.camacraft.colorfullighting.compat.oculus.OculusCompat;
 import net.camacraft.colorfullighting.compat.sodium.SodiumCompat;
 import net.camacraft.colorfullighting.mixin.compat.sodium.SodiumWorldRendererAccessor;
 import net.camacraft.colorfullighting.resourcemanager.InternalPackRegistration;
-import net.camacraft.colorfullighting.compat.distanthorizons.DhColorCache;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.core.BlockPos;
@@ -27,14 +26,9 @@ import net.minecraft.server.level.ChunkMap;
 import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.phys.Vec3;
 
-import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
-
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
@@ -268,8 +262,8 @@ public class ColoredLightEngine {
     public static final class SectionCursor {
         public long sectionPos = Long.MIN_VALUE;
 		public int version = -1;
-		public ColoredLightSection light;
-		public ColoredLightSection darkness;
+		public AbstractColoredLightSection light;
+		public AbstractColoredLightSection darkness;
 		public final BlockPos.MutableBlockPos fallbackPos = new BlockPos.MutableBlockPos();
     }
 
@@ -628,7 +622,7 @@ public class ColoredLightEngine {
         return "[" + viewArea.minX + ".." + viewArea.maxX + ", " + viewArea.minZ + ".." + viewArea.maxZ + "]";
     }
 	
-	public ColoredLightSection getSection(boolean forLight, long pos) {
+	public AbstractColoredLightSection getSection(boolean forLight, long pos) {
 		return engine.getSection(forLight, pos);
 	}
 

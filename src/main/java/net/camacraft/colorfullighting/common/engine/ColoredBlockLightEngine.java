@@ -1,9 +1,8 @@
 package net.camacraft.colorfullighting.common.engine;
 
-import net.camacraft.colorfullighting.common.ColoredLightEngine;
-import net.camacraft.colorfullighting.common.ColoredLightSection;
 import net.camacraft.colorfullighting.common.ViewArea;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
+import net.camacraft.colorfullighting.common.engine.cl.ColoredLightSection;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
@@ -17,7 +16,7 @@ public abstract class ColoredBlockLightEngine {
 	
 	public abstract void handleBlockUpdate(LevelAccessor level, CLEngineInnerClasses.BlockRequests increaseRequests, BlockPos blockPos);
 	
-	public abstract ColoredLightSection getSection(long sectionPos);
+	public abstract AbstractColoredLightSection getSection(long sectionPos);
 	
 	public abstract void removeSection(long sectionPos);
 	

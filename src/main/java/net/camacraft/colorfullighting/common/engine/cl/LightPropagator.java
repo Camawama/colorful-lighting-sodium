@@ -40,7 +40,7 @@ import static net.camacraft.colorfullighting.common.engine.CLEngineInnerClasses.
  * Changes caused by block updates are applied on the main thread to avoid light flickering
  */
 public class LightPropagator implements Runnable {
-	class EngineBox {
+	static class EngineBox {
 		WeakReference<CLEngine> weakRef;
 		
 		public EngineBox(CLEngine engine) {

@@ -1,5 +1,6 @@
-package net.camacraft.colorfullighting.common;
+package net.camacraft.colorfullighting.common.engine;
 
+import net.camacraft.colorfullighting.common.engine.cl.ColoredLightSection;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
@@ -11,14 +12,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * Class responsible for storing light color values for each block in each section of the world
  */
 public class ColoredLightStorage {
-    private ConcurrentHashMap<Long, ColoredLightSection> map = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<Long, AbstractColoredLightSection> map = new ConcurrentHashMap<>();
 
     @Nullable
     public ColorRGB4 getEntry(BlockPos blockPos) { return getEntry(blockPos.getX(), blockPos.getY(), blockPos.getZ()); }
     @Nullable
     public ColorRGB4 getEntry(int x, int y, int z) {
         long sectionPos = SectionPos.blockToSection(BlockPos.asLong(x, y, z));
-        ColoredLightSection layer = getSection(sectionPos);
+	    AbstractColoredLightSection layer = getSection(sectionPos);
         if(layer == null) return null;
         return layer.get(
                 SectionPos.sectionRelative(x),
@@ -62,7 +63,7 @@ public class ColoredLightStorage {
         return map.containsKey(sectionPos);
     }
 
-    public ColoredLightSection getSection(long sectionPos) {
+    public AbstractColoredLightSection getSection(long sectionPos) {
         return map.get(sectionPos);
     }
 
