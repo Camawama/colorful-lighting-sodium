@@ -1,13 +1,12 @@
-package net.camacraft.colorfullighting.common.engine;
+package net.camacraft.colorfullighting.common.engine.cl;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.camacraft.colorfullighting.common.ColoredLightEngine;
-import net.camacraft.colorfullighting.common.ViewArea;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
-import net.camacraft.colorfullighting.common.engine.cl.ColoredLightSection;
-import net.camacraft.colorfullighting.common.engine.cl.DefaultBlockLightEngine;
-import net.camacraft.colorfullighting.common.engine.cl.LightPropagator;
+import net.camacraft.colorfullighting.common.engine.AbstractColoredLightEngine;
+import net.camacraft.colorfullighting.common.engine.AbstractColoredLightSection;
+import net.camacraft.colorfullighting.common.engine.CLEngineInnerClasses;
 import net.camacraft.colorfullighting.compat.distanthorizons.DhColorCache;
 import net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat;
 import net.minecraft.core.BlockPos;
@@ -15,8 +14,6 @@ import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
-import net.minecraft.world.level.chunk.LevelChunk;
-import net.minecraft.world.level.chunk.LevelChunkSection;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;

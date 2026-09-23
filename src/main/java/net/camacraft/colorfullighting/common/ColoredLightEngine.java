@@ -7,7 +7,8 @@ import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
 import net.camacraft.colorfullighting.common.engine.AbstractColoredLightEngine;
 import net.camacraft.colorfullighting.common.engine.AbstractColoredLightSection;
-import net.camacraft.colorfullighting.common.engine.CLEngine;
+import net.camacraft.colorfullighting.common.engine.cl.CLEngine;
+import net.camacraft.colorfullighting.common.engine.reference.TripleVanillaEngine;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
 import net.camacraft.colorfullighting.common.util.ColorRGB8;
 import net.camacraft.colorfullighting.common.util.WeakList;
@@ -116,6 +117,7 @@ public class ColoredLightEngine {
 	/* Outlined: convenient place for mixing into to swap out the engine */
 	private AbstractColoredLightEngine createEngine(Level level, ClientAccessor clientAccessor) {
 		return new CLEngine(this);
+//		return new TripleVanillaEngine(this);
 	}
 	
 	public static void resetAll() {
@@ -439,7 +441,14 @@ public class ColoredLightEngine {
 		clear();
         
         if (enabled) {
+			// TODO: defer start if enabled chunks is null
 			engine.start();
+	  
+			if (enabledChunks != null) {
+				for (Long enabledChunk : enabledChunks) {
+					engine.enableChunk(new ChunkPos(enabledChunk), true);
+				}
+			}
 			
             // Log the setting actually in force: an invalid or clobbered config value is corrected
             // silently by Forge, so the file on disk is not evidence of what the engine is using.

@@ -21,7 +21,6 @@ public final class VsCompat {
      * {@link #isKnownEmptyShipChunk} while the client thread replaces the array; entries are never
      * mutated after publication.
      */
-	// TODO: needs to not be global state
     private volatile ShipSnapshot[] snapshot = new ShipSnapshot[0];
 
     /**
@@ -29,7 +28,6 @@ public final class VsCompat {
      * tick). Read from the light propagator and chunk-build threads via the volatile array; the
      * records and their transform arrays are never mutated after publication.
      */
-    // TODO: needs to not be global state
     private volatile ShipMirror[] mirrors = new ShipMirror[0];
 
     /** How far outside a ship's shipyard block bounds a position still counts as that shipyard. */

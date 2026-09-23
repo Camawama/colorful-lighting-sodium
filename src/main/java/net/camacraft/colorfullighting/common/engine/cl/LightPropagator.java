@@ -4,11 +4,8 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.camacraft.colorfullighting.ColorfulLighting;
 import net.camacraft.colorfullighting.common.ColorfulLightingConfig;
 import net.camacraft.colorfullighting.common.Config;
-import net.camacraft.colorfullighting.common.ViewArea;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.PlayerAccessor;
-import net.camacraft.colorfullighting.common.engine.CLEngine;
-import net.camacraft.colorfullighting.common.engine.CLEngineInnerClasses;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
 import net.camacraft.colorfullighting.common.util.MathExt;
 import net.camacraft.colorfullighting.common.util.ShapeOcclusion;
@@ -18,7 +15,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.shapes.Shapes;
@@ -332,8 +328,8 @@ public class LightPropagator implements Runnable {
         for (int cx = minChunkX; cx <= maxChunkX; cx++) {
             for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
 	            level.findLightSources(new ChunkPos(cx, cz), (blockPos -> {
-                    increaseRequests.add(new LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false, true, false));
-                }));
+		            increaseRequests.add(new LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false, true, false));
+	            }));
 	            level.findDarknessSources(new ChunkPos(cx, cz), (blockPos -> {
                     darknessIncreaseRequests.add(new LightUpdateRequest(blockPos, Config.getAbsorptionColor(level, blockPos), false, true, false));
                 }));
