@@ -35,7 +35,7 @@ import static net.camacraft.colorfullighting.common.engine.CLEngineInnerClasses.
  * It propagates decreases (decreases of light values, e.g. light source has been destroyed, solid block has been placed in the path of light).
  * Changes caused by block updates are applied on the main thread to avoid light flickering
  */
-public class LightPropagator implements Runnable {
+public class PropagationThread implements Runnable {
 	static class EngineBox {
 		WeakReference<CLEngine> weakRef;
 		
@@ -77,7 +77,7 @@ public class LightPropagator implements Runnable {
 	
 	EngineBox box;
 	
-	public LightPropagator(CLEngine engine) {
+	public PropagationThread(CLEngine engine) {
 		box = new EngineBox(engine);
 	}
 	

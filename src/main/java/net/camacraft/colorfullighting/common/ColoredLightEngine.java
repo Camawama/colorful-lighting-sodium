@@ -7,8 +7,6 @@ import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
 import net.camacraft.colorfullighting.common.engine.AbstractColoredLightEngine;
 import net.camacraft.colorfullighting.common.engine.AbstractColoredLightSection;
-import net.camacraft.colorfullighting.common.engine.cl.CLEngine;
-import net.camacraft.colorfullighting.common.engine.reference.TripleVanillaEngine;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
 import net.camacraft.colorfullighting.common.util.ColorRGB8;
 import net.camacraft.colorfullighting.common.util.WeakList;
@@ -25,6 +23,7 @@ import net.minecraft.core.SectionPos;
 import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.LightChunkGetter;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.*;
@@ -36,8 +35,11 @@ import java.util.function.Consumer;
 /**
  * Class responsible for managing light color values in the client's world and sampling those values.
  * Most work is delegated to LightPropagator thread.
+
+ * use {@link ColoredLightInterface} instead, as it will replace this class entirely in newer versions
  */
-public class ColoredLightEngine {
+@Deprecated(forRemoval = true)
+public abstract class ColoredLightEngine {
 	private static final WeakList<ColoredLightEngine> TRACKED = new WeakList<>(new ArrayList<>());
 	
 	private final ClientAccessor clientAccessor;
@@ -57,6 +59,7 @@ public class ColoredLightEngine {
      * frustum-visible ones (a ship is usually on screen even though its shipyard chunks never are).
      */
 	private AbstractColoredLightEngine engine;
+	boolean engineInitialized = false;
     /**
      * Chunks already queued for this view area. Replaces the old "skip anything in the previous inner
      * area" rule, which could never re-queue a chunk that was skipped because the server had not sent
@@ -97,11 +100,7 @@ public class ColoredLightEngine {
     // volatile: written on the render thread each frame, read on the light propagator thread
     protected volatile Frustum frustum;
 
-    public static ColoredLightEngine create(Level level, ClientAccessor clientAccessor) {
-        return new ColoredLightEngine(level, clientAccessor);
-    }
-
-    private ColoredLightEngine(Level level, ClientAccessor clientAccessor) {
+    protected ColoredLightEngine(Level level, ClientAccessor clientAccessor) {
 		this.level = ((LevelAttachments) level).colorfullighting$getAccessor();
         // Cached here because the sampling hot path consults it per sample; LevelMixin creates the
         // attachment before the engine. Per-level, so one dimension's held-item lights can never
@@ -114,11 +113,7 @@ public class ColoredLightEngine {
 	    }
     }
 	
-	/* Outlined: convenient place for mixing into to swap out the engine */
-	private AbstractColoredLightEngine createEngine(Level level, ClientAccessor clientAccessor) {
-		return new CLEngine(this);
-//		return new TripleVanillaEngine(this);
-	}
+	protected abstract AbstractColoredLightEngine createEngine(Level level, ClientAccessor clientAccessor);
 	
 	public static void resetAll() {
 		synchronized (TRACKED) {
@@ -181,6 +176,9 @@ public class ColoredLightEngine {
 	    InternalPackRegistration.enforcePacks(mc, repo);
     }
 	
+	/**
+	 * remaining in place for the time being so that mods that use the old API will crash with an exception stating unsupported
+	 */
 	@Deprecated(forRemoval = true)
 	public static ColoredLightEngine getInstance() {
 		throw new RuntimeException("Unsupported.");
@@ -241,6 +239,17 @@ public class ColoredLightEngine {
 		}
 	}
 	
+	Set<SectionPos> enabledSections;
+	
+	public void setSectionList(Set<SectionPos> enabledLights) {
+		if (this.enabledSections == null) {
+			this.enabledSections = enabledLights;
+		} else {
+			// TODO: use logger
+			System.err.println("Setting a list of sections on an engine that already has a list of sections");
+		}
+	}
+	
 	public void setChunkEnabled(ChunkPos pos, boolean enabled) {
 		engine.enableChunk(pos, enabled);
 	}
@@ -251,6 +260,10 @@ public class ColoredLightEngine {
 	
 	public LongOpenHashSet getChunkList() {
 		return enabledChunks;
+	}
+	
+	public Set<SectionPos> getSectionList() {
+		return enabledSections;
 	}
 	
 	/**
@@ -439,14 +452,12 @@ public class ColoredLightEngine {
 
     public void reset() {
 		clear();
-        
+  
+		engineInitialized = false;
         if (enabled) {
-			// TODO: defer start if enabled chunks is null
-			engine.start();
-	  
 			if (enabledChunks != null) {
-				for (Long enabledChunk : enabledChunks) {
-					engine.enableChunk(new ChunkPos(enabledChunk), true);
+				if (level.getLevel().getChunkSource() != null) {
+					initEngine(level.getLevel().getChunkSource());
 				}
 			}
 			
@@ -458,6 +469,28 @@ public class ColoredLightEngine {
             ColorfulLighting.LOGGER.info("Colored light engine disabled");
         }
     }
+	
+	public boolean isEngineInitialized() {
+		return engineInitialized;
+	}
+	
+	public void initEngine(LightChunkGetter lightChunkGetter) {
+		engineInitialized = true;
+		
+		engine.start(lightChunkGetter);
+		
+		if (enabledChunks != null) {
+			for (Long enabledChunk : enabledChunks) {
+				engine.enableChunk(new ChunkPos(enabledChunk), true);
+			}
+		}
+		
+		if (enabledSections != null) {
+			for (SectionPos enabledChunk : enabledSections) {
+				engine.setSectionEnabled(enabledChunk, true);
+			}
+		}
+	}
 	
 	private void clear() {
 		if (engine != null) {

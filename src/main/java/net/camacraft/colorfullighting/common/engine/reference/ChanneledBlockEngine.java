@@ -17,23 +17,30 @@ import net.minecraft.world.level.lighting.LightEngine;
 public class ChanneledBlockEngine extends BlockLightEngine {
 	LevelAccessor accessor;
 	int channel;
+	boolean forLight;
 	
-	public ChanneledBlockEngine(LightChunkGetter p_75492_, LevelAccessor accessor, int channel) {
+	public ChanneledBlockEngine(LightChunkGetter p_75492_, LevelAccessor accessor, int channel, boolean forLight) {
 		super(p_75492_);
 		this.accessor = accessor;
 		this.channel = channel;
+		this.forLight = forLight;
 	}
 	
-	public ChanneledBlockEngine(LightChunkGetter p_278252_, BlockLightSectionStorage p_278255_, LevelAccessor accessor, int channel) {
+	public ChanneledBlockEngine(LightChunkGetter p_278252_, BlockLightSectionStorage p_278255_, LevelAccessor accessor, int channel, boolean forLight) {
 		super(p_278252_, p_278255_);
 		this.accessor = accessor;
 		this.channel = channel;
+		this.forLight = forLight;
+	}
+	
+	private ColorRGB4 getValue(LevelAccessor accessor, BlockPos mutablePos, BlockState p284973) {
+		return forLight ? Config.getColorEmission(accessor, mutablePos, p284973) : Config.getAbsorptionColor(accessor, mutablePos, p284973);
 	}
 	
 	@Override
 	public int getEmission(long p_285243_, BlockState p_284973_) {
 //		int i = p_284973_.getLightEmission(chunkSource.getLevel(), mutablePos);
-		ColorRGB4 rgb4 = Config.getColorEmission(accessor, mutablePos, p_284973_);
+		ColorRGB4 rgb4 = getValue(accessor, mutablePos, p_284973_);
 		int i = switch (channel) {
 			case 0 -> rgb4.red4;
 			case 1 -> rgb4.green4;
@@ -60,7 +67,7 @@ public class ChanneledBlockEngine extends BlockLightEngine {
 			accessor.findLightSources(p_285274_, (blockPos -> {
 				BlockState state = chunkSource.getLevel().getBlockState(blockPos);
 				
-				ColorRGB4 rgb4 = Config.getColorEmission(accessor, blockPos, state);
+				ColorRGB4 rgb4 = getValue(accessor, blockPos, state);
 				int i = switch (channel) {
 					case 0 -> rgb4.red4;
 					case 1 -> rgb4.green4;

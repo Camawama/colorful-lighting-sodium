@@ -41,11 +41,14 @@ public class LightEngineSync {
 			enable = true;
 			this.engine = ((LevelAttachments) clvl).colorfullighting$getEngine();
 			engine.setChunkList(enabledLights);
+			engine.setSectionList(enabledSections);
+			if (!engine.isEngineInitialized()) {
+				engine.initEngine(p_75805_);
+			}
 		} else if (lvl instanceof LevelAttachments attachments) {
 			this.engine = attachments.colorfullighting$getEngine();
 			if (engine != null) {
 				enable = true;
-				engine.setChunkList(enabledLights);
 			} else {
 				enable = false;
 			}

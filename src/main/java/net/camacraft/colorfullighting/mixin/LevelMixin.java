@@ -5,6 +5,7 @@ import net.camacraft.colorfullighting.accessors.LevelWrapper;
 import net.camacraft.colorfullighting.api.CLSupportingLevel;
 import net.camacraft.colorfullighting.common.BlockEntityNbtCache;
 import net.camacraft.colorfullighting.common.ColoredLightEngine;
+import net.camacraft.colorfullighting.common.ColoredLightInterface;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.ClientLevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
@@ -63,7 +64,7 @@ public class LevelMixin implements LevelAttachments, CompatRegistry<Level> {
 		if (this instanceof CLSupportingLevel) {
 			// before the engine: the engine constructor caches this attachment for its sampling hot path
 			colorfullighting$dynamicLights = new DynamicLightsCompat();
-			colorfullighting$engine = ColoredLightEngine.create((Level) (Object) this, ColorfulLighting.clientAccessor);
+			colorfullighting$engine = ColoredLightInterface.create((Level) (Object) this, ColorfulLighting.clientAccessor);
 
 			if (VsCompat.isAvailable()) {
 				colorfullighting$vsCompat = new VsCompat();

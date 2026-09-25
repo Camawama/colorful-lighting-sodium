@@ -2,6 +2,7 @@ package net.camacraft.colorfullighting.common.engine.cl;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.camacraft.colorfullighting.common.ColoredLightEngine;
+import net.camacraft.colorfullighting.common.ColoredLightInterface;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
 import net.camacraft.colorfullighting.common.engine.AbstractColoredLightEngine;
@@ -14,6 +15,7 @@ import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.chunk.LightChunkGetter;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -25,10 +27,10 @@ import static net.camacraft.colorfullighting.common.ColoredLightEngine.MAX_BLOCK
 public class CLEngine extends AbstractColoredLightEngine {
 	public final DefaultBlockLightEngine lightEngine = new DefaultBlockLightEngine(true, this);
 	public final DefaultBlockLightEngine darkEngine = new DefaultBlockLightEngine(false, this);
-	public LightPropagator lightPropagator;
+	public PropagationThread lightPropagator;
 	private final DynamicLightsCompat dynamicLights;
 	
-	public CLEngine(ColoredLightEngine lightInterface) {
+	public CLEngine(ColoredLightInterface lightInterface) {
 		super(lightInterface);
 		this.dynamicLights = ((LevelAttachments) lightInterface.getLevel()).colorfullighting$getDynamicLights();
 	}
@@ -243,8 +245,8 @@ public class CLEngine extends AbstractColoredLightEngine {
 	}
 	
 	@Override
-	public void start() {
-		lightPropagator = new LightPropagator(this);
+	public void start(LightChunkGetter lightChunkGetter) {
+		lightPropagator = new PropagationThread(this);
 		if (USE_THREAD) {
 			lightPropagatorThread = new Thread(lightPropagator, "CL-LightPropagator");
 			lightPropagatorThread.setPriority(Thread.MIN_PRIORITY);

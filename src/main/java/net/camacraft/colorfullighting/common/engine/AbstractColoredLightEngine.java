@@ -1,21 +1,21 @@
 package net.camacraft.colorfullighting.common.engine;
 
 import net.camacraft.colorfullighting.common.ColoredLightEngine;
-import net.camacraft.colorfullighting.common.ViewArea;
+import net.camacraft.colorfullighting.common.ColoredLightInterface;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
-import net.camacraft.colorfullighting.common.engine.cl.ColoredLightSection;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.chunk.LightChunkGetter;
 
 /*
  * abstract for extensibility
  * if a mod wants to implement its own colored lighting engine and piggy back off of CL's compat code, this allows for that
  */
 public abstract class AbstractColoredLightEngine {
-	public final ColoredLightEngine lightInterface;
+	public final ColoredLightInterface lightInterface;
 	
-	public AbstractColoredLightEngine(ColoredLightEngine lightInterface) {
+	public AbstractColoredLightEngine(ColoredLightInterface lightInterface) {
 		this.lightInterface = lightInterface;
 	}
 	
@@ -46,7 +46,7 @@ public abstract class AbstractColoredLightEngine {
 	public abstract void tick();
 	
 	// CODE REGION: life cycle
-	public abstract void start();
+	public abstract void start(LightChunkGetter lightChunkGetter);
 	
 	public abstract void stop();
 	
