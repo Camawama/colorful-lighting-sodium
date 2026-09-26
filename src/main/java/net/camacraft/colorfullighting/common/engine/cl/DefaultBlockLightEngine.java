@@ -127,4 +127,10 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 	// Sets, not queues: ConcurrentLinkedQueue.remove is O(n) and ran once per propagated chunk.
 	// Ordering now comes from LightPropagator.ChunkOrder instead of rescanning the collection.
 	public final Set<ChunkPos> chunksWaitingForPropagation = ConcurrentHashMap.newKeySet();
+	public final PropagationManager.ChunkOrder chunkOrder = new PropagationManager.ChunkOrder();
+	
+	public Propagator createPropagator(PropagationManager lightPropagator) {
+		return new Propagator(this, lightPropagator) {
+		};
+	}
 }

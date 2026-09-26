@@ -187,8 +187,7 @@ public class CLEngine extends AbstractColoredLightEngine {
 	
 	@Override
 	public long[] applyReadyChanges() {
-		lightPropagator.applyReadyChanges(this, lightEngine);
-		lightPropagator.applyReadyChanges(this, darkEngine);
+		lightPropagator.applyReadyChanges(this);
 		
 		long[] sectionsToUpdate;
 		synchronized (dirtySections) {
@@ -245,6 +244,8 @@ public class CLEngine extends AbstractColoredLightEngine {
 	@Override
 	public void start(LightChunkGetter lightChunkGetter) {
 		lightPropagator = new PropagationManager(this);
+		lightPropagator.propagators.add(lightEngine.createPropagator(lightPropagator));
+		lightPropagator.propagators.add(darkEngine.createPropagator(lightPropagator));
 		if (USE_THREAD) {
 			lightPropagatorThread = new Thread(lightPropagator, "CL-LightPropagator");
 			lightPropagatorThread.setPriority(Thread.MIN_PRIORITY);
