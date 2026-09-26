@@ -60,10 +60,10 @@ public class CLEngine extends AbstractColoredLightEngine {
 				.append("\n").append(darkEngine.describeQueue());
 		
 		
-		sb.append("\nchunks waiting: light ").append(chunksWaitingForPropagation.size())
-				.append(", darkness ").append(chunksWaitingForDarknessPropagation.size());
+		sb.append("\nchunks waiting: light ").append(lightEngine.chunksWaitingForPropagation.size())
+				.append(", darkness ").append(darkEngine.chunksWaitingForPropagation.size());
 		int listed = 0;
-		for (ChunkPos pos : chunksWaitingForPropagation) {
+		for (ChunkPos pos : lightEngine.chunksWaitingForPropagation) {
 			if (pos.getChessboardDistance(center) > 8) continue;
 			if (listed == 0) sb.append("\nwaiting chunks near you:");
 			sb.append("\n  ").append(pos).append(" dist=").append(pos.getChessboardDistance(center))
@@ -164,8 +164,8 @@ public class CLEngine extends AbstractColoredLightEngine {
 				long sectionPos = SectionPos.asLong(x, y, z);
 				addSection(sectionPos);
 			}
-			chunksWaitingForPropagation.add(pos);
-			chunksWaitingForDarknessPropagation.add(pos);
+			lightEngine.chunksWaitingForPropagation.add(pos);
+			darkEngine.chunksWaitingForPropagation.add(pos);
 		} else {
 			int x = pos.x;
 			int z = pos.z;
@@ -218,8 +218,6 @@ public class CLEngine extends AbstractColoredLightEngine {
 		darkEngine.clear();
 		delayedChunkUpdates.clear();
 		pendingDelayedUpdates.clear();
-		chunksWaitingForPropagation.clear();
-		chunksWaitingForDarknessPropagation.clear();
 		dirtySections.clear();
 	}
 	
@@ -290,10 +288,6 @@ public class CLEngine extends AbstractColoredLightEngine {
 	// CODE REGION: propagator variables
 	public final ConcurrentLinkedQueue<CLEngineInnerClasses.DelayedChunkUpdate> delayedChunkUpdates = new ConcurrentLinkedQueue<>();
 	public final Set<ChunkPos> pendingDelayedUpdates = ConcurrentHashMap.newKeySet();
-	// Sets, not queues: ConcurrentLinkedQueue.remove is O(n) and ran once per propagated chunk.
-	// Ordering now comes from LightPropagator.ChunkOrder instead of rescanning the collection.
-	public final Set<ChunkPos> chunksWaitingForPropagation = ConcurrentHashMap.newKeySet();
-	public final Set<ChunkPos> chunksWaitingForDarknessPropagation = ConcurrentHashMap.newKeySet();
 	/**
 	 * Primitive: this fills and drains fast enough during chunk loading that boxing a Long per section
 	 * showed up on the render thread.

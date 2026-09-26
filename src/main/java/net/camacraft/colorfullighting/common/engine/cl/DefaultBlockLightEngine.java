@@ -7,9 +7,11 @@ import net.camacraft.colorfullighting.common.engine.*;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.Lock;
@@ -17,11 +19,9 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 	public final boolean forLight;
-	public final AbstractColoredLightEngine engine;
 	
 	public DefaultBlockLightEngine(boolean forLight, AbstractColoredLightEngine engine) {
 		this.forLight = forLight;
-		this.engine = engine;
 	}
 	
 	// TODO: these should be protected
@@ -35,18 +35,6 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 	@Override
 	public String describeQueue() {
 		return (forLight ? "block" : "dark") + " updates queued: light +" + blockUpdateIncreaseRequests.size() + " -" + blockUpdateDecreaseRequests.size();
-	}
-	
-	@Override
-	public void remove(ViewArea newArea) {
-		blockUpdateIncreaseRequests.removeIf(blockUpdate -> !newArea.containsBlockInner(blockUpdate.blockPos) && !engine.getInterface().extraRegionsContainBlockInner(blockUpdate.blockPos));
-		blockUpdateDecreaseRequests.removeIf(blockUpdate -> !newArea.containsBlockInner(blockUpdate.blockPos) && !engine.getInterface().extraRegionsContainBlockInner(blockUpdate.blockPos));
-	}
-	
-	@Override
-	public void removeAlt(ViewArea newArea) {
-		blockUpdateIncreaseRequests.removeIf(blockUpdate -> !newArea.containsBlockInner(blockUpdate.blockPos) && !engine.getInterface().isBlockTrackedInner(blockUpdate.blockPos));
-		blockUpdateDecreaseRequests.removeIf(blockUpdate -> !newArea.containsBlockInner(blockUpdate.blockPos) && !engine.getInterface().isBlockTrackedInner(blockUpdate.blockPos));
 	}
 	
 	@Override
@@ -90,12 +78,10 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 		return storage.getSection(sectionPos);
 	}
 	
-	@Override
 	public void removeSection(long sectionPos) {
 		storage.removeSection(sectionPos);
 	}
 	
-	@Override
 	public void addSection(long pos) {
 		storage.addSection(pos);
 	}
@@ -110,11 +96,12 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 		storage.clear();
 		blockUpdateIncreaseRequests.clear();
 		blockUpdateDecreaseRequests.clear();
+		chunksWaitingForPropagation.clear();
 	}
 	
 	@Override
 	public boolean hasWork() {
-		return !blockUpdateDecreaseRequests.isEmpty() || !blockUpdateIncreaseRequests.isEmpty();
+		return !blockUpdateDecreaseRequests.isEmpty() || !blockUpdateIncreaseRequests.isEmpty() || !chunksWaitingForPropagation.isEmpty();
 	}
 	
 	@Override
@@ -137,4 +124,7 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 	public final ConcurrentHashMap<BlockPos, ColorRGB4> changesReady = new ConcurrentHashMap<>();
 	public final Lock changesReadyLock = new ReentrantLock();
 	public final LongOpenHashSet readyDirtySections = new LongOpenHashSet();
+	// Sets, not queues: ConcurrentLinkedQueue.remove is O(n) and ran once per propagated chunk.
+	// Ordering now comes from LightPropagator.ChunkOrder instead of rescanning the collection.
+	public final Set<ChunkPos> chunksWaitingForPropagation = ConcurrentHashMap.newKeySet();
 }

@@ -10,17 +10,9 @@ import net.minecraft.world.level.block.state.BlockState;
 public abstract class ColoredBlockLightEngine {
 	public abstract String describeQueue();
 	
-	public abstract void remove(ViewArea newArea);
-	
-	public abstract void removeAlt(ViewArea newArea);
-	
 	public abstract void handleBlockUpdate(LevelAccessor level, CLEngineInnerClasses.BlockRequests increaseRequests, BlockPos blockPos);
 	
 	public abstract AbstractColoredLightSection getSection(long sectionPos);
-	
-	public abstract void removeSection(long sectionPos);
-	
-	public abstract void addSection(long pos);
 	
 	public abstract int sectionCount();
 	

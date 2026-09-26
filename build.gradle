@@ -151,7 +151,7 @@ dependencies {
 
     // DH 3.1.2-b for 1.20.1 (API major 7); older curse 508933:7375280 was API 5 and nonfunctional in dev
     // Swap in FWGxbEM3 (DH 3.2.0-b, also API 7) to dev-test the 3.2 textured-LOD contract
-    runtimeOnly fg.deobf("maven.modrinth:distanthorizons:4HFx4xGx")
+    compileOnly fg.deobf("maven.modrinth:distanthorizons:4HFx4xGx")
 
     runtimeOnly fg.deobf("curse.maven:flerovium-1142875:7584065")
     runtimeOnly fg.deobf("curse.maven:asyncparticles-1215753:8551952")

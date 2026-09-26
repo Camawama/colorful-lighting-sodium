@@ -17,7 +17,7 @@ public class ColoredLightInterface extends ColoredLightEngine {
 	
 	/* Outlined: convenient place for mixing into to swap out the engine */
 	protected AbstractColoredLightEngine createEngine(Level level, ClientAccessor clientAccessor) {
-//		return new CLEngine(this);
-		return new TripleVanillaEngine(this);
+		return new CLEngine(this);
+//		return new TripleVanillaEngine(this);
 	}
 }

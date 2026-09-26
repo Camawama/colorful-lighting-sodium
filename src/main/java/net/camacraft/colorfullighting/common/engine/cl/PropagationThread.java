@@ -145,57 +145,12 @@ public class PropagationThread implements Runnable {
 			}
 		}
 		
-		boolean hasLightWork = engine.lightEngine.hasWork() || !engine.chunksWaitingForPropagation.isEmpty();
-		boolean hasDarknessWork = engine.darkEngine.hasWork() || !engine.chunksWaitingForDarknessPropagation.isEmpty();
+		boolean hasLightWork = engine.lightEngine.hasWork();
+		boolean hasDarknessWork = engine.darkEngine.hasWork();
 		boolean hasWork = hasLightWork || hasDarknessWork;
 		
 		// Re-read every pass so changing the config takes effect without a restart.
 		ColorfulLightingConfig.LightUpdateSpeed speed = ColorfulLightingConfig.lightUpdateSpeed();
-		
-		// Track the CHUNK queue only. hasWork also covers single-block updates, and in the
-		// Nether flowing lava and fire fire checkBlock constantly, so hasWork can essentially
-		// never go false - the chunk fill-in would finish and the drain would never close.
-		// Report a drain when the chunk queue empties OR when no chunk has propagated for 2s.
-		// The latter matters: the queue never empties, because the corners of this square view
-		// area fall outside the disc of chunks the server actually sends. Waiting for an empty
-		// queue would mean never reporting at all.
-		int chunksRemaining = engine.chunksWaitingForPropagation.size();
-		if (chunksRemaining != lastChunksRemaining) {
-			lastChunksRemaining = chunksRemaining;
-			blockedSleepMillis = MIN_BLOCKED_SLEEP_MILLIS; // queue changed: something may be ready now
-		}
-		if (chunksRemaining > 0 && drainStartNanos == 0L) {
-			drainStartNanos = System.nanoTime();
-			lastChunkNanos = drainStartNanos;
-		}
-		if (drainStartNanos != 0L && drainChunks > 0) {
-			boolean finished = chunksRemaining == 0;
-			boolean stalled = System.nanoTime() - lastChunkNanos > 2_000_000_000L;
-			if (finished || stalled) {
-				if (drainChunks >= DRAIN_LOG_MIN_CHUNKS) {
-					long elapsedMillis = Math.max(1L, (lastChunkNanos - drainStartNanos) / 1_000_000L);
-					// The level tag matters: with Immersive Portals several levels run their own
-					// propagators, and an untagged log can look healthy while ANOTHER level's
-					// propagator is the broken one.
-					ColorfulLighting.LOGGER.info(
-							"Colored light drain [{}]: {} chunks in {} ms ({} chunks/s), {} still queued [{}], lightUpdateSpeed={}",
-							levelName(engine), drainChunks, elapsedMillis,
-							String.format("%.1f", drainChunks * 1000.0 / elapsedMillis),
-							chunksRemaining, finished ? "finished" : "stalled", speed);
-				}
-				drainStartNanos = 0L;
-				drainChunks = 0;
-			}
-		}
-
-		// Diagnostic for the long-standing "light stops until /cl purge" bug: a stall where only
-		// far view-area-corner chunks are queued is normal (the server never sends those), but a
-		// waiting chunk NEAR the player means some readiness check keeps wrongly rejecting it.
-		// Log which one so the next natural occurrence names the failing check.
-		if (drainStartNanos != 0L && chunksRemaining > 0
-				&& System.nanoTime() - lastChunkNanos > 5_000_000_000L) {
-			logIfStuckNearPlayer(engine);
-		}
 		
 		long passStartNanos = System.nanoTime();
 		boolean progressed = false;
@@ -214,8 +169,8 @@ public class PropagationThread implements Runnable {
 				if (hasDarknessWork) progressedThisPass |= propagateDarkness(engine, engine.darkEngine);
 				progressed |= progressedThisPass;
 				
-				hasLightWork = engine.lightEngine.hasWork() || !engine.chunksWaitingForPropagation.isEmpty();
-				hasDarknessWork = engine.darkEngine.hasWork() || !engine.chunksWaitingForDarknessPropagation.isEmpty();
+				hasLightWork = engine.lightEngine.hasWork();
+				hasDarknessWork = engine.darkEngine.hasWork();
 				// stop early when nothing moved: the queue is waiting on chunks to load
 			} while (running && progressedThisPass && (hasLightWork || hasDarknessWork) && System.nanoTime() < deadline);
 		} else {
@@ -231,6 +186,63 @@ public class PropagationThread implements Runnable {
 		
 		if (this.hasReadyChanges(engine)) {
 			Minecraft.getInstance().execute(engine.lightInterface::onLightUpdate);
+		}
+		
+		if (!hasWork) {
+			drainStartNanos = 0;
+			drainChunks = 0;
+			lastChunkNanos = System.nanoTime();
+		}
+		
+		// check if work was done after the work is supposed to have been done
+		{
+			// Track the CHUNK queue only. hasWork also covers single-block updates, and in the
+			// Nether flowing lava and fire fire checkBlock constantly, so hasWork can essentially
+			// never go false - the chunk fill-in would finish and the drain would never close.
+			// Report a drain when the chunk queue empties OR when no chunk has propagated for 2s.
+			// The latter matters: the queue never empties, because the corners of this square view
+			// area fall outside the disc of chunks the server actually sends. Waiting for an empty
+			// queue would mean never reporting at all.
+			int chunksRemaining = engine.lightEngine.chunksWaitingForPropagation.size();
+			if (chunksRemaining != lastChunksRemaining) {
+				lastChunksRemaining = chunksRemaining;
+				blockedSleepMillis = MIN_BLOCKED_SLEEP_MILLIS; // queue changed: something may be ready now
+			}
+			if (chunksRemaining > 0 && drainStartNanos == 0L) {
+				drainStartNanos = System.nanoTime();
+				lastChunkNanos = drainStartNanos;
+			}
+			if (drainStartNanos != 0L && drainChunks > 0) {
+				boolean finished = chunksRemaining == 0;
+				boolean stalled = System.nanoTime() - lastChunkNanos > 2_000_000_000L;
+				if (finished || stalled) {
+					if (drainChunks >= DRAIN_LOG_MIN_CHUNKS) {
+						long elapsedMillis = Math.max(1L, (lastChunkNanos - drainStartNanos) / 1_000_000L);
+						// The level tag matters: with Immersive Portals several levels run their own
+						// propagators, and an untagged log can look healthy while ANOTHER level's
+						// propagator is the broken one.
+						ColorfulLighting.LOGGER.info(
+								"Colored light drain [{}]: {} chunks in {} ms ({} chunks/s), {} still queued [{}], lightUpdateSpeed={}",
+								levelName(engine), drainChunks, elapsedMillis,
+								String.format("%.1f", drainChunks * 1000.0 / elapsedMillis),
+								chunksRemaining, finished ? "finished" : "stalled", speed);
+					}
+					drainStartNanos = 0L;
+					drainChunks = 0;
+				}
+			}
+			
+			// if there is no work to be done, then we shouldn't expect work to be done
+			if (hasWork) {
+				// Diagnostic for the long-standing "light stops until /cl purge" bug: a stall where only
+				// far view-area-corner chunks are queued is normal (the server never sends those), but a
+				// waiting chunk NEAR the player means some readiness check keeps wrongly rejecting it.
+				// Log which one so the next natural occurrence names the failing check.
+				if (drainStartNanos != 0L && chunksRemaining > 0
+						&& System.nanoTime() - lastChunkNanos > 5_000_000_000L) {
+					logIfStuckNearPlayer(engine);
+				}
+			}
 		}
 		
 		if (hasWork && progressed) {
@@ -467,8 +479,6 @@ public class PropagationThread implements Runnable {
             List<ChunkPos> visible = new ArrayList<>();
             List<ChunkPos> hidden = new ArrayList<>();
             for (ChunkPos chunkPos : waiting) {
-				// TODO: we may need to have some method of overriding what counts as "visible"
-	            // or maybe we should just propagate everything but be lazy for things that "aren't" visible
                 boolean inView = (currentFrustum != null && currentFrustum.isVisible(new AABB(
                                 chunkPos.getMinBlockX(), minY, chunkPos.getMinBlockZ(),
                                 chunkPos.getMaxBlockX() + 1, maxY, chunkPos.getMaxBlockZ() + 1)));
@@ -515,7 +525,7 @@ public class PropagationThread implements Runnable {
 
         ChunkPos[] nearest = new ChunkPos[3];
         int[] nearestDist = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
-        for (ChunkPos pos : engine.chunksWaitingForPropagation) {
+        for (ChunkPos pos : engine.lightEngine.chunksWaitingForPropagation) {
             int d = pos.getChessboardDistance(center);
             for (int i = 0; i < 3; ++i) {
                 if (d < nearestDist[i]) {
@@ -547,15 +557,11 @@ public class PropagationThread implements Runnable {
         }
         ColorfulLighting.LOGGER.warn(
                 "Colored light queue [{}] is stalled with waiting chunks NEAR the player ({} queued): {}(this is the '/cl purge' bug; please report this line)",
-                levelName(engine), engine.chunksWaitingForPropagation.size(), detail);
+                levelName(engine), engine.lightEngine.chunksWaitingForPropagation.size(), detail);
     }
 
-    private NearestChunkResult getNearestWaitingChunk(CLEngine engine, LevelAccessor level, PlayerAccessor player) {
-        return lightChunkOrder.next(engine, level, player, engine.chunksWaitingForPropagation);
-    }
-
-    private NearestChunkResult getNearestWaitingDarknessChunk(CLEngine engine, LevelAccessor level, PlayerAccessor player) {
-        return darknessChunkOrder.next(engine, level, player, engine.chunksWaitingForDarknessPropagation);
+    private NearestChunkResult getNearestWaitingChunk(DefaultBlockLightEngine blockLightEngine, CLEngine engine, LevelAccessor level, PlayerAccessor player) {
+        return lightChunkOrder.next(engine, level, player, blockLightEngine.chunksWaitingForPropagation);
     }
 
     /**
@@ -669,13 +675,13 @@ public class PropagationThread implements Runnable {
 //	        markChangesReady(engine.darkEngine);
         }
         
-        var nearestChunkResult = getNearestWaitingChunk(engine, engine.getLevel(), player);
+        var nearestChunkResult = getNearestWaitingChunk(engine.lightEngine, engine, engine.getLevel(), player);
         var nearestBlockRequests = getNearestBlockRequests(player, blockEngine);
 
         if(nearestChunkResult != null && (nearestBlockRequests == null || nearestChunkResult.distanceBlocks() < nearestBlockRequests.distanceBlocks())) {
             // propagate chunk
             ChunkPos chunkPos = nearestChunkResult.chunkPos();
-            engine.chunksWaitingForPropagation.remove(chunkPos);
+            engine.lightEngine.chunksWaitingForPropagation.remove(chunkPos);
 
             Queue<LightUpdateRequest> increaseRequests = new ArrayDeque<>();
             // find light sources and request their propagation
@@ -717,13 +723,13 @@ public class PropagationThread implements Runnable {
 	        markChangesReady(engine.darkEngine);
         }
 
-        var nearestChunkResult = getNearestWaitingDarknessChunk(engine, engine.getLevel(), player);
+        var nearestChunkResult = getNearestWaitingChunk(engine.darkEngine, engine, engine.getLevel(), player);
         var nearestBlockRequests = getNearestBlockRequests(player, blockEngine);
 
         if(nearestChunkResult != null && (nearestBlockRequests == null || nearestChunkResult.distanceBlocks() < nearestBlockRequests.distanceBlocks())) {
             // propagate chunk
             ChunkPos chunkPos = nearestChunkResult.chunkPos();
-	        engine.chunksWaitingForDarknessPropagation.remove(chunkPos);
+	        engine.darkEngine.chunksWaitingForPropagation.remove(chunkPos);
 
             Queue<LightUpdateRequest> increaseRequests = new ArrayDeque<>();
             // find darkness sources and request their propagation
