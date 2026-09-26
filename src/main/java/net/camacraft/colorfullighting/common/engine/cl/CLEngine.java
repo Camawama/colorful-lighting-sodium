@@ -27,7 +27,7 @@ import static net.camacraft.colorfullighting.common.ColoredLightEngine.MAX_BLOCK
 public class CLEngine extends AbstractColoredLightEngine {
 	public final DefaultBlockLightEngine lightEngine = new DefaultBlockLightEngine(true, this);
 	public final DefaultBlockLightEngine darkEngine = new DefaultBlockLightEngine(false, this);
-	public PropagationThread lightPropagator;
+	public PropagationManager lightPropagator;
 	private final DynamicLightsCompat dynamicLights;
 	
 	public CLEngine(ColoredLightInterface lightInterface) {
@@ -244,7 +244,7 @@ public class CLEngine extends AbstractColoredLightEngine {
 	
 	@Override
 	public void start(LightChunkGetter lightChunkGetter) {
-		lightPropagator = new PropagationThread(this);
+		lightPropagator = new PropagationManager(this);
 		if (USE_THREAD) {
 			lightPropagatorThread = new Thread(lightPropagator, "CL-LightPropagator");
 			lightPropagatorThread.setPriority(Thread.MIN_PRIORITY);

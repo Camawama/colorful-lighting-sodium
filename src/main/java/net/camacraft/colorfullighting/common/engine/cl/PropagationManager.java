@@ -35,7 +35,7 @@ import static net.camacraft.colorfullighting.common.engine.CLEngineInnerClasses.
  * It propagates decreases (decreases of light values, e.g. light source has been destroyed, solid block has been placed in the path of light).
  * Changes caused by block updates are applied on the main thread to avoid light flickering
  */
-public class PropagationThread implements Runnable {
+public class PropagationManager implements Runnable {
 	static class EngineBox {
 		WeakReference<CLEngine> weakRef;
 		
@@ -47,6 +47,8 @@ public class PropagationThread implements Runnable {
 			return weakRef.get();
 		}
 	}
+	
+//	List<Propagator> propagators = new ArrayList<>();
 	
     private boolean running;
     private volatile boolean shutdown = false;
@@ -77,7 +79,7 @@ public class PropagationThread implements Runnable {
 	
 	EngineBox box;
 	
-	public PropagationThread(CLEngine engine) {
+	public PropagationManager(CLEngine engine) {
 		box = new EngineBox(engine);
 	}
 	
@@ -165,8 +167,8 @@ public class PropagationThread implements Runnable {
 				}
 				
 				progressedThisPass = false;
-				if (hasLightWork) progressedThisPass |= propagateLight(engine, engine.lightEngine);
-				if (hasDarknessWork) progressedThisPass |= propagateDarkness(engine, engine.darkEngine);
+				if (hasLightWork) progressedThisPass = propagateLight(engine, engine.lightEngine);
+				if (hasDarknessWork) progressedThisPass = propagateDarkness(engine, engine.darkEngine) | progressedThisPass;
 				progressed |= progressedThisPass;
 				
 				hasLightWork = engine.lightEngine.hasWork();
@@ -240,7 +242,7 @@ public class PropagationThread implements Runnable {
 				// Log which one so the next natural occurrence names the failing check.
 				if (drainStartNanos != 0L && chunksRemaining > 0
 						&& System.nanoTime() - lastChunkNanos > 5_000_000_000L) {
-					logIfStuckNearPlayer(engine);
+//					logIfStuckNearPlayer(engine);
 				}
 			}
 		}
@@ -512,6 +514,7 @@ public class PropagationThread implements Runnable {
      * ({@code hasChunkAndNeighbours}), so a stuck-near-the-player stall shows WHICH neighbour
      * lookup keeps failing. Rate-limited; silent for the normal far-corner starvation.
      */
+	// this will always claim that it's stuck in the nether
     private void logIfStuckNearPlayer(CLEngine engine) {
         long nowMillis = System.currentTimeMillis();
         if (nowMillis - lastStuckLogMillis < 30_000L) return;
@@ -522,8 +525,8 @@ public class PropagationThread implements Runnable {
         PlayerAccessor player = clientAccessor.getPlayer();
         if (player == null) return;
         ChunkPos center = player.getChunkPos();
-
-        ChunkPos[] nearest = new ChunkPos[3];
+	    
+	    ChunkPos[] nearest = new ChunkPos[3];
         int[] nearestDist = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
         for (ChunkPos pos : engine.lightEngine.chunksWaitingForPropagation) {
             int d = pos.getChessboardDistance(center);
@@ -562,6 +565,10 @@ public class PropagationThread implements Runnable {
 
     private NearestChunkResult getNearestWaitingChunk(DefaultBlockLightEngine blockLightEngine, CLEngine engine, LevelAccessor level, PlayerAccessor player) {
         return lightChunkOrder.next(engine, level, player, blockLightEngine.chunksWaitingForPropagation);
+    }
+	
+    private NearestChunkResult getNearestWaitingDarknessChunk(DefaultBlockLightEngine blockLightEngine, CLEngine engine, LevelAccessor level, PlayerAccessor player) {
+        return darknessChunkOrder.next(engine, level, player, blockLightEngine.chunksWaitingForPropagation);
     }
 
     /**
@@ -691,7 +698,6 @@ public class PropagationThread implements Runnable {
             propagateIncreases(engine, engine.getLevel(), increaseRequests);
             // new chunks' light propagation is not synchronized with main thread
 	        applyChangesDirectly(engine, engine.lightEngine);
-//	        applyChangesDirectly(engine, engine.darkEngine);
             progressed = true;
             drainChunks++;
             lastChunkNanos = System.nanoTime();
@@ -700,7 +706,6 @@ public class PropagationThread implements Runnable {
 	        blockEngine.blockUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate);
             propagateIncreases(engine, engine.getLevel(), nearestBlockRequests.blockUpdate.increaseRequests);
 	        markChangesReady(engine.lightEngine);
-//	        markChangesReady(engine.darkEngine);
             progressed = true;
         }
         return progressed;
@@ -723,7 +728,7 @@ public class PropagationThread implements Runnable {
 	        markChangesReady(engine.darkEngine);
         }
 
-        var nearestChunkResult = getNearestWaitingChunk(engine.darkEngine, engine, engine.getLevel(), player);
+        var nearestChunkResult = getNearestWaitingDarknessChunk(engine.darkEngine, engine, engine.getLevel(), player);
         var nearestBlockRequests = getNearestBlockRequests(player, blockEngine);
 
         if(nearestChunkResult != null && (nearestBlockRequests == null || nearestChunkResult.distanceBlocks() < nearestBlockRequests.distanceBlocks())) {
@@ -738,14 +743,12 @@ public class PropagationThread implements Runnable {
             }));
             propagateDarknessIncreases(engine, engine.getLevel(), increaseRequests);
             // new chunks' darkness propagation is not synchronized with main thread
-//	        applyChangesDirectly(engine, engine.lightEngine);
 	        applyChangesDirectly(engine, engine.darkEngine);
             progressed = true;
         }
         else if(nearestBlockRequests != null) {
 	        blockEngine.blockUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate);
             propagateDarknessIncreases(engine, engine.getLevel(), nearestBlockRequests.blockUpdate.increaseRequests);
-//	        markChangesReady(engine.lightEngine);
 	        markChangesReady(engine.darkEngine);
             progressed = true;
         }
