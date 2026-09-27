@@ -119,10 +119,20 @@ public class PropagationManager implements Runnable {
 	public long doWork() {
 		CLEngine engine = box.getEngine();
 		// if our engine no longer exists, or is not using this propagator anymore, then thread is ready to die
-		if (engine == null || engine.lightPropagator != this) {
+		if (engine == null) {
 			running = false;
 			return 0;
 		}
+		
+		if (engine.lightPropagator != this) {
+			running = false;
+			return 0;
+		}
+		
+		EngineParams params = new EngineParams(
+				engine.dirtySections, engine.storageLock,
+				engine.lightInterface.getFrustum(), engine.lightInterface.getStructureVersionAtomic()
+		);
 		
 		// Process delayed chunk updates
 		long now = System.currentTimeMillis();
@@ -132,7 +142,7 @@ public class PropagationManager implements Runnable {
 			if (now >= update.executeTime()) {
 				it.remove();
 				engine.pendingDelayedUpdates.remove(update.chunkPos());
-				performRegionRebuild(engine, update.chunkPos());
+				performRegionRebuild(engine.getLevel(), params, update.chunkPos());
 			}
 		}
 		
@@ -145,6 +155,7 @@ public class PropagationManager implements Runnable {
 		ColorfulLightingConfig.LightUpdateSpeed speed = ColorfulLightingConfig.lightUpdateSpeed();
 		
 		long passStartNanos = System.nanoTime();
+		boolean stillHasWork = hasWork;
 		boolean progressed = false;
 		if (hasWork) {
 			int numPropagators = propagators.size();
@@ -158,7 +169,6 @@ public class PropagationManager implements Runnable {
 			// profiling put ~16% of this thread inside Thread.sleep while work was queued.
 			long deadline = System.nanoTime() + speed.budgetNanos();
 			boolean progressedThisPass;
-			boolean stillHasWork;
 			do {
 				if (shutdown) {
 					return 0;
@@ -172,7 +182,7 @@ public class PropagationManager implements Runnable {
 						Propagator propagator = propagators.get(i);
 						
 						// do work
-						progressedThisPass = propagator.propagate(engine) | progressedThisPass;
+						progressedThisPass = propagator.propagate(engine.getLevel(), params) | progressedThisPass;
 						
 						// do we still have more work to do?
 						workCache[i] = propagator.engine.hasWork();
@@ -278,8 +288,7 @@ public class PropagationManager implements Runnable {
 			if (!hasWork) {
 				blockedSleepMillis = MIN_BLOCKED_SLEEP_MILLIS;
 				sleepMillis = IDLE_SLEEP_MILLIS;
-			} else if (engine.lightEngine.hasWork()
-					|| engine.darkEngine.hasWork()) {
+			} else if (stillHasWork) {
 				// A placed torch must light up immediately: never back off on block updates.
 				blockedSleepMillis = MIN_BLOCKED_SLEEP_MILLIS;
 				sleepMillis = MIN_BLOCKED_SLEEP_MILLIS;
@@ -304,9 +313,7 @@ public class PropagationManager implements Runnable {
     }
 
 	/* stays here */
-    private void performRegionRebuild(CLEngine engine, ChunkPos centerChunk) {
-	    LevelAccessor level = engine.getLevel();
-		
+    private void performRegionRebuild(LevelAccessor level, EngineParams engine, ChunkPos centerChunk) {
         int radius = 1; // 3x3 area
         int minChunkX = centerChunk.x - radius;
         int maxChunkX = centerChunk.x + radius;
@@ -334,7 +341,7 @@ public class PropagationManager implements Runnable {
                 }
             }
         }
-	    engine.lightInterface.incrementStructureVersion();
+	    engine.structureVersion.incrementAndGet();
 
         Queue<LightUpdateRequest>[] increaseRequests = new Queue[propagators.size()];
 	    for (int i = 0; i < increaseRequests.length; i++) {

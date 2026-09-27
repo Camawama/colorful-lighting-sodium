@@ -216,8 +216,8 @@ public abstract class ColoredLightEngine {
 		return structureVersion.get();
 	}
 	
-	public int incrementStructureVersion() {
-		return structureVersion.incrementAndGet();
+	public AtomicInteger getStructureVersionAtomic() {
+		return structureVersion;
 	}
 	
 	public int debugFallbackSamples() {

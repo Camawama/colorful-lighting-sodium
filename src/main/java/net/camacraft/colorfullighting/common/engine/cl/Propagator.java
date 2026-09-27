@@ -143,7 +143,7 @@ public abstract class Propagator {
 	/**
 	 * apply light changes in progress directly to storage
 	 */
-	public void applyChangesDirectly(CLEngine clEngine) {
+	public void applyChangesDirectly(EngineParams clEngine) {
 		if (!engine.changesInProgress.isEmpty()) {
 			synchronized (clEngine.storageLock) {
 				for (var entry : engine.changesInProgress.entrySet()) {
@@ -160,10 +160,10 @@ public abstract class Propagator {
 	 * across batches, and an add that hits an existing entry is far cheaper than growing a fresh set.
 	 * Runs on the propagator thread, after the storage writes the marks refer to.
 	 */
-	private void markDirty(CLEngine engine, Set<BlockPos> changedBlocks) {
-		synchronized (engine.dirtySections) {
+	private void markDirty(EngineParams clEngine, Set<BlockPos> changedBlocks) {
+		synchronized (clEngine.dirtySections) {
 			for (BlockPos blockPos : changedBlocks) {
-				SectionPos.aroundAndAtBlockPos(blockPos, engine.dirtySections::add);
+				SectionPos.aroundAndAtBlockPos(blockPos, clEngine.dirtySections::add);
 			}
 		}
 	}
@@ -172,7 +172,7 @@ public abstract class Propagator {
 	 * propagate light in the nearest waiting chunk, handle block light updates
 	 */
 	/** @return true when this pass actually did work; false means the queue is blocked (chunks still loading) */
-	private boolean propagateLight(CLEngine clEngine, DefaultBlockLightEngine blockEngine) {
+	private boolean propagateLight(LevelAccessor level, EngineParams clEngine, DefaultBlockLightEngine blockEngine) {
 		PlayerAccessor player = clientAccessor.getPlayer();
 		if(player == null) return false;
 		boolean progressed = false;
@@ -181,13 +181,13 @@ public abstract class Propagator {
 		if(!blockEngine.blockUpdateDecreaseRequests.isEmpty()) {
 			progressed = true;
 			Queue<CLEngineInnerClasses.LightUpdateRequest> newIncreaseRequests = new ArrayDeque<>();
-			propagateDecreases(clEngine.getLevel(), blockEngine.blockUpdateDecreaseRequests, newIncreaseRequests);
-			propagateLightIncreases(clEngine.getLevel(), newIncreaseRequests);
+			propagateDecreases(level, blockEngine.blockUpdateDecreaseRequests, newIncreaseRequests);
+			propagateLightIncreases(level, newIncreaseRequests);
 			
 			markChangesReady();
 		}
 		
-		var nearestChunkResult = getNearestWaitingChunk(clEngine.lightInterface.getFrustum(), clEngine.getLevel(), player);
+		var nearestChunkResult = getNearestWaitingChunk(clEngine.frustum, level, player);
 		var nearestBlockRequests = PropagationManager.getNearestBlockRequests(player, blockEngine);
 		
 		if(nearestChunkResult != null && (nearestBlockRequests == null || nearestChunkResult.distanceBlocks() < nearestBlockRequests.distanceBlocks())) {
@@ -197,10 +197,10 @@ public abstract class Propagator {
 			
 			Queue<CLEngineInnerClasses.LightUpdateRequest> increaseRequests = new ArrayDeque<>();
 			// find light sources and request their propagation
-			clEngine.getLevel().findLightSources(chunkPos, (blockPos -> {
-				increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, Config.getColorEmission(clEngine.getLevel(), blockPos), false, true, false));
+			level.findLightSources(chunkPos, (blockPos -> {
+				increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false, true, false));
 			}));
-			propagateLightIncreases(clEngine.getLevel(), increaseRequests);
+			propagateLightIncreases(level, increaseRequests);
 			// new chunks' light propagation is not synchronized with main thread
 			applyChangesDirectly(clEngine);
 			progressed = true;
@@ -209,7 +209,7 @@ public abstract class Propagator {
 		}
 		else if(nearestBlockRequests != null) {
 			blockEngine.blockUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate());
-			propagateLightIncreases(clEngine.getLevel(), nearestBlockRequests.blockUpdate().increaseRequests);
+			propagateLightIncreases(level, nearestBlockRequests.blockUpdate().increaseRequests);
 			markChangesReady();
 			progressed = true;
 		}
@@ -217,7 +217,7 @@ public abstract class Propagator {
 	}
 	
 	/** @return true when this pass actually did work; false means the queue is blocked (chunks still loading) */
-	private boolean propagateDarkness(CLEngine engine, DefaultBlockLightEngine blockEngine) {
+	private boolean propagateDarkness(LevelAccessor level, EngineParams clEngine, DefaultBlockLightEngine blockEngine) {
 		PlayerAccessor player = clientAccessor.getPlayer();
 		if(player == null) return false;
 		boolean progressed = false;
@@ -226,13 +226,13 @@ public abstract class Propagator {
 		if(!blockEngine.blockUpdateDecreaseRequests.isEmpty()) {
 			progressed = true;
 			Queue<CLEngineInnerClasses.LightUpdateRequest> newIncreaseRequests = new ArrayDeque<>();
-			propagateDecreases(engine.getLevel(), blockEngine.blockUpdateDecreaseRequests, newIncreaseRequests);
-			propagateDarknessIncreases(engine.getLevel(), newIncreaseRequests);
+			propagateDecreases(level, blockEngine.blockUpdateDecreaseRequests, newIncreaseRequests);
+			propagateDarknessIncreases(level, newIncreaseRequests);
 			
 			markChangesReady();
 		}
 		
-		var nearestChunkResult = getNearestWaitingChunk(engine.getInterface().getFrustum(), engine.getLevel(), player);
+		var nearestChunkResult = getNearestWaitingChunk(clEngine.frustum, level, player);
 		var nearestBlockRequests = PropagationManager.getNearestBlockRequests(player, blockEngine);
 		
 		if(nearestChunkResult != null && (nearestBlockRequests == null || nearestChunkResult.distanceBlocks() < nearestBlockRequests.distanceBlocks())) {
@@ -242,17 +242,17 @@ public abstract class Propagator {
 			
 			Queue<CLEngineInnerClasses.LightUpdateRequest> increaseRequests = new ArrayDeque<>();
 			// find darkness sources and request their propagation
-			engine.getLevel().findDarknessSources(chunkPos, (blockPos -> {
-				increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, Config.getAbsorptionColor(engine.getLevel(), blockPos), false, true, false));
+			level.findDarknessSources(chunkPos, (blockPos -> {
+				increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, Config.getAbsorptionColor(level, blockPos), false, true, false));
 			}));
-			propagateDarknessIncreases(engine.getLevel(), increaseRequests);
+			propagateDarknessIncreases(level, increaseRequests);
 			// new chunks' darkness propagation is not synchronized with main thread
-			applyChangesDirectly(engine);
+			applyChangesDirectly(clEngine);
 			progressed = true;
 		}
 		else if(nearestBlockRequests != null) {
 			blockEngine.blockUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate());
-			propagateDarknessIncreases(engine.getLevel(), nearestBlockRequests.blockUpdate().increaseRequests);
+			propagateDarknessIncreases(level, nearestBlockRequests.blockUpdate().increaseRequests);
 			markChangesReady();
 			progressed = true;
 		}
@@ -550,11 +550,11 @@ public abstract class Propagator {
 		return true;
 	}
 	
-	public boolean propagate(CLEngine clEngine) {
+	public boolean propagate(LevelAccessor level, EngineParams clEngine) {
 		if (this.engine.forLight) {
-			return propagateLight(clEngine, this.engine);
+			return propagateLight(level, clEngine, this.engine);
 		} else {
-			return propagateDarkness(clEngine, this.engine);
+			return propagateDarkness(level, clEngine, this.engine);
 		}
 	}
 	
