@@ -112,8 +112,14 @@ public class DarkPropagator extends Propagator {
 		if(!engine.blockUpdateDecreaseRequests.isEmpty()) {
 			progressed = true;
 			Queue<CLEngineInnerClasses.LightUpdateRequest> newIncreaseRequests = new ArrayDeque<>();
+			
+			engine.decreaseLock.lock();
 			propagateDecreases(level, engine.blockUpdateDecreaseRequests, newIncreaseRequests);
+			engine.decreaseLock.unlock();
+			
+			engine.increaseLock.lock();
 			propagateIncreases(level, newIncreaseRequests);
+			engine.increaseLock.unlock();
 			
 			markChangesReady();
 		}
@@ -137,8 +143,11 @@ public class DarkPropagator extends Propagator {
 			progressed = true;
 		}
 		else if(nearestBlockRequests != null) {
+			engine.increaseLock.lock();
 			engine.blockUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate());
 			propagateIncreases(level, nearestBlockRequests.blockUpdate().increaseRequests);
+			engine.decreaseLock.unlock();
+			
 			markChangesReady();
 			progressed = true;
 		}

@@ -169,8 +169,14 @@ public class LightPropagator extends Propagator {
 		if(!engine.blockUpdateDecreaseRequests.isEmpty()) {
 			progressed = true;
 			Queue<CLEngineInnerClasses.LightUpdateRequest> newIncreaseRequests = new ArrayDeque<>();
+			
+			engine.decreaseLock.lock();
 			propagateDecreases(level, engine.blockUpdateDecreaseRequests, newIncreaseRequests);
+			engine.decreaseLock.unlock();
+			
+			engine.increaseLock.lock();
 			propagateIncreases(level, newIncreaseRequests);
+			engine.increaseLock.unlock();
 			
 			markChangesReady();
 		}
@@ -196,8 +202,11 @@ public class LightPropagator extends Propagator {
 			manager.lastChunkNanos = System.nanoTime();
 		}
 		else if(nearestBlockRequests != null) {
+			engine.increaseLock.lock();
 			engine.blockUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate());
 			propagateIncreases(level, nearestBlockRequests.blockUpdate().increaseRequests);
+			engine.increaseLock.unlock();
+			
 			markChangesReady();
 			progressed = true;
 		}

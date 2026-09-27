@@ -10,12 +10,10 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Queue;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -28,9 +26,11 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 	
 	// TODO: these should be protected
 	// those first added will be executed first (this order is required by decrease propagation algorithm)
-	public final Queue<CLEngineInnerClasses.LightUpdateRequest> blockUpdateDecreaseRequests = new ConcurrentLinkedQueue<>();
+	public final Queue<CLEngineInnerClasses.LightUpdateRequest> blockUpdateDecreaseRequests = new ArrayDeque<>();
+	public final Lock decreaseLock = new ReentrantLock();
 	// those nearest to the player will be executed first
-	public final Queue<CLEngineInnerClasses.BlockRequests> blockUpdateIncreaseRequests = new ConcurrentLinkedQueue<>();
+	public final Queue<CLEngineInnerClasses.BlockRequests> blockUpdateIncreaseRequests = new ArrayDeque<>();
+	public final Lock increaseLock = new ReentrantLock();
 	// light/darkness storage
 	public final ColoredLightStorage storage = new ColoredLightStorage();
 	
@@ -46,8 +46,11 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 		
 		if(lightColor.red4 == 0 && lightColor.green4 == 0 && lightColor.blue4 == 0)
 			requestLightPullIn(requests.increaseRequests, blockPos);  // block probably destroyed/replaced with transparent, light pull in might be needed
-		else
+		else {
+			decreaseLock.lock();
 			blockUpdateDecreaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, lightColor, false)); // block probably placed/replaced with non-transparent, light might need to be decreased
+			decreaseLock.unlock();
+		}
 		
 		// propagate light if new blockState emits light (single lookup for both brightness and color)
 		BlockState blockState = level.getBlockState(blockPos);
@@ -60,7 +63,9 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 		}
 		
 		if (!requests.increaseRequests.isEmpty()) {
+			increaseLock.lock();
 			blockUpdateIncreaseRequests.add(requests);
+			increaseLock.unlock();
 		}
 	}
 	

@@ -395,6 +395,7 @@ public class PropagationManager implements Runnable {
 	public record NearestBlockRequestsResult(CLEngineInnerClasses.BlockRequests blockUpdate, int distanceBlocks) {}
 	public static NearestBlockRequestsResult getNearestBlockRequests(PlayerAccessor player, DefaultBlockLightEngine blockLightEngine) {
 		// find chunk nearest player
+		blockLightEngine.increaseLock.lock();
 		var iterator = blockLightEngine.blockUpdateIncreaseRequests.iterator();
 		int minDistance = Integer.MAX_VALUE;
 		CLEngineInnerClasses.BlockRequests nearestUpdate = null;
@@ -406,6 +407,7 @@ public class PropagationManager implements Runnable {
 				nearestUpdate = update;
 			}
 		}
+		blockLightEngine.increaseLock.unlock();
 		return nearestUpdate == null ? null : new NearestBlockRequestsResult(nearestUpdate, minDistance);
 	}
 	
