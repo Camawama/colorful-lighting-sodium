@@ -10,6 +10,8 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -26,9 +28,9 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 	
 	// TODO: these should be protected
 	// those first added will be executed first (this order is required by decrease propagation algorithm)
-	public final ConcurrentLinkedQueue<CLEngineInnerClasses.LightUpdateRequest> blockUpdateDecreaseRequests = new ConcurrentLinkedQueue<>();
+	public final Queue<CLEngineInnerClasses.LightUpdateRequest> blockUpdateDecreaseRequests = new ConcurrentLinkedQueue<>();
 	// those nearest to the player will be executed first
-	public final ConcurrentLinkedQueue<CLEngineInnerClasses.BlockRequests> blockUpdateIncreaseRequests = new ConcurrentLinkedQueue<>();
+	public final Queue<CLEngineInnerClasses.BlockRequests> blockUpdateIncreaseRequests = new ConcurrentLinkedQueue<>();
 	// light/darkness storage
 	public final ColoredLightStorage storage = new ColoredLightStorage();
 	
@@ -120,8 +122,9 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 	}
 	
 	// CODE REGION: PROPAGATION LOGIC
-	public ConcurrentHashMap<BlockPos, ColorRGB4> changesInProgress = new ConcurrentHashMap<>();
-	public final ConcurrentHashMap<BlockPos, ColorRGB4> changesReady = new ConcurrentHashMap<>();
+	public Map<BlockPos, ColorRGB4> changesInProgress = new ConcurrentHashMap<>();
+//	public final Lock changesInProgressLock = new ReentrantLock();
+	public final Map<BlockPos, ColorRGB4> changesReady = new HashMap<>();
 	public final Lock changesReadyLock = new ReentrantLock();
 	public final LongOpenHashSet readyDirtySections = new LongOpenHashSet();
 	// Sets, not queues: ConcurrentLinkedQueue.remove is O(n) and ran once per propagated chunk.
@@ -130,7 +133,6 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 	public final PropagationManager.ChunkOrder chunkOrder = new PropagationManager.ChunkOrder();
 	
 	public Propagator createPropagator(PropagationManager lightPropagator) {
-		return new Propagator(this, lightPropagator) {
-		};
+		return forLight ? new LightPropagator(this, lightPropagator) : new DarkPropagator(this, lightPropagator);
 	}
 }

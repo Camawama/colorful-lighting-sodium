@@ -167,7 +167,8 @@ public class PropagationManager implements Runnable {
 			
 			// Keep propagating for a budget instead of sleeping 1ms after every single chunk:
 			// profiling put ~16% of this thread inside Thread.sleep while work was queued.
-			long deadline = System.nanoTime() + speed.budgetNanos();
+//			long deadline = System.nanoTime() + speed.budgetNanos();
+			long deadline = Long.MAX_VALUE;
 			boolean progressedThisPass;
 			do {
 				if (shutdown) {

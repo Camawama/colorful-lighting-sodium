@@ -17,10 +17,12 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.chunk.LightChunkGetter;
 
+import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static net.camacraft.colorfullighting.common.ColoredLightEngine.MAX_BLOCKED_SLEEP_MILLIS;
 
@@ -230,7 +232,7 @@ public class CLEngine extends AbstractColoredLightEngine {
 	}
 	
 	// CODE REGION: threading logic
-	public static final boolean USE_THREAD = true;
+	public static final boolean USE_THREAD = false;
 	public volatile boolean running = true;
 	private Thread lightPropagatorThread;
 	
@@ -287,7 +289,7 @@ public class CLEngine extends AbstractColoredLightEngine {
 	}
 	
 	// CODE REGION: propagator variables
-	public final ConcurrentLinkedQueue<CLEngineInnerClasses.DelayedChunkUpdate> delayedChunkUpdates = new ConcurrentLinkedQueue<>();
+	public final Queue<CLEngineInnerClasses.DelayedChunkUpdate> delayedChunkUpdates = new ConcurrentLinkedQueue<>();
 	public final Set<ChunkPos> pendingDelayedUpdates = ConcurrentHashMap.newKeySet();
 	/**
 	 * Primitive: this fills and drains fast enough during chunk loading that boxing a Long per section
