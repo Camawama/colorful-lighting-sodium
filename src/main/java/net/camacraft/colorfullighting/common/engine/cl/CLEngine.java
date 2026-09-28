@@ -232,7 +232,7 @@ public class CLEngine extends AbstractColoredLightEngine {
 	}
 	
 	// CODE REGION: threading logic
-	public static final boolean USE_THREAD = false;
+	public static final boolean USE_THREAD = true;
 	public volatile boolean running = true;
 	private Thread lightPropagatorThread;
 	

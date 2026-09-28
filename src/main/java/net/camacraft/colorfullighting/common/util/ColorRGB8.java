@@ -1,11 +1,16 @@
 package net.camacraft.colorfullighting.common.util;
 
+// should we convert this to shorts?
 public class ColorRGB8 {
     public int red, green, blue;
 
     public static ColorRGB8 fromRGB4(ColorRGB4 value) {
         return new ColorRGB8(value.red4 * 17, value.green4 * 17, value.blue4 * 17);
     }
+	
+	public static ColorRGB8 fromRGB16(int red, int green, int blue) {
+		return new ColorRGB8(red >> 8, green >> 8, blue >> 8);
+	}
 	
     public static ColorRGB8 fromRGB4Int(int value) {
 	    int r = (value >>> 8) & 0x0F;
@@ -23,8 +28,8 @@ public class ColorRGB8 {
         this.green = green;
         this.blue = blue;
     }
-
-    public boolean isInValidState() {
+	
+	public boolean isInValidState() {
         return  red >= 0 && red < 256 &&
                 green >= 0 && green < 256 &&
                 blue >= 0 && blue < 256;

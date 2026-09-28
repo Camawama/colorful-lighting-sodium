@@ -1,5 +1,6 @@
 package net.camacraft.colorfullighting.common.util;
 
+// should we convert this to bytes?
 public class ColorRGB4 {
     public static final int SIZE = 12;
 
@@ -21,6 +22,10 @@ public class ColorRGB4 {
 
     public final int red4, green4, blue4;
 
+    public static ColorRGB4 fromRGB16(int r, int g, int b) {
+        return fromRGB4(r >> 12, g >> 12, b >> 12); // 0..255 range to 0..15 range
+    }
+	
     public static ColorRGB4 fromRGB8(int r, int g, int b) {
         return fromRGB4(r >> 4, g >> 4, b >> 4); // 0..255 range to 0..15 range
     }

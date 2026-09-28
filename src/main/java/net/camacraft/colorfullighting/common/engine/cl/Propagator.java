@@ -170,12 +170,34 @@ public abstract class Propagator {
 		}
 	}
 	
+//	int ceilMul(int a, int b) {
+//		int val = a * b;
+//		int frac = val - (val / 1000) * 1000;
+//		if (frac > 150) return val / 1000 + 1;
+//		return val / 1000;
+//	}
+	
 	protected ColorRGB4 attenuateLight(ColorRGB4 source, int lightBlocked) {
 		return ColorRGB4.fromRGB4(
 				Math.max(0, source.red4 - lightBlocked),
 				Math.max(0, source.green4 - lightBlocked),
 				Math.max(0, source.blue4 - lightBlocked)
 		);
+		
+//		int brightness = Math.max(source.red4, Math.max(source.green4, source.blue4));
+//
+//		int targetBrightness = brightness - lightBlocked;
+//		if (brightness <= 0 || targetBrightness <= 0) return ColorRGB4.fromRGB4(0, 0, 0);
+//
+//		int divis = (targetBrightness * 1000) / brightness;
+//		int frac = divis - ((divis / 10) * 10);
+//		if (frac > 0) divis += 1;
+//
+//		return ColorRGB4.fromRGB4(
+//				Math.max(0, ceilMul(source.red4, divis)),
+//				Math.max(0, ceilMul(source.green4, divis)),
+//				Math.max(0, ceilMul(source.blue4, divis))
+//		);
 	}
 	
 	/**

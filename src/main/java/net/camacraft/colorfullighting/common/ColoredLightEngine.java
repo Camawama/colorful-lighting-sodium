@@ -7,6 +7,7 @@ import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
 import net.camacraft.colorfullighting.common.engine.AbstractColoredLightEngine;
 import net.camacraft.colorfullighting.common.engine.AbstractColoredLightSection;
+import net.camacraft.colorfullighting.common.util.ColorRGB16;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
 import net.camacraft.colorfullighting.common.util.ColorRGB8;
 import net.camacraft.colorfullighting.common.util.WeakList;
@@ -327,28 +328,30 @@ public abstract class ColoredLightEngine {
         int cornerY = (int)Math.floor(pos.y);
         int cornerZ = (int)Math.floor(pos.z);
 
-        ColorRGB8 c000 = ColorRGB8.fromRGB4(sampleLightColor(cornerX, cornerY, cornerZ));
-        ColorRGB8 c100 = ColorRGB8.fromRGB4(sampleLightColor(cornerX + 1, cornerY, cornerZ));
-        ColorRGB8 c101 = ColorRGB8.fromRGB4(sampleLightColor(cornerX + 1, cornerY, cornerZ + 1));
-        ColorRGB8 c001 = ColorRGB8.fromRGB4(sampleLightColor(cornerX, cornerY, cornerZ + 1));
-        ColorRGB8 c010 = ColorRGB8.fromRGB4(sampleLightColor(cornerX, cornerY + 1, cornerZ));
-        ColorRGB8 c110 = ColorRGB8.fromRGB4(sampleLightColor(cornerX + 1, cornerY + 1, cornerZ));
-        ColorRGB8 c111 = ColorRGB8.fromRGB4(sampleLightColor(cornerX + 1, cornerY + 1, cornerZ + 1));
-        ColorRGB8 c011 = ColorRGB8.fromRGB4(sampleLightColor(cornerX, cornerY + 1, cornerZ + 1));
+		// perform interpolation in RGB16 so we have enough precision for it to be accurate
+	    // considering the RGB8 class also uses integers internally, this (at least currently) has no meaningful overhead
+        ColorRGB16 c000 = ColorRGB16.fromRGB4(sampleLightColor(cornerX, cornerY, cornerZ));
+        ColorRGB16 c100 = ColorRGB16.fromRGB4(sampleLightColor(cornerX + 1, cornerY, cornerZ));
+        ColorRGB16 c101 = ColorRGB16.fromRGB4(sampleLightColor(cornerX + 1, cornerY, cornerZ + 1));
+        ColorRGB16 c001 = ColorRGB16.fromRGB4(sampleLightColor(cornerX, cornerY, cornerZ + 1));
+        ColorRGB16 c010 = ColorRGB16.fromRGB4(sampleLightColor(cornerX, cornerY + 1, cornerZ));
+        ColorRGB16 c110 = ColorRGB16.fromRGB4(sampleLightColor(cornerX + 1, cornerY + 1, cornerZ));
+        ColorRGB16 c111 = ColorRGB16.fromRGB4(sampleLightColor(cornerX + 1, cornerY + 1, cornerZ + 1));
+        ColorRGB16 c011 = ColorRGB16.fromRGB4(sampleLightColor(cornerX, cornerY + 1, cornerZ + 1));
 
         double x = pos.x - cornerX;
         double y = pos.y - cornerY;
         double z = pos.z - cornerZ;
 
-        ColorRGB8 c00 = ColorRGB8.linearInterpolation(c000, c100, x);
-        ColorRGB8 c10 = ColorRGB8.linearInterpolation(c010, c110, x);
-        ColorRGB8 c01 = ColorRGB8.linearInterpolation(c001, c101, x);
-        ColorRGB8 c11 = ColorRGB8.linearInterpolation(c011, c111, x);
+        ColorRGB16 c00 = ColorRGB16.linearInterpolation(c000, c100, x);
+        ColorRGB16 c10 = ColorRGB16.linearInterpolation(c010, c110, x);
+        ColorRGB16 c01 = ColorRGB16.linearInterpolation(c001, c101, x);
+        ColorRGB16 c11 = ColorRGB16.linearInterpolation(c011, c111, x);
 
-        ColorRGB8 c0 = ColorRGB8.linearInterpolation(c00, c10, y);
-        ColorRGB8 c1 = ColorRGB8.linearInterpolation(c01, c11, y);
+        ColorRGB16 c0 = ColorRGB16.linearInterpolation(c00, c10, y);
+        ColorRGB16 c1 = ColorRGB16.linearInterpolation(c01, c11, y);
 
-        return ColorRGB8.linearInterpolation(c0, c1, z);
+        return ColorRGB16.linearInterpolation(c0, c1, z).toRGB8();
     }
 
     public boolean extraRegionsContainBlockInner(BlockPos pos) {
