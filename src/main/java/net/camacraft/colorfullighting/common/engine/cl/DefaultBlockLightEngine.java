@@ -122,7 +122,7 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 	}
 	
 	// CODE REGION: PROPAGATION LOGIC
-	public Map<BlockPos, ColorRGB4> changesInProgress = new ConcurrentHashMap<>();
+	public Map<BlockPos, ColorRGB4> changesInProgress = new HashMap<>();
 //	public final Lock changesInProgressLock = new ReentrantLock();
 	public final Map<BlockPos, ColorRGB4> changesReady = new HashMap<>();
 	public final Lock changesReadyLock = new ReentrantLock();

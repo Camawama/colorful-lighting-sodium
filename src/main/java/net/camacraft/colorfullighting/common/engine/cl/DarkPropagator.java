@@ -115,7 +115,7 @@ public class DarkPropagator extends Propagator {
 			propagateDecreases(level, engine.blockUpdateDecreaseRequests, newIncreaseRequests);
 			propagateIncreases(level, newIncreaseRequests);
 			
-			markChangesReady();
+//			markChangesReady();
 		}
 		
 		var nearestChunkResult = getNearestWaitingChunk(clEngine.frustum, level, player);
@@ -139,7 +139,7 @@ public class DarkPropagator extends Propagator {
 		else if(nearestBlockRequests != null) {
 			engine.blockUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate());
 			propagateIncreases(level, nearestBlockRequests.blockUpdate().increaseRequests);
-			markChangesReady();
+//			markChangesReady();
 			progressed = true;
 		}
 		return progressed;
@@ -150,5 +150,10 @@ public class DarkPropagator extends Propagator {
 		for (BlockPos blockPos : posesDark) {
 			increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, Config.getAbsorptionColor(level, blockPos), false, true, false));
 		}
+	}
+	
+	@Override
+	protected ColorRGB4 getEmission(LevelAccessor level, BlockPos neighbourPos, BlockState state) {
+		return Config.getAbsorptionColor(level, neighbourPos, state);
 	}
 }

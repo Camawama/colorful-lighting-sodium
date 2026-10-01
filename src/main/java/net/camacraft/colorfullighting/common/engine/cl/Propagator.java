@@ -1,6 +1,9 @@
 package net.camacraft.colorfullighting.common.engine.cl;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import it.unimi.dsi.fastutil.objects.Object2ObjectAVLTreeMap;
+import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
+import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import net.camacraft.colorfullighting.common.Config;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.PlayerAccessor;
@@ -12,12 +15,15 @@ import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.SectionPos;
+import net.minecraft.core.Vec3i;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
+import java.awt.*;
 import java.util.*;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static net.camacraft.colorfullighting.ColorfulLighting.clientAccessor;
@@ -25,6 +31,43 @@ import static net.camacraft.colorfullighting.ColorfulLighting.clientAccessor;
 public abstract class Propagator {
 	public final DefaultBlockLightEngine engine;
 	public final PropagationManager manager;
+	
+	static int[] kernelXs;
+	static int[] kernelYs;
+	static int[] kernelZs;
+	static int[] dists;
+	
+	static {
+		Vec3i origin = new BlockPos(0, 0, 0);
+		
+		List<BlockPos> positions = new ArrayList<>();
+		for (int x = -15; x <= 15; x++) {
+			for (int y = -15; y <= 15; y++) {
+				for (int z = -15; z <= 15; z++) {
+					BlockPos bp = new BlockPos(x, y, z);
+					if (bp.distManhattan(origin) < 16) {
+						positions.add(bp);
+					}
+				}
+			}
+		}
+		positions.sort(Comparator.comparingDouble(posA -> posA.distManhattan(origin)));
+		
+		kernelXs = new int[positions.size()];
+		kernelYs = new int[positions.size()];
+		kernelZs = new int[positions.size()];
+		dists = new int[positions.size()];
+		
+		for (int i = 0; i < positions.size(); i++) {
+			BlockPos pos = positions.get(i);
+			
+			kernelXs[i] = pos.getX();
+			kernelYs[i] = pos.getY();
+			kernelZs[i] = pos.getZ();
+			dists[i] = pos.distManhattan(origin);
+			System.out.println(dists[i]);
+		}
+	}
 	
 	public Propagator(DefaultBlockLightEngine engine, PropagationManager manager) {
 		this.engine = engine;
@@ -35,10 +78,17 @@ public abstract class Propagator {
 		ColorRGB4 inProgress = engine.changesInProgress.get(blockPos);
 		if (inProgress != null) return inProgress;
 		
-		engine.changesReadyLock.lock();
-		ColorRGB4 ready = engine.changesReady.get(blockPos);
-		engine.changesReadyLock.unlock();
-		if (ready != null) return ready;
+		if (!engine.changesReady.isEmpty()) {
+			ColorRGB4 ready;
+			try {
+				ready = engine.changesReady.get(blockPos);
+			} catch (Exception e) {
+				engine.changesReadyLock.lock();
+				ready = engine.changesReady.get(blockPos);
+				engine.changesReadyLock.unlock();
+			}
+			if (ready != null) return ready;
+		}
 		
 		return engine.getColor(blockPos);
 	}
@@ -126,7 +176,8 @@ public abstract class Propagator {
 			} finally {
 				engine.changesReadyLock.unlock();
 			}
-			engine.changesInProgress = new ConcurrentHashMap<>();
+//			engine.changesInProgress = new ConcurrentHashMap<>();
+			engine.changesInProgress.clear();
 		}
 	}
 	
@@ -227,28 +278,84 @@ public abstract class Propagator {
 	}
 	
 	protected boolean propagateDecrease(Queue<CLEngineInnerClasses.LightUpdateRequest> increaseRequests, Queue<CLEngineInnerClasses.LightUpdateRequest> decreaseRequests, CLEngineInnerClasses.LightUpdateRequest request, LevelAccessor level) {
-		ColorRGB4 oldLightColor = getLatestLightColor(request.blockPos);
-		if(oldLightColor == null) return false; // section might have got unloaded and propagation should stop
+//		ColorRGB4 oldLightColor = getLatestLightColor(request.blockPos);
+//		if(oldLightColor == null) return false; // section might have got unloaded and propagation should stop
+//
+//		int brightness = Math.max(oldLightColor.red4, Math.max(oldLightColor.green4, oldLightColor.blue4));
+//
+//		int minB = brightness;
+//
+//
+//		ColorRGB4 ref = request.lightColor;
+//		ColorRGB4[] colors = new ColorRGB4[minB + 2];
+//		for (int i = 0; i < colors.length; i++) {
+//			colors[i] = ref;
+//			ref = attenuateLight(ref, 1);
+//		}
+//
+//		int i = 0;
+//
+//		for (; i < dists.length; i++) {
+//			int dist = dists[i];
+//
+//			if (dist > (minB + 1)) {
+//				break;
+//			}
+//
+//			int offX = kernelXs[i];
+//			int offY = kernelYs[i];
+//			int offZ = kernelZs[i];
+//
+//			BlockPos neighbourPos = request.blockPos.offset(offX, offY, offZ);
+//
+//			ColorRGB4 neighbourLightColor = getLatestLightColor(neighbourPos);
+//			if(neighbourLightColor == null) continue;
+//
+//			ColorRGB4 refCurr = colors[dist];
+//
+////			int r = neighbourLightColor.red4;
+////			if (r <= refCurr.red4) r = 0;
+////			int g = neighbourLightColor.green4;
+////			if (g <= refCurr.green4) g = 0;
+////			int b = neighbourLightColor.blue4;
+////			if (b <= refCurr.blue4) b = 0;
+//			int r = 0, g = 0, b = 0;
+//
+//			ColorRGB4 color = ColorRGB4.fromRGB4(r, g, b);
+//			this.engine.changesInProgress.put(neighbourPos, color);
+////			this.engine.changesInProgress.put(neighbourPos, ColorRGB4.fromRGB4(0, 0, 0));
+//
+//			if (neighbourLightColor.red4 != 0 || neighbourLightColor.green4 != 0 || neighbourLightColor.blue4 != 0) {
+//				BlockState state = level.getBlockState(neighbourPos);
+//				if (state != null) {
+//					color = getEmission(level, neighbourPos, state);
+//					if (color != null && (color.red4 != 0 || color.blue4 != 0 || color.green4 != 0))
+//						increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(neighbourPos, color, true, false, true));
+//					else
+//						increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(neighbourPos, null, true, false, true));
+//				}
+//			}
+//		}
 		
 		this.engine.changesInProgress.put(request.blockPos, ColorRGB4.fromRGB4(0, 0, 0));
-		
+
 		BlockState blockState = level.getBlockState(request.blockPos);
 		if(blockState == null) return false; // section might have got unloaded and propagation should stop
 		// repropagate removed light (single lookup for both value and color)
 		if(engine.getValue(level, request.blockPos, blockState) > 0) {
 			increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(request.blockPos, engine.getColor(level, request.blockPos, blockState), false, true, false));
 		}
-		
+
 		// attenuation
 		ColorRGB4 neighbourLightDecrease = attenuateLight(request.lightColor, 1);
-		
+
 		// whether neighbours' light should be decreased or increased (to repropagate), true on "light edges"
 		boolean repropagateNeighbours = neighbourLightDecrease.red4 == 0 && neighbourLightDecrease.green4 == 0 && neighbourLightDecrease.blue4 == 0;
-		
+
 		for(var direction : Direction.values()) {
 			BlockPos neighbourPos = request.blockPos.relative(direction);
 			if(!level.isInBounds(neighbourPos)) continue;
-			
+
 			if(!repropagateNeighbours) {
 				// propagate decrease
 				decreaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(neighbourPos, neighbourLightDecrease, false));
@@ -256,15 +363,15 @@ public abstract class Propagator {
 			else {
 				ColorRGB4 neighbourLightColor = getLatestLightColor(neighbourPos);
 				if(neighbourLightColor == null) return false; // section might have got unloaded and propagation should stop
-				
+
 				// if neighbour doesn't have any light
 //				if(neighbourLightColor.red4 == 0 && neighbourLightColor.green4 == 0 && neighbourLightColor.blue4 == 0)
 //					continue;
-				
+
 				// if neighbor has either less or the same light as current, then there's no point in propagating
 				if (compareColors(neighbourLightColor, request.lightColor))
 					continue;
-				
+
 				// force neighbour to propagate light to the region that has been just cleared (decreased)
 				increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(neighbourPos, null, true, false, true));
 			}
@@ -283,4 +390,6 @@ public abstract class Propagator {
 	public abstract boolean propagateIncrease(Queue<CLEngineInnerClasses.LightUpdateRequest> requests, CLEngineInnerClasses.LightUpdateRequest poll, LevelAccessor level);
 	
 	public abstract void populateChunk(ChunkPos pos, List<BlockPos> posesLight, List<BlockPos> posesDark, LevelAccessor level, Queue<CLEngineInnerClasses.LightUpdateRequest> increaseRequests, boolean isCause);
+	
+	protected abstract ColorRGB4 getEmission(LevelAccessor level, BlockPos neighbourPos, BlockState state);
 }

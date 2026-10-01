@@ -36,13 +36,21 @@ public class LightPropagator extends Propagator {
 			}
 		}
 		
+		boolean nullColor = false;
+		
 		if (request.repropagate) {
 			if (request.lightColor == null) {
+				// in order for us to do anything with this if request is not forced, the old light must be different from the new light
+				// so we can assume there's no work to be done
+				if (!request.force)
+					return false;
+				
 				request.lightColor = getLatestLightColor(request.blockPos);
+				nullColor = true;
 			}
 		}
 		
-		ColorRGB4 oldLightColor = getLatestLightColor(request.blockPos);
+		ColorRGB4 oldLightColor = nullColor ? request.lightColor : getLatestLightColor(request.blockPos);
 		if(oldLightColor == null) return false; // section might have got unloaded and propagation should stop
 		ColorRGB4 newLightColor = ColorRGB4.fromRGB4(
 				Math.max(oldLightColor.red4, request.lightColor.red4),
@@ -68,33 +76,44 @@ public class LightPropagator extends Propagator {
 		boolean sourceMultiplies = sourceStateExists && !sourceBaseTransmittance.equals(ColorRGB4.WHITE)
 				&& Config.isMultiplyFilter(level, request.blockPos, sourceState);
 		
+		boolean didWork = false;
+		
 		for(var direction : Direction.values()) {
 			BlockPos neighbourPos = request.blockPos.relative(direction);
+			
+			ColorRGB4 neighborColor = getLatestLightColor(neighbourPos);
+			if (neighborColor == null) continue;
+			if (
+					neighborColor.red4 >= request.lightColor.red4 &&
+							neighborColor.green4 >= request.lightColor.green4 &&
+							neighborColor.blue4 >= request.lightColor.blue4
+			) continue;
+
 			if(!level.isInBounds(neighbourPos)) continue;
 			BlockState neighbourState = level.getBlockState(neighbourPos);
-			if(neighbourState == null) return false; // section might have got unloaded and propagation should stop
-			
+			if(neighbourState == null) continue; // section might have got unloaded and propagation should stop
+
 			// Start with vanilla light blocking
 			int lightBlocked = Math.max(1, neighbourState.getLightBlock(level.getLevel(), neighbourPos));
-			
+
 			boolean neighbourDynamic = ShapeOcclusion.isDynamicShapeBlocker(neighbourState);
-			
+
 			// Override with custom absorption if it's defined.
 			// Doors/trapdoors are handled by the panel logic below instead: their filter must
 			// apply only across the panel face, not omnidirectionally.
 			int customAbsorption = neighbourDynamic ? -1 : Config.getLightAbsorption(level, neighbourPos, neighbourState);
-			
+
 			boolean geometryOccludes = false;
 			if (sourceStateExists) {
 				boolean neighborOccludes = neighbourState.useShapeForLightOcclusion();
-				
+
 				if (sourceOccludes || neighborOccludes) {
 					VoxelShape sourceFaceShape = sourceOccludes ? sourceBlockState.getFaceOcclusionShape(level.getLevel(), request.blockPos, direction) : Shapes.empty();
 					VoxelShape neighbourFaceShape = neighborOccludes ? neighbourState.getFaceOcclusionShape(level.getLevel(), neighbourPos, direction.getOpposite()) : Shapes.empty();
 					geometryOccludes = Shapes.faceShapeOccludes(sourceFaceShape, neighbourFaceShape);
 				}
 			}
-			
+
 			if (customAbsorption >= 0) {
 				if (customAbsorption < 15) {
 					lightBlocked = Math.max(1, customAbsorption);
@@ -104,7 +123,7 @@ public class LightPropagator extends Propagator {
 			} else if (geometryOccludes) {
 				lightBlocked = 15;
 			}
-			
+
 			// Door/trapdoor panels block only the one cell face they are flush against; the
 			// other faces of the cell stay fully open. Crossing a panel face costs the block's
 			// filter absorption (partial for doors with windows), or is opaque without a filter.
@@ -118,7 +137,7 @@ public class LightPropagator extends Propagator {
 				int panelAbsorption = Config.getLightAbsorption(level, neighbourPos, neighbourState);
 				lightBlocked = Math.max(lightBlocked, panelAbsorption >= 0 ? Math.max(1, panelAbsorption) : 15);
 			}
-			
+
 			// Calculate transmittance based on both source exit and destination entry.
 			// A door/trapdoor tint likewise applies only to light crossing its panel face.
 			ColorRGB4 exitTransmittance;
@@ -139,9 +158,9 @@ public class LightPropagator extends Propagator {
 			}
 			boolean entryMultiplies = !neighbourDynamic && !entryTransmittance.equals(ColorRGB4.WHITE)
 					&& Config.isMultiplyFilter(level, neighbourPos, neighbourState);
-			
+
 			ColorRGB4 coloredLightTransmittance = ColorRGB4.min(exitTransmittance, entryMultiplies ? ColorRGB4.WHITE : entryTransmittance);
-			
+
 			ColorRGB4 attenuated = attenuateLight(request.lightColor, lightBlocked);
 			ColorRGB4 neighbourLightColor = ColorRGB4.fromRGB4(
 					MathExt.clamp(attenuated.red4, 0, coloredLightTransmittance.red4),
@@ -154,13 +173,20 @@ public class LightPropagator extends Propagator {
 			// if no more color to propagate
 			if(neighbourLightColor.red4 == 0 && neighbourLightColor.green4 == 0 && neighbourLightColor.blue4 == 0) continue;
 			
+//			ColorRGB4 neighbourLightColor = attenuateLight(request.lightColor, 1);
+			
 			increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(neighbourPos, neighbourLightColor, false));
+			
+			didWork = true;
 		}
-		return true;
+		return didWork;
 	}
 	
 	@Override
 	public boolean propagate(LevelAccessor level, EngineParams clEngine) {
+//		engine.blockUpdateIncreaseRequests.clear();
+//		engine.blockUpdateDecreaseRequests.clear();
+		
 		PlayerAccessor player = clientAccessor.getPlayer();
 		if(player == null) return false;
 		boolean progressed = false;
@@ -171,8 +197,8 @@ public class LightPropagator extends Propagator {
 			Queue<CLEngineInnerClasses.LightUpdateRequest> newIncreaseRequests = new ArrayDeque<>();
 			propagateDecreases(level, engine.blockUpdateDecreaseRequests, newIncreaseRequests);
 			propagateIncreases(level, newIncreaseRequests);
-			
-			markChangesReady();
+
+//			markChangesReady();
 		}
 		
 		var nearestChunkResult = getNearestWaitingChunk(clEngine.frustum, level, player);
@@ -198,7 +224,7 @@ public class LightPropagator extends Propagator {
 		else if(nearestBlockRequests != null) {
 			engine.blockUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate());
 			propagateIncreases(level, nearestBlockRequests.blockUpdate().increaseRequests);
-			markChangesReady();
+//			markChangesReady();
 			progressed = true;
 		}
 		return progressed;
@@ -209,5 +235,10 @@ public class LightPropagator extends Propagator {
 		for (BlockPos blockPos : posesLight) {
 			increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false, true, false));
 		}
+	}
+	
+	@Override
+	protected ColorRGB4 getEmission(LevelAccessor level, BlockPos neighbourPos, BlockState state) {
+		return Config.getColorEmission(level, neighbourPos, state);
 	}
 }

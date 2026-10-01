@@ -195,6 +195,10 @@ public class PropagationManager implements Runnable {
 				
 				// stop early when nothing moved: the queue is waiting on chunks to load
 			} while (running && progressedThisPass && (hasWork) && System.nanoTime() < deadline);
+			
+			for (Propagator propagator : propagators) {
+				propagator.markChangesReady();
+			}
 		} else {
 			// If idle, check if we have sections to rebuild from explosions
 			if (!engine.sectionsToRebuildLater.isEmpty()) {
