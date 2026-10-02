@@ -1,4 +1,4 @@
-package net.camacraft.colorfullighting.mixin;
+package net.camacraft.colorfullighting.mixin.engine;
 
 import net.camacraft.colorfullighting.common.ColoredLightEngine;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;

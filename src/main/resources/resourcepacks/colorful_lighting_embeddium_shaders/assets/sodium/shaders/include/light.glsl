@@ -1,4 +1,4 @@
-uniform float u_NightVibrancy;
+uniform float colorfullighting_mod_injected_u_NightVibrancy;
 uniform float u_ColoredLightingEnabled;
 
 // --- COLORFUL LIGHTING START ---
@@ -14,7 +14,7 @@ vec4 _sample_colored_common(sampler2D lightMap, uint sl4, uint red8, uint green8
         _sample_lightmap_vanilla(lightMap, ivec2(int(blue8), 0)).r
     );
 
-    float moonWashoutFactor = mix(1.0, 0.0, u_NightVibrancy);
+    float moonWashoutFactor = mix(1.0, 0.0, colorfullighting_mod_injected_u_NightVibrancy);
     float skyExposure = float(sl4) / 16.0;
     float effectiveSkyBrightness = sky.r * moonWashoutFactor * skyExposure;
     float washFactor = max(0.1, 1.0 - effectiveSkyBrightness);
@@ -25,6 +25,10 @@ vec4 _sample_colored_common(sampler2D lightMap, uint sl4, uint red8, uint green8
 }
 
 vec4 _sample_lightmap(sampler2D lightMap, ivec2 uv) {
+//    if (true) {
+//        return vec4(vec3(colorfullighting_mod_injected_u_NightVibrancy), 1.0);
+//    }
+
     uint packed_light;
     #ifdef USE_VERTEX_COMPRESSION
     packed_light = (uint(uv.y) << 16) | uint(uv.x);

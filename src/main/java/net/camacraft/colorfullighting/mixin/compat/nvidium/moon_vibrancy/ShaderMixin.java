@@ -19,7 +19,7 @@ public class ShaderMixin implements ChunkShaderInterfaceExtension {
 	
 	@Inject(method = "<init>", at = @At("RETURN"))
 	private void onInit(int program, CallbackInfo ci) {
-		unightVibrancy = GL20.glGetUniformLocation(program, "u_NightVibrancy");
+		unightVibrancy = GL20.glGetUniformLocation(program, "colorfullighting_mod_injected_u_NightVibrancy");
 	}
 	
 	@Override
@@ -34,6 +34,6 @@ public class ShaderMixin implements ChunkShaderInterfaceExtension {
 	
 	@Override
 	public void onShaderReload() {
-		unightVibrancy = GL20.glGetUniformLocation(((GlObject) (Object) this).getId(), "u_NightVibrancy");
+		unightVibrancy = GL20.glGetUniformLocation(((GlObject) (Object) this).getId(), "colorfullighting_mod_injected_u_NightVibrancy");
 	}
 }

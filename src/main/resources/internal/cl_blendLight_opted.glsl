@@ -1,5 +1,6 @@
 /* additional helper methods are added if the shader dev has made changes to support colored lighting */
 
+uniform float colorfullighting_mod_injected_u_NightVibrancy;
 
 // feel free to copy, edit, and use these functions in your own shaders, if the provided methods aren't usable for your purposes
 vec4 cl_sampleSky(sampler2D lm, vec2 lmcoord) {
@@ -21,9 +22,15 @@ vec3 cl_sampleColor(sampler2D lm, vec3 tintColor) {
 }
 
 vec4 cl_blendLight(sampler2D lm, vec2 lmcoord, vec3 tintColor) {
-    vec4 sky = cl_sampleSky(lm, lmcoord);
+    vec3 sky = cl_sampleSky(lm, lmcoord).xyz;
     vec3 block = cl_sampleColor(lm, tintColor);
 
-    float wash = max(0.1, 1.0 - max(sky.r, max(sky.g, sky.b)));
-    return vec4(sky.rgb + block * wash, 1.0);
+    float moonWashoutFactor = mix(1.0, 0.0, colorfullighting_mod_injected_u_NightVibrancy);
+    float skyExposure = lmcoord.y;
+    float effectiveSkyBrightness = sky.r * moonWashoutFactor * skyExposure;
+    float washFactor = max(0.1, 1.0 - effectiveSkyBrightness);
+
+    block = mix(vec3(length(block)), block, washFactor * 0.25 + 0.75);
+
+    return vec4(sky + block * (max(0.1, 1.0 - sky.r) * 0.9 + 0.1), 1.0);
 }

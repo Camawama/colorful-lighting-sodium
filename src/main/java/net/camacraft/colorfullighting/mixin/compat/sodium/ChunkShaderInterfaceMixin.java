@@ -63,7 +63,7 @@ public class ChunkShaderInterfaceMixin implements ChunkShaderInterfaceExtension 
 
         if (this.uniformNightVibrancy == null) {
             try {
-                this.uniformNightVibrancy = context.bindUniform("u_NightVibrancy", GlUniformFloat::new);
+                this.uniformNightVibrancy = context.bindUniform("colorfullighting_mod_injected_u_NightVibrancy", GlUniformFloat::new);
             } catch (NullPointerException ignored) {
                 // Uniform missing; we will retry after the next resource reload.
             }

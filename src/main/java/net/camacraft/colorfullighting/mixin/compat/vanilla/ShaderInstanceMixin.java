@@ -67,6 +67,7 @@ public abstract class ShaderInstanceMixin implements CLExtendedShader {
 		int i = Uniform.getTypeFromString(dtype);
 		ShaderInstance par = (ShaderInstance) (Object) this;
 		Uniform u = new Uniform(name, i, vecSize, par);
+		u.setLocation(k);
 		uniforms.add(u);
 		uniformLocations.add(k);
 		uniformMap.put(name, u);

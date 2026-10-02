@@ -8,6 +8,10 @@ import net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat;
 import net.camacraft.colorfullighting.compat.flywheel.FlywheelCompat;
 import net.camacraft.colorfullighting.compat.valkyrienskies.VsCompat;
 
+/**
+ * Anything implementing level attachments should also implement {@link net.camacraft.colorfullighting.compat.CompatRegistry}
+ * If you are making a wrapper level, you should probably implement {@link net.camacraft.colorfullighting.api.CLWrapperAttachments} instead
+ */
 public interface LevelAttachments {
 	ColoredLightEngine colorfullighting$getEngine();
 

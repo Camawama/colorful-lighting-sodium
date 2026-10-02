@@ -1,12 +1,10 @@
 package net.camacraft.colorfullighting.common;
 
 import net.camacraft.colorfullighting.ColorfulLighting;
-import net.camacraft.colorfullighting.common.accessors.*;
 import net.camacraft.colorfullighting.common.accessors.BlockStateAccessor;
 import net.camacraft.colorfullighting.common.accessors.ClientAccessor;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
-import net.camacraft.colorfullighting.common.util.*;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
 import net.camacraft.colorfullighting.common.util.ColorRGB8;
 import net.camacraft.colorfullighting.common.util.WeakList;

@@ -4,6 +4,7 @@ import net.camacraft.colorfullighting.common.BlockEntityNbtCache;
 import net.camacraft.colorfullighting.common.ColoredLightEngine;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
+import net.camacraft.colorfullighting.compat.CompatRegistry;
 import net.camacraft.colorfullighting.compat.distanthorizons.DhColorCache;
 import net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat;
 import net.camacraft.colorfullighting.compat.flywheel.FlywheelCompat;
@@ -20,7 +21,7 @@ import net.minecraft.world.level.Level;
  *
  * Additionally, when utilizing any of these methods, you should be using {@link LevelAttachments}, you should not cast to a LevelWrapper, as doing so provides no real benefit, and makes your code more prone to errors.
  */
-public interface CLWrapperAttachments extends LevelAttachments {
+public interface CLWrapperAttachments extends LevelAttachments, CompatRegistry<Level> {
 	Level colorfullighting$getWrappedLevel();
 
 	private LevelAttachments wrapped() {
@@ -65,5 +66,10 @@ public interface CLWrapperAttachments extends LevelAttachments {
 	@Override
 	default void colorfullighting$setDhColorCache(DhColorCache cache) {
 		wrapped().colorfullighting$setDhColorCache(cache);
+	}
+	
+	@Override
+	default <T> T colorfullighting$getCompatInstance(CompatKey<Level, T> key) {
+		return ((CompatRegistry<Level>) wrapped()).colorfullighting$getCompatInstance(key);
 	}
 }
