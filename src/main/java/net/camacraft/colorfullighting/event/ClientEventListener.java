@@ -279,6 +279,20 @@ public class ClientEventListener {
                                             return 1;
                                         })
                                 )
+                                // Automatic emitter colors of one mod's light sources (liquids included),
+                                // the whole list in the log, a summary in chat.
+                                .then(Commands.literal("autocolor")
+                                        .then(Commands.argument("namespace", com.mojang.brigadier.arguments.StringArgumentType.word())
+                                                .executes(context -> {
+                                                    String ns = com.mojang.brigadier.arguments.StringArgumentType.getString(context, "namespace");
+                                                    String report = net.camacraft.colorfullighting.common.AutoEmitterColors.describe(ns);
+                                                    ColorfulLighting.LOGGER.info("[CL autocolor] {}", report);
+                                                    String first = report.lines().findFirst().orElse(report);
+                                                    context.getSource().sendSuccess(() -> Component.literal(first + " (details in the log)"), false);
+                                                    return 1;
+                                                })
+                                        )
+                                )
                                 .then(Commands.literal("patchshaders")
                                         .executes(context -> {
                                             context.getSource().sendSuccess(() -> Component.literal("Patching shaderpacks for Colorful Lighting..."), false);

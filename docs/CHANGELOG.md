@@ -6,6 +6,11 @@ Planned
 - keep Valkyrien Skies compatibility on every version where VS exists
 - add Sable / Create Aeronautics compatibility alongside Valkyrien Skies where possible
 
+2026-10-02
+- fixed light-emitting liquids from mods (e.g. Flow Fun!) lighting the world plain white with autoEmitterColors on: a liquid block has no real model (most mods' fluid blocks only name water's grey texture as their particle) and is tinted by its fluid type, not a block color provider. Liquids now take their color from the fluid's still texture under the fluid type's tint (Enchanted Water purple, Liquid Experience green, Soul Essence teal instead of white); configured emitters.json colors still win
+- automatic liquid colors follow the block state: a burning liquid glows in its flames' color and Flow Fun!'s Liquid Redstone in its power's, and a change between two states that only differ in color is relit (the old and new state are each judged as themselves, not by what the level already holds)
+- added "/cl debug autocolor <namespace>": the light color of every light-emitting block state of a mod, in the log
+
 2026-09-05
 - fixed colored light being wiped and fully re-propagated (all chunks re-meshing) after walking through an Immersive Portals portal
 - added True Darkness compatibility: its darkening now follows the dimension being rendered, so a dark Nether no longer blacks out the Overworld seen through an Immersive Portals portal

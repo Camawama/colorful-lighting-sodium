@@ -105,6 +105,12 @@ block's actual position — made for blocks whose color changes with position or
 Better End's aurora crystals. Light sources with no entry at all get the same treatment
 automatically unless you turn off `autoEmitterColors` in the client config.
 
+Liquids are sampled from their fluid's still texture under the fluid type's tint rather than
+from their (empty) block model, per block state: a liquid whose look follows its state (a burning
+liquid, Flow Fun!'s Liquid Redstone by its power) glows in the color of that state.
+`/cl debug autocolor <namespace>` lists the light color of every light-emitting block state of a
+mod in the log.
+
 ### Block State Format
 
 You can define different colors for different block states.
