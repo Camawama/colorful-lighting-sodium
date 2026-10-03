@@ -127,6 +127,12 @@ void _flw_main() {
         // START colorful lighting
         ColoredLightFloatData data = v_lightColor.data;
         if(data.alpha > 0.0) {
+            // Sky light is flywheel's own for this fragment (the instance's light, or the per-fragment
+            // light of an embedded visual such as a Create contraption); only the block light is
+            // replaced by the colour. The per-vertex sky lookup this replaces read the cell a vertex
+            // floors into, which for an embedded mesh is often the wrong one, and drew contraptions
+            // with almost no sky: black by day without a lamp nearby, lamp-coloured with one.
+            data.skyLight = clamp(flw_fragLight.y * (16.0 / 15.0), 0.0, 1.0);
             lightColor = mixColoredLightWithLightMap(flw_lightTex, data);
         }
         // END colorful lighting

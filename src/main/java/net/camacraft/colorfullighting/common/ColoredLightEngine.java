@@ -383,6 +383,78 @@ public class ColoredLightEngine {
         return red << 8 | green << 4 | blue;
     }
 
+    /** Blocks along one side of the box {@link #sampleSectionBoxPacked} fills: a section and a one-block border. */
+    public static final int SECTION_BOX = 18;
+
+    /**
+     * {@link #sampleLightColorPacked(SectionCursor, int, int, int)} for every block of the 18x18x18 box round a
+     * section (the section and a one-block border, Flywheel's light-section layout), into {@code out} at
+     * {@code (x + 1) + (z + 1) * 18 + (y + 1) * 324}. The same values block by block, but each of the 27 sections the
+     * box touches is looked up once: sampling the box block by block walked x from -1 to 16 and left the cached
+     * section on nearly every row, about a thousand concurrent-map lookups a section (Flywheel's colored light,
+     * recollected for every light update near a contraption: the owner's lag holding a dynamic light, 2026-10-03).
+     *
+     * @param out at least 18 * 18 * 18 entries
+     */
+    public void sampleSectionBoxPacked(long section, int[] out) {
+        if (!enabled) {
+            Arrays.fill(out, 0, SECTION_BOX * SECTION_BOX * SECTION_BOX, 0);
+            return;
+        }
+        SectionCursor cursor = sectionCursor.get();
+        int baseX = SectionPos.sectionToBlockCoord(SectionPos.x(section));
+        int baseY = SectionPos.sectionToBlockCoord(SectionPos.y(section));
+        int baseZ = SectionPos.sectionToBlockCoord(SectionPos.z(section));
+        for (int sy = -1; sy <= 1; sy++) {
+            for (int sz = -1; sz <= 1; sz++) {
+                for (int sx = -1; sx <= 1; sx++) {
+                    long neighbour = SectionPos.offset(section, sx, sy, sz);
+                    ColoredLightSection light = storage.getSection(neighbour);
+                    ColoredLightSection darkness = darknessStorage.getSection(neighbour);
+                    // the cells of the box in this section: its last layer (-1), all 16 (0) or its first layer (+1)
+                    int y0 = sy > 0 ? 0 : sy < 0 ? 15 : 0, y1 = sy < 0 ? 15 : sy > 0 ? 0 : 15;
+                    int z0 = sz > 0 ? 0 : sz < 0 ? 15 : 0, z1 = sz < 0 ? 15 : sz > 0 ? 0 : 15;
+                    int x0 = sx > 0 ? 0 : sx < 0 ? 15 : 0, x1 = sx < 0 ? 15 : sx > 0 ? 0 : 15;
+                    for (int ly = y0; ly <= y1; ly++) {
+                        int boxY = ly + sy * 16 + 1;
+                        for (int lz = z0; lz <= z1; lz++) {
+                            int boxZ = lz + sz * 16 + 1;
+                            int row = boxZ * SECTION_BOX + boxY * SECTION_BOX * SECTION_BOX;
+                            for (int lx = x0; lx <= x1; lx++) {
+                                int colorIndex = ColoredLightSection.getColorIndex(lx, ly, lz);
+                                int x = baseX + sx * 16 + lx, y = baseY + sy * 16 + ly, z = baseZ + sz * 16 + lz;
+                                int lightPacked;
+                                int darknessPacked;
+                                if (light == null && darkness == null) {
+                                    lightPacked = vanillaBlockLightAsWhitePacked(cursor, x, y, z);
+                                    darknessPacked = 0;
+                                } else {
+                                    lightPacked = light == null ? 0 : light.getPacked(colorIndex);
+                                    darknessPacked = darkness == null ? 0 : darkness.getPacked(colorIndex);
+                                }
+                                if (dynamicLights != null) {
+                                    lightPacked = dynamicLights.maxWithDynamicLightPacked(x, y, z, lightPacked);
+                                }
+                                int value;
+                                if (lightPacked == 0 || lightPacked == darknessPacked) {
+                                    value = 0;
+                                } else if (darknessPacked == 0) {
+                                    value = lightPacked;
+                                } else {
+                                    int red = Math.max(0, ((lightPacked >>> 8) & 0x0F) - ((darknessPacked >>> 8) & 0x0F));
+                                    int green = Math.max(0, ((lightPacked >>> 4) & 0x0F) - ((darknessPacked >>> 4) & 0x0F));
+                                    int blue = Math.max(0, (lightPacked & 0x0F) - (darknessPacked & 0x0F));
+                                    value = red << 8 | green << 4 | blue;
+                                }
+                                out[(lx + sx * 16 + 1) + row] = value;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /**
      * Vanilla block light at the position, as a packed white 12-bit colour. Reading the client light
      * engine from Sodium's chunk-build workers matches what vanilla meshing does (RenderChunkRegion

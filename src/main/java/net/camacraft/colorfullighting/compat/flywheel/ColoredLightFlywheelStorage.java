@@ -9,6 +9,9 @@ import dev.engine_room.flywheel.backend.gl.buffer.GlBufferType;
 import dev.engine_room.flywheel.backend.gl.buffer.GlBufferUsage;
 import it.unimi.dsi.fastutil.longs.Long2IntMap;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongIterator;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.camacraft.colorfullighting.ColorfulLighting;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelAccessor;
@@ -54,9 +57,27 @@ public class ColoredLightFlywheelStorage {
     private final SlowLightCollector collector;
 
     /**
+     * Sections whose colored light is to be collected at the next upload, and the subset never collected since their
+     * slot was allocated (collected at that upload whatever happened this tick: the slot may still hold a freed
+     * section's data). Flywheel asks for a section on its frame-plan worker (LightStorage#collectSection, for every
+     * light update within a section of it) and this engine asks again from the render thread once its own
+     * propagation lands a frame or two later; both used to sample the whole 18x18x18 box straight away, so walking
+     * with a moving light by a contraption sampled each section near it twice a tick, part of it on the render
+     * thread while the frame plan wrote this storage from the worker. Now a request only marks the section, the
+     * upload (render thread) collects, and a section collected this tick waits for the next: at most once a tick, at
+     * most a tick late. Everything that touches the arena, the map or these sets holds this storage's lock.
+     */
+    private final LongOpenHashSet pending = new LongOpenHashSet();
+    private final LongOpenHashSet fresh = new LongOpenHashSet();
+    /** When each section was last collected, in 50 ms steps of {@link System#nanoTime()} (a client tick). */
+    private final Long2LongOpenHashMap collectedAt = new Long2LongOpenHashMap();
+    private static final long TICK_NANOS = 50_000_000L;
+
+    /**
      * GLSL 430+ path: a plain mutable buffer bound as an SSBO. Created lazily with GL ≤4.3 calls
      * (never flywheel's ResizableStorageArray, whose constructor needs GL 4.5 DSA). 0 in fallback
-     * mode. Everything in this class runs on the render thread.
+     * mode. GL work runs on the render thread; the section bookkeeping is also reached from Flywheel's frame-plan
+     * worker (collectSection, removeSection), hence the lock.
      */
     private int ssboHandle;
     private long ssboByteCapacity;
@@ -108,8 +129,11 @@ public class ColoredLightFlywheelStorage {
         return arena.capacity();
     }
 
-    public void delete() {
+    public synchronized void delete() {
         if (deleted) return;
+        pending.clear();
+        fresh.clear();
+        collectedAt.clear();
         arena.delete();
         if (fallbackTexture != null) {
             fallbackTexture.delete();
@@ -137,39 +161,67 @@ public class ColoredLightFlywheelStorage {
         if (out == INVALID_SECTION) {
             out = arena.alloc();
             section2ArenaIndex.put(section, out);
+            fresh.add(section);
         }
         return out;
     }
 
-    public void removeSection(long section) {
+    public synchronized void removeSection(long section) {
 	    if (level == null) return;
         if (deleted) return;
+        pending.remove(section);
+        fresh.remove(section);
+        collectedAt.remove(section);
         int index = section2ArenaIndex.remove(section);
         if (index != INVALID_SECTION) {
             arena.free(index);
         }
     }
 
-    public void collectSection(long section) {
+    /**
+     * Flywheel collected {@code section} (LightStorage#collectSection, on its frame-plan worker): its slot is
+     * allocated now, in the same order as Flywheel's own, which keeps the indices in step with Flywheel's LightLut;
+     * its colored light is collected at the next upload.
+     */
+    public synchronized void collectSection(long section) {
 	    if (level == null) return;
         if (deleted) return;
-        int index = indexForSection(section);
-
-        changed.set(index);
-
-        long ptr = arena.indexToPointer(index);
-
-        // Zero it out first. This is basically free and makes it easier to handle missing sections later.
-        MemoryUtil.memSet(ptr, 0, SECTION_SIZE_BYTES);
-
-        collector.collectLightData(ptr, section);
+        indexForSection(section);
+        pending.add(section);
     }
 
-    public void recollectSectionIfTracked(long section) {
+    /** This engine's colored light changed in {@code section} (render thread): collected at an upload if Flywheel tracks it. */
+    public synchronized void recollectSectionIfTracked(long section) {
 	    if (level == null) return;
         if (deleted) return;
         if (!section2ArenaIndex.containsKey(section)) return;
-        collectSection(section);
+        pending.add(section);
+    }
+
+    /**
+     * Collects the pending sections' colored light (render thread, at upload, holding the lock): every fresh one,
+     * and every other one not collected yet this tick; the rest stay pending for the next tick's first upload.
+     */
+    private void collectPending() {
+        if (pending.isEmpty()) return;
+        long tick = System.nanoTime() / TICK_NANOS;
+        for (LongIterator it = pending.iterator(); it.hasNext(); ) {
+            long section = it.nextLong();
+            int index = section2ArenaIndex.get(section);
+            if (index == INVALID_SECTION) {
+                it.remove();
+                continue;
+            }
+            boolean isFresh = fresh.remove(section);
+            if (!isFresh && collectedAt.containsKey(section) && collectedAt.get(section) == tick) continue;
+            it.remove();
+            collectedAt.put(section, tick);
+            changed.set(index);
+            long ptr = arena.indexToPointer(index);
+            // Zero it out first. This is basically free and makes it easier to handle missing sections later.
+            MemoryUtil.memSet(ptr, 0, SECTION_SIZE_BYTES);
+            collector.collectLightData(ptr, section);
+        }
     }
 
     /**
@@ -177,11 +229,13 @@ public class ColoredLightFlywheelStorage {
      * normal refresh path) is gated on the engine being enabled, so without this the GPU
      * buffers would keep the last collected colored light forever after a disable.
      */
-    public void recollectAllTracked() {
+    public synchronized void recollectAllTracked() {
 	    if (level == null) return;
         if (deleted) return;
         for (long section : section2ArenaIndex.keySet().toLongArray()) {
-            collectSection(section);
+            // collected at the next upload whatever this tick held: the engine was just switched
+            pending.add(section);
+            fresh.add(section);
         }
     }
 
@@ -204,9 +258,10 @@ public class ColoredLightFlywheelStorage {
         changed.set(0, capacity());
     }
 
-    public void uploadChangedSections(StagingBuffer staging) {
+    public synchronized void uploadChangedSections(StagingBuffer staging) {
 	    if (level == null) return;
         if (deleted) return;
+        collectPending();
         ensureSsboCapacity();
         for (int i = changed.nextSetBit(0); i >= 0; i = changed.nextSetBit(i + 1)) {
             staging.enqueueCopy(arena.indexToPointer(i), SECTION_SIZE_BYTES, ssboHandle, (long) i * SECTION_SIZE_BYTES);
@@ -220,9 +275,10 @@ public class ColoredLightFlywheelStorage {
      * GlStateTracker always sees our binds; growth is one full re-upload from the CPU arena,
      * which always holds all the data.
      */
-    public void uploadChangedSectionsDirect() {
+    public synchronized void uploadChangedSectionsDirect() {
 	    if (level == null) return;
         if (deleted) return;
+        collectPending();
         if (changed.isEmpty()) return;
 
         if (fallbackBuffer != null) {
@@ -257,7 +313,7 @@ public class ColoredLightFlywheelStorage {
         changed.clear();
     }
 
-    public void bindBuffers() {
+    public synchronized void bindBuffers() {
 	    if (deleted) return;
         if (fallbackTexture != null) {
             // mirrors InstancedLight.bind: tracked active-texture switch, re-attach every bind
@@ -275,7 +331,7 @@ public class ColoredLightFlywheelStorage {
      * collector produced; GPU-nonzero reads the same range back from the buffer — a mismatch means
      * the upload is broken, matching zeros mean the loss is at bind/uniform/shader level.
      */
-    public String debugReport() {
+    public synchronized String debugReport() {
         if (deleted) return "storage is deleted";
         int tracked = section2ArenaIndex.size();
         if (fallbackBuffer == null) {

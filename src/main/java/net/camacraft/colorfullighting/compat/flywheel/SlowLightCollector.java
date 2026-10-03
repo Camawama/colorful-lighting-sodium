@@ -34,20 +34,19 @@ public class SlowLightCollector {
         // painting Overworld colors onto Nether-side flywheel objects and vice versa.
         if (engine == null || !ColoredLightEngine.isEnabled()) return;
 
-        var blockPos = new BlockPos.MutableBlockPos();
-        int xMin = SectionPos.sectionToBlockCoord(SectionPos.x(section));
-        int yMin = SectionPos.sectionToBlockCoord(SectionPos.y(section));
-        int zMin = SectionPos.sectionToBlockCoord(SectionPos.z(section));
-
-        for (int y = -1; y < 17; y++) {
-            for (int z = -1; z < 17; z++) {
-                for (int x = -1; x < 17; x++) {
-                    blockPos.set(xMin + x, yMin + y, zMin + z);
-                    write(ptr, x, y, z, engine.sampleLightColor(blockPos));
-                }
-            }
+        // the whole 18x18x18 box at once (each section the box touches looked up once), then the same packed
+        // value per block that write(..., engine.sampleLightColor(pos)) gave: alpha 15, RGB4 scaled to RGB8
+        engine.sampleSectionBoxPacked(section, box);
+        for (int i = 0; i < BOX_BLOCKS; i++) {
+            int rgb4 = box[i];
+            MemoryUtil.memPutInt(ptr + (long) i * 4, (rgb4 >>> 8 & 0x0F) * 17 | ((rgb4 >>> 4 & 0x0F) * 17) << 8
+                    | ((rgb4 & 0x0F) * 17) << 20 | 15 << 28);
         }
     }
+
+    private static final int BOX_BLOCKS = ColoredLightEngine.SECTION_BOX * ColoredLightEngine.SECTION_BOX * ColoredLightEngine.SECTION_BOX;
+    /** The box being written (render thread: collections run at upload, see ColoredLightFlywheelStorage). */
+    private final int[] box = new int[BOX_BLOCKS];
 
     protected static void write(long ptr, int x, int y, int z, ColorRGB4 color) {
         int x1 = x + 1;
