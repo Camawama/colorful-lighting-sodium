@@ -41,6 +41,9 @@ public class FlywheelCompat {
             ColorfulLighting.LOGGER.warn("Flywheel is installed but not a supported version; colored light on flywheel-rendered objects is disabled");
             return;
         }
+        // no shader copies for this Flywheel's internal shaders (InternalPackRegistration logged why): nothing would
+        // read the colored sections, so none are kept
+        if (!net.camacraft.colorfullighting.resourcemanager.InternalPackRegistration.flywheelShadersActive()) return;
         RenderSystem.recordRenderCall(() -> {
 	        isAvailable = net.minecraftforge.fml.ModList.get().isLoaded("flywheel");
 			

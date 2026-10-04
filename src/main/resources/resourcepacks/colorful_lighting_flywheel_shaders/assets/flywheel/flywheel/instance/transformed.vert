@@ -1,11 +1,5 @@
 #include "colorful_lighting:colored_light.glsl"
 
-// START colorful lighting
-#ifdef FLW_EMBEDDED
-mat4 modelMatrix;
-#endif
-// END colorful lighting
-
 void flw_instanceVertex(in FlwInstance i) {
     flw_vertexPos = i.pose * flw_vertexPos;
     flw_vertexNormal = mat3(transpose(inverse(i.pose))) * flw_vertexNormal;

@@ -85,14 +85,32 @@ public class InternalPackRegistration {
 				    false
 		    ));
 	    }
-//	    if (ModList.get().isLoaded("flywheel")) {
-//		    registerPacks.add(makePack(
-//				    ResourceLocation.parse("colorful_lighting:colorful_lighting_flw_shaders"),
-//				    Component.literal("Colorful Lighting Flywheel Assets"),
-//				    false
-//		    ));
-//	    }
-		
+	    // Flywheel's shaders: the overrides that are the same for every supported Flywheel (instance shaders, fragment
+	    // stage, the colored light includes), plus Flywheel's own internal vertex shaders with Colorful Lighting's lines,
+	    // taken from the copy written for exactly the shaders this Flywheel ships. A stale copy (the 1.0.5 one under
+	    // Flywheel 1.0.6) and an embedded pipeline it didn't cover failed to compile and dropped Flywheel to 'off' for the
+	    // whole session; a Flywheel whose internal shaders match no copy now gets no overrides and keeps its own lighting.
+	    if (ModList.get().isLoaded("flywheel")) {
+		    flywheelShaderFamily = findFlywheelShaderFamily();
+		    if (flywheelShaderFamily != null) {
+			    registerPacks.add(makePack(
+					    ResourceLocation.parse("colorful_lighting:colorful_lighting_flywheel_shaders"),
+					    Component.literal("Colorful Lighting Flywheel Shaders"),
+					    false
+			    ));
+			    registerPacks.add(makePack(
+					    ResourceLocation.parse("colorful_lighting:colorful_lighting_flywheel_shaders_" + flywheelShaderFamily),
+					    Component.literal("Colorful Lighting Flywheel Shaders (" + flywheelShaderFamily + ")"),
+					    false
+			    ));
+			    ColorfulLighting.LOGGER.info("Flywheel ships the {} internal shaders; colored light on Flywheel-rendered objects uses the matching shader copies",
+					    flywheelShaderFamily);
+		    } else {
+			    ColorfulLighting.LOGGER.warn(
+					    "Flywheel ships internal shaders Colorful Lighting has no patched copy of (Flywheel updated?); Flywheel-rendered objects keep Flywheel's own lighting");
+		    }
+	    }
+
 	    bus.addListener(EventPriority.LOWEST, InternalPackRegistration::addPackFinders);
     }
 	
@@ -200,6 +218,37 @@ public class InternalPackRegistration {
             ColorfulLighting.LOGGER.warn("Could not inspect HBM Modernized's shaders", e);
             return false;
         }
+    }
+
+    /**
+     * The Flywheel shader families Colorful Lighting has patched copies of, newest first: {@code fw106} for Flywheel
+     * 1.0.6 (builds 280 on: {@code flw_vertexId} counts from the model's base vertex), {@code fw105} for 1.0.4, 1.0.5
+     * and the 1.0.6 betas. {@code /internal/flywheel_reference_<family>_*.vert} are Flywheel's own files for each.
+     */
+    private static final String[] FLYWHEEL_SHADER_FAMILIES = {"fw106", "fw105"};
+    /** The family whose copies are loaded, or null (no Flywheel, or one Colorful Lighting has no copies for). */
+    private static String flywheelShaderFamily;
+
+    /** Whether Colorful Lighting's Flywheel shader copies are loaded (FlywheelCompat stays off without them). */
+    public static boolean flywheelShadersActive() {
+        return flywheelShaderFamily != null;
+    }
+
+    /** The family whose reference copies match the internal vertex shaders the loaded Flywheel ships, or null. */
+    private static String findFlywheelShaderFamily() {
+        try {
+            Path internal = ModList.get().getModFileById("flywheel").getFile()
+                    .findResource("assets", "flywheel", "flywheel", "internal");
+            for (String family : FLYWHEEL_SHADER_FAMILIES) {
+                if (resourceMatches(internal.resolve("common.vert"), "/internal/flywheel_reference_" + family + "_common.vert")
+                        && resourceMatches(internal.resolve("api_impl.vert"), "/internal/flywheel_reference_" + family + "_api_impl.vert")) {
+                    return family;
+                }
+            }
+        } catch (Exception e) {
+            ColorfulLighting.LOGGER.warn("Could not inspect Flywheel's shaders", e);
+        }
+        return null;
     }
 
     private static boolean resourceMatches(Path installed, String referenceClasspath) throws java.io.IOException {
