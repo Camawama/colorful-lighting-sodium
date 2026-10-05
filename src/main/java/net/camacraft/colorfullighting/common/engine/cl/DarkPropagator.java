@@ -25,7 +25,7 @@ public class DarkPropagator extends Propagator {
 	}
 	
 	@Override
-	public boolean propagateIncrease(Queue<CLEngineInnerClasses.LightUpdateRequest> increaseRequests, CLEngineInnerClasses.LightUpdateRequest request, LevelAccessor level) {
+	public boolean propagateIncrease(CLEngineInnerClasses.BlockUpdates increaseRequests, CLEngineInnerClasses.LightUpdateRequest request, LevelAccessor level) {
 		if (request.checkSource) {
 			BlockState blockState = level.getBlockState(request.blockPos);
 			if (blockState == null || Config.getAbsorption(level, request.blockPos, blockState) == 0) {
@@ -111,7 +111,7 @@ public class DarkPropagator extends Propagator {
 		// decrease requests are always executed
 		if(!engine.decreaseRequests.isEmpty()) {
 			progressed = true;
-			Queue<CLEngineInnerClasses.LightUpdateRequest> newIncreaseRequests = new ArrayDeque<>();
+			CLEngineInnerClasses.BlockUpdates newIncreaseRequests = new CLEngineInnerClasses.BlockUpdates();
 			propagateDecreases(level, engine.decreaseRequests, newIncreaseRequests);
 			propagateIncreases(level, newIncreaseRequests);
 			
@@ -126,7 +126,7 @@ public class DarkPropagator extends Propagator {
 			ChunkPos chunkPos = nearestChunkResult.chunkPos();
 			engine.chunksWaitingForPropagation.remove(chunkPos);
 			
-			Queue<CLEngineInnerClasses.LightUpdateRequest> increaseRequests = new ArrayDeque<>();
+			CLEngineInnerClasses.BlockUpdates increaseRequests = new CLEngineInnerClasses.BlockUpdates();
 			// find darkness sources and request their propagation
 			level.findDarknessSources(chunkPos, (blockPos -> {
 				increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, Config.getAbsorptionColor(level, blockPos), false, true, false));
@@ -146,7 +146,7 @@ public class DarkPropagator extends Propagator {
 	}
 	
 	@Override
-	public void populateChunk(ChunkPos pos, List<BlockPos> posesLight, List<BlockPos> posesDark, LevelAccessor level, Queue<CLEngineInnerClasses.LightUpdateRequest> increaseRequests, boolean isCause) {
+	public void populateChunk(ChunkPos pos, List<BlockPos> posesLight, List<BlockPos> posesDark, LevelAccessor level, CLEngineInnerClasses.BlockUpdates increaseRequests, boolean isCause) {
 		for (BlockPos blockPos : posesDark) {
 			increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, Config.getAbsorptionColor(level, blockPos), false, true, false));
 		}

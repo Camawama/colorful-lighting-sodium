@@ -105,7 +105,7 @@ public abstract class Propagator {
 		}
 	}
 	
-	public void checkNeighborAndAdd(Queue<CLEngineInnerClasses.LightUpdateRequest> requests, int start, int end, int y, int fixed, boolean isZFixed) {
+	public void checkNeighborAndAdd(CLEngineInnerClasses.BlockUpdates requests, int start, int end, int y, int fixed, boolean isZFixed) {
 		for (int i = start; i <= end; i++) {
 			BlockPos pos = isZFixed ? new BlockPos(i, y, fixed) : new BlockPos(fixed, y, i);
 			ColorRGB4 color = getLatestLightColor(pos);
@@ -244,7 +244,7 @@ public abstract class Propagator {
 	/**
 	 * Handles all decrease propagation requests.
 	 */
-	protected void propagateDecreases(LevelAccessor level, Queue<CLEngineInnerClasses.LightUpdateRequest> decreaseRequests, Queue<CLEngineInnerClasses.LightUpdateRequest> increaseRequests) {
+	protected void propagateDecreases(LevelAccessor level, Queue<CLEngineInnerClasses.LightUpdateRequest> decreaseRequests, CLEngineInnerClasses.BlockUpdates increaseRequests) {
 		Map<BlockPos, ColorRGB4> visited = new HashMap<>();
 		while(!decreaseRequests.isEmpty()) {
 			CLEngineInnerClasses.LightUpdateRequest req = decreaseRequests.poll();
@@ -267,7 +267,7 @@ public abstract class Propagator {
 				lightColor.green4 <= neighbourLightDecrease.green4;
 	}
 	
-	protected boolean propagateDecrease(Queue<CLEngineInnerClasses.LightUpdateRequest> increaseRequests, Queue<CLEngineInnerClasses.LightUpdateRequest> decreaseRequests, CLEngineInnerClasses.LightUpdateRequest request, LevelAccessor level) {
+	protected boolean propagateDecrease(CLEngineInnerClasses.BlockUpdates increaseRequests, Queue<CLEngineInnerClasses.LightUpdateRequest> decreaseRequests, CLEngineInnerClasses.LightUpdateRequest request, LevelAccessor level) {
 //		ColorRGB4 oldLightColor = getLatestLightColor(request.blockPos);
 //		if(oldLightColor == null) return false; // section might have got unloaded and propagation should stop
 //
@@ -369,7 +369,7 @@ public abstract class Propagator {
 		return true;
 	}
 	
-	public void propagateIncreases(LevelAccessor level, Queue<CLEngineInnerClasses.LightUpdateRequest> requests) {
+	public void propagateIncreases(LevelAccessor level, CLEngineInnerClasses.BlockUpdates requests) {
 		while(!requests.isEmpty()) {
 			propagateIncrease(requests, requests.poll(), level);
 		}
@@ -377,9 +377,9 @@ public abstract class Propagator {
 	
 	public abstract boolean propagate(LevelAccessor level, EngineParams clEngine);
 	
-	public abstract boolean propagateIncrease(Queue<CLEngineInnerClasses.LightUpdateRequest> requests, CLEngineInnerClasses.LightUpdateRequest poll, LevelAccessor level);
+	public abstract boolean propagateIncrease(CLEngineInnerClasses.BlockUpdates requests, CLEngineInnerClasses.LightUpdateRequest poll, LevelAccessor level);
 	
-	public abstract void populateChunk(ChunkPos pos, List<BlockPos> posesLight, List<BlockPos> posesDark, LevelAccessor level, Queue<CLEngineInnerClasses.LightUpdateRequest> increaseRequests, boolean isCause);
+	public abstract void populateChunk(ChunkPos pos, List<BlockPos> posesLight, List<BlockPos> posesDark, LevelAccessor level, CLEngineInnerClasses.BlockUpdates increaseRequests, boolean isCause);
 	
 	protected abstract ColorRGB4 getEmission(LevelAccessor level, BlockPos neighbourPos, BlockState state);
 	

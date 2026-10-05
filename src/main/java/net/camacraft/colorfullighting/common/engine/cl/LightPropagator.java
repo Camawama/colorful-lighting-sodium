@@ -26,7 +26,7 @@ public class LightPropagator extends Propagator {
 	}
 	
 	@Override
-	public boolean propagateIncrease(Queue<CLEngineInnerClasses.LightUpdateRequest> increaseRequests, CLEngineInnerClasses.LightUpdateRequest request, LevelAccessor level) {
+	public boolean propagateIncrease(CLEngineInnerClasses.BlockUpdates increaseRequests, CLEngineInnerClasses.LightUpdateRequest request, LevelAccessor level) {
 		BlockState sourceState = null;
 		
 		if (request.checkSource) {
@@ -195,7 +195,7 @@ public class LightPropagator extends Propagator {
 		// decrease requests are always executed
 		if(!engine.decreaseRequests.isEmpty()) {
 			progressed = true;
-			Queue<CLEngineInnerClasses.LightUpdateRequest> newIncreaseRequests = new ArrayDeque<>();
+			CLEngineInnerClasses.BlockUpdates newIncreaseRequests = new CLEngineInnerClasses.BlockUpdates();
 			propagateDecreases(level, engine.decreaseRequests, newIncreaseRequests);
 			propagateIncreases(level, newIncreaseRequests);
 
@@ -210,7 +210,7 @@ public class LightPropagator extends Propagator {
 			ChunkPos chunkPos = nearestChunkResult.chunkPos();
 			engine.chunksWaitingForPropagation.remove(chunkPos);
 			
-			Queue<CLEngineInnerClasses.LightUpdateRequest> increaseRequests = new ArrayDeque<>();
+			CLEngineInnerClasses.BlockUpdates increaseRequests = new CLEngineInnerClasses.BlockUpdates();
 			// find light sources and request their propagation
 			level.findLightSources(chunkPos, (blockPos -> {
 				increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false, true, false));
@@ -223,8 +223,9 @@ public class LightPropagator extends Propagator {
 			manager.lastChunkNanos = System.nanoTime();
 		}
 		else if(nearestBlockRequests != null) {
-			engine.increaseRequests.remove(nearestBlockRequests.blockUpdate().blockPos);
-			propagateIncreases(level, nearestBlockRequests.blockUpdate().increaseRequests);
+//			engine.increaseRequests.remove(nearestBlockRequests.blockUpdate().blockPos);
+//			propagateIncreases(level, nearestBlockRequests.blockUpdate().increaseRequests);
+			propagateIncreases(level, engine.increaseRequests);
 //			markChangesReady();
 			progressed = true;
 		}
@@ -232,7 +233,7 @@ public class LightPropagator extends Propagator {
 	}
 	
 	@Override
-	public void populateChunk(ChunkPos pos, List<BlockPos> posesLight, List<BlockPos> posesDark, LevelAccessor level, Queue<CLEngineInnerClasses.LightUpdateRequest> increaseRequests, boolean isCause) {
+	public void populateChunk(ChunkPos pos, List<BlockPos> posesLight, List<BlockPos> posesDark, LevelAccessor level, CLEngineInnerClasses.BlockUpdates increaseRequests, boolean isCause) {
 		for (BlockPos blockPos : posesLight) {
 			increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false, true, false));
 		}

@@ -11,7 +11,7 @@ public class CLEngineInnerClasses {
 		public BlockPos blockPos;
 		// ArrayDeque, not LinkedList: propagation enqueues millions of requests per minute and
 		// LinkedList allocates a Node per element (visible in the 2026-08-06 JFR captures)
-		public Queue<LightUpdateRequest> increaseRequests = new ArrayDeque<>();
+		public BlockUpdates increaseRequests = new BlockUpdates();
 		
 		public BlockRequests(BlockPos blockPos) {
 			this.blockPos = blockPos;
@@ -19,14 +19,37 @@ public class CLEngineInnerClasses {
 	}
 	
 	public static class BlockUpdates {
+		BlockPos latestPoll;
+		public final ArrayDeque<BlockPos> positions = new ArrayDeque<>();
 		public final Map<BlockPos, LightUpdateRequest> updates = new HashMap<>();
 		
 		public void add(LightUpdateRequest increaseRequest) {
+			add(increaseRequest, true);
+		}
+		
+		public void add(LightUpdateRequest increaseRequest, boolean max) {
 			CLEngineInnerClasses.LightUpdateRequest old = updates.put(increaseRequest.blockPos, increaseRequest);
 			if (old != null) {
+				if (max) {
+					if (increaseRequest.lightColor == null) {
+						increaseRequest.lightColor = old.lightColor;
+					} else if (old.lightColor != null) {
+						increaseRequest.lightColor = ColorRGB4.max(
+								increaseRequest.lightColor, old.lightColor
+						);
+					}
+				} else {
+					if (increaseRequest.lightColor != null && old.lightColor != null) {
+						increaseRequest.lightColor = ColorRGB4.min(
+								increaseRequest.lightColor, old.lightColor
+						);
+					}
+				}
 				increaseRequest.force |= old.force;
 				increaseRequest.checkSource |= old.checkSource;
 				increaseRequest.repropagate |= old.repropagate;
+			} else {
+				positions.add(increaseRequest.blockPos);
 			}
 		}
 		
@@ -51,11 +74,16 @@ public class CLEngineInnerClasses {
 		}
 		
 		public LightUpdateRequest remove(BlockPos pos) {
+			positions.remove(pos);
 			return updates.remove(pos);
 		}
 		
 		public Collection<LightUpdateRequest> valueSet() {
 			return updates.values();
+		}
+		
+		public LightUpdateRequest poll() {
+			return updates.remove(latestPoll = positions.poll());
 		}
 	}
 	

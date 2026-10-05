@@ -59,14 +59,14 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 		
 		if (!requests.increaseRequests.isEmpty()) {
 			synchronized (pendingUpdates) {
-				for (CLEngineInnerClasses.LightUpdateRequest increaseRequest : requests.increaseRequests) {
+				for (CLEngineInnerClasses.LightUpdateRequest increaseRequest : requests.increaseRequests.updates.values()) {
 					pendingUpdates.add(increaseRequest);
 				}
 			}
 		}
 	}
 	
-	private void requestLightPullIn(Queue<CLEngineInnerClasses.LightUpdateRequest> requests, BlockPos blockPos) {
+	private void requestLightPullIn(CLEngineInnerClasses.BlockUpdates requests, BlockPos blockPos) {
 		for(var direction : Direction.values()) {
 			BlockPos neighbourPos = blockPos.relative(direction);
 			ColorRGB4 neighbourLight = storage.getEntry(neighbourPos);

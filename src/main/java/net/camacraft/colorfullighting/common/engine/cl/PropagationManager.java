@@ -349,10 +349,10 @@ public class PropagationManager implements Runnable {
             }
         }
 	    engine.structureVersion.incrementAndGet();
-
-        Queue<LightUpdateRequest>[] increaseRequests = new Queue[propagators.size()];
+	    
+	    BlockUpdates[] increaseRequests = new BlockUpdates[propagators.size()];
 	    for (int i = 0; i < increaseRequests.length; i++) {
-		    increaseRequests[i] = new ArrayDeque<>();
+		    increaseRequests[i] = new BlockUpdates();
 	    }
 
         // 2. Find internal sources for all chunks in region
@@ -400,16 +400,25 @@ public class PropagationManager implements Runnable {
 	
 	public record NearestBlockRequestsResult(CLEngineInnerClasses.BlockRequests blockUpdate, int distanceBlocks) {}
 	public static NearestBlockRequestsResult getNearestBlockRequests(PlayerAccessor player, DefaultBlockLightEngine blockLightEngine) {
-		if (blockLightEngine.pendingUpdates.updates.size() < 20_000) {
-			BlockPos pbp = player.getBlockPos();
+		if (blockLightEngine.increaseRequests.updates.size() < 20_000) {//
+//			for (LightUpdateRequest update : blockLightEngine.increaseRequests.valueSet()) {
+//				BlockPos blockPos = update.blockPos;
+//
+//				BlockRequests reqs = new BlockRequests(blockPos);
+//				reqs.increaseRequests.add(update);
+//				return new NearestBlockRequestsResult(reqs, pbp.distManhattan(blockPos));
+//			}
 			
-			for (LightUpdateRequest update : blockLightEngine.increaseRequests.valueSet()) {
-				BlockPos blockPos = update.blockPos;
-				
-				BlockRequests reqs = new BlockRequests(blockPos);
-				reqs.increaseRequests.add(update);
-				return new NearestBlockRequestsResult(reqs, pbp.distManhattan(blockPos));
+			LightUpdateRequest update = blockLightEngine.increaseRequests.poll();
+			if (update == null) {
+				return null;
 			}
+			
+			BlockPos pbp = player.getBlockPos();
+			BlockPos blockPos = update.blockPos;
+			BlockRequests reqs = new BlockRequests(blockPos);
+			reqs.increaseRequests.add(update);
+			return new NearestBlockRequestsResult(reqs, pbp.distManhattan(blockPos));
 		}
 		
 		BlockPos nearest = null;
