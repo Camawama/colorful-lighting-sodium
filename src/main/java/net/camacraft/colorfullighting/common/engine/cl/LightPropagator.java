@@ -204,6 +204,8 @@ public class LightPropagator extends Propagator {
 		
 		var nearestChunkResult = getNearestWaitingChunk(clEngine.frustum, level, player);
 		var nearestBlockRequests = PropagationManager.getNearestBlockRequests(player, engine);
+		if (nearestBlockRequests != null)
+			engine.increaseRequests.add(nearestBlockRequests.blockUpdate().increaseRequests.poll());
 		
 		if(nearestChunkResult != null && (nearestBlockRequests == null || nearestChunkResult.distanceBlocks() < nearestBlockRequests.distanceBlocks())) {
 			// propagate chunk
