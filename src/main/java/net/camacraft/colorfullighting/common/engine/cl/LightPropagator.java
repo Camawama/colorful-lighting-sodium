@@ -176,6 +176,7 @@ public class LightPropagator extends Propagator {
 //			ColorRGB4 neighbourLightColor = attenuateLight(request.lightColor, 1);
 			
 			increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(neighbourPos, neighbourLightColor, false));
+//			engine.increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(neighbourPos, neighbourLightColor, false));
 			
 			didWork = true;
 		}
@@ -192,10 +193,10 @@ public class LightPropagator extends Propagator {
 		boolean progressed = false;
 		
 		// decrease requests are always executed
-		if(!engine.blockUpdateDecreaseRequests.isEmpty()) {
+		if(!engine.decreaseRequests.isEmpty()) {
 			progressed = true;
 			Queue<CLEngineInnerClasses.LightUpdateRequest> newIncreaseRequests = new ArrayDeque<>();
-			propagateDecreases(level, engine.blockUpdateDecreaseRequests, newIncreaseRequests);
+			propagateDecreases(level, engine.decreaseRequests, newIncreaseRequests);
 			propagateIncreases(level, newIncreaseRequests);
 
 //			markChangesReady();
@@ -222,7 +223,7 @@ public class LightPropagator extends Propagator {
 			manager.lastChunkNanos = System.nanoTime();
 		}
 		else if(nearestBlockRequests != null) {
-			engine.blockUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate());
+			engine.increaseRequests.remove(nearestBlockRequests.blockUpdate().blockPos);
 			propagateIncreases(level, nearestBlockRequests.blockUpdate().increaseRequests);
 //			markChangesReady();
 			progressed = true;

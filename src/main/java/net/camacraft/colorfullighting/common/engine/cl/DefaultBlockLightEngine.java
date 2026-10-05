@@ -10,10 +10,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Queue;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.Lock;
@@ -28,15 +25,16 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 	
 	// TODO: these should be protected
 	// those first added will be executed first (this order is required by decrease propagation algorithm)
-	public final Queue<CLEngineInnerClasses.LightUpdateRequest> blockUpdateDecreaseRequests = new ConcurrentLinkedQueue<>();
+	public final Queue<CLEngineInnerClasses.LightUpdateRequest> decreaseRequests = new ConcurrentLinkedQueue<>();
 	// those nearest to the player will be executed first
-	public final Queue<CLEngineInnerClasses.BlockRequests> blockUpdateIncreaseRequests = new ConcurrentLinkedQueue<>();
+	public final CLEngineInnerClasses.BlockUpdates increaseRequests = new CLEngineInnerClasses.BlockUpdates();
+	public final CLEngineInnerClasses.BlockUpdates pendingUpdates = new CLEngineInnerClasses.BlockUpdates();
 	// light/darkness storage
 	public final ColoredLightStorage storage = new ColoredLightStorage();
 	
 	@Override
 	public String describeQueue() {
-		return (forLight ? "block" : "dark") + " updates queued: light +" + blockUpdateIncreaseRequests.size() + " -" + blockUpdateDecreaseRequests.size();
+		return (forLight ? "block" : "dark") + " updates queued: light +" + increaseRequests.size() + " -" + decreaseRequests.size();
 	}
 	
 	@Override
@@ -47,7 +45,7 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 		if(lightColor.red4 == 0 && lightColor.green4 == 0 && lightColor.blue4 == 0)
 			requestLightPullIn(requests.increaseRequests, blockPos);  // block probably destroyed/replaced with transparent, light pull in might be needed
 		else
-			blockUpdateDecreaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, lightColor, false)); // block probably placed/replaced with non-transparent, light might need to be decreased
+			decreaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, lightColor, false)); // block probably placed/replaced with non-transparent, light might need to be decreased
 		
 		// propagate light if new blockState emits light (single lookup for both brightness and color)
 		BlockState blockState = level.getBlockState(blockPos);
@@ -60,7 +58,11 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 		}
 		
 		if (!requests.increaseRequests.isEmpty()) {
-			blockUpdateIncreaseRequests.add(requests);
+			synchronized (pendingUpdates) {
+				for (CLEngineInnerClasses.LightUpdateRequest increaseRequest : requests.increaseRequests) {
+					pendingUpdates.add(increaseRequest);
+				}
+			}
 		}
 	}
 	
@@ -96,14 +98,15 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 	@Override
 	public void clear() {
 		storage.clear();
-		blockUpdateIncreaseRequests.clear();
-		blockUpdateDecreaseRequests.clear();
+		pendingUpdates.clear();
+		increaseRequests.clear();
+		decreaseRequests.clear();
 		chunksWaitingForPropagation.clear();
 	}
 	
 	@Override
 	public boolean hasWork() {
-		return !blockUpdateDecreaseRequests.isEmpty() || !blockUpdateIncreaseRequests.isEmpty() || !chunksWaitingForPropagation.isEmpty();
+		return !decreaseRequests.isEmpty() || !increaseRequests.isEmpty() || !chunksWaitingForPropagation.isEmpty();
 	}
 	
 	@Override

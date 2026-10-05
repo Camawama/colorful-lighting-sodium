@@ -109,10 +109,10 @@ public class DarkPropagator extends Propagator {
 		boolean progressed = false;
 		
 		// decrease requests are always executed
-		if(!engine.blockUpdateDecreaseRequests.isEmpty()) {
+		if(!engine.decreaseRequests.isEmpty()) {
 			progressed = true;
 			Queue<CLEngineInnerClasses.LightUpdateRequest> newIncreaseRequests = new ArrayDeque<>();
-			propagateDecreases(level, engine.blockUpdateDecreaseRequests, newIncreaseRequests);
+			propagateDecreases(level, engine.decreaseRequests, newIncreaseRequests);
 			propagateIncreases(level, newIncreaseRequests);
 			
 //			markChangesReady();
@@ -137,7 +137,7 @@ public class DarkPropagator extends Propagator {
 			progressed = true;
 		}
 		else if(nearestBlockRequests != null) {
-			engine.blockUpdateIncreaseRequests.remove(nearestBlockRequests.blockUpdate());
+			engine.increaseRequests.remove(nearestBlockRequests.blockUpdate().blockPos);
 			propagateIncreases(level, nearestBlockRequests.blockUpdate().increaseRequests);
 //			markChangesReady();
 			progressed = true;

@@ -1,16 +1,10 @@
 package net.camacraft.colorfullighting.common.engine.cl;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
-import it.unimi.dsi.fastutil.objects.Object2ObjectAVLTreeMap;
-import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
-import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
-import net.camacraft.colorfullighting.common.Config;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.PlayerAccessor;
 import net.camacraft.colorfullighting.common.engine.CLEngineInnerClasses;
 import net.camacraft.colorfullighting.common.util.ColorRGB4;
-import net.camacraft.colorfullighting.common.util.MathExt;
-import net.camacraft.colorfullighting.common.util.ShapeOcclusion;
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -18,15 +12,9 @@ import net.minecraft.core.SectionPos;
 import net.minecraft.core.Vec3i;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.phys.shapes.Shapes;
-import net.minecraft.world.phys.shapes.VoxelShape;
 
-import java.awt.*;
 import java.util.*;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-
-import static net.camacraft.colorfullighting.ColorfulLighting.clientAccessor;
 
 public abstract class Propagator {
 	public final DefaultBlockLightEngine engine;
@@ -81,8 +69,10 @@ public abstract class Propagator {
 		if (!engine.changesReady.isEmpty()) {
 			ColorRGB4 ready;
 			try {
+				// attempt to get it quickly without locking
 				ready = engine.changesReady.get(blockPos);
 			} catch (Exception e) {
+				// if that fails, try again with the lock
 				engine.changesReadyLock.lock();
 				ready = engine.changesReady.get(blockPos);
 				engine.changesReadyLock.unlock();
@@ -392,4 +382,11 @@ public abstract class Propagator {
 	public abstract void populateChunk(ChunkPos pos, List<BlockPos> posesLight, List<BlockPos> posesDark, LevelAccessor level, Queue<CLEngineInnerClasses.LightUpdateRequest> increaseRequests, boolean isCause);
 	
 	protected abstract ColorRGB4 getEmission(LevelAccessor level, BlockPos neighbourPos, BlockState state);
+	
+	public void schedule() {
+		synchronized (engine.pendingUpdates) {
+			engine.pendingUpdates.updates.values().forEach(engine.increaseRequests::add);
+			engine.pendingUpdates.updates.clear();
+		}
+	}
 }

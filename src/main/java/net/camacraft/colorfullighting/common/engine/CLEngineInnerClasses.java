@@ -4,8 +4,7 @@ import net.camacraft.colorfullighting.common.util.ColorRGB4;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.ChunkPos;
 
-import java.util.ArrayDeque;
-import java.util.Queue;
+import java.util.*;
 
 public class CLEngineInnerClasses {
 	public static class BlockRequests {
@@ -19,12 +18,53 @@ public class CLEngineInnerClasses {
 		}
 	}
 	
+	public static class BlockUpdates {
+		public final Map<BlockPos, LightUpdateRequest> updates = new HashMap<>();
+		
+		public void add(LightUpdateRequest increaseRequest) {
+			CLEngineInnerClasses.LightUpdateRequest old = updates.put(increaseRequest.blockPos, increaseRequest);
+			if (old != null) {
+				increaseRequest.force |= old.force;
+				increaseRequest.checkSource |= old.checkSource;
+				increaseRequest.repropagate |= old.repropagate;
+			}
+		}
+		
+		public int size() {
+			return updates.size();
+		}
+		
+		public void clear() {
+			updates.clear();
+		}
+		
+		public boolean isEmpty() {
+			return updates.isEmpty();
+		}
+		
+		public Set<BlockPos> keySet() {
+			return updates.keySet();
+		}
+		
+		public LightUpdateRequest get(BlockPos pos) {
+			return updates.get(pos);
+		}
+		
+		public LightUpdateRequest remove(BlockPos pos) {
+			return updates.remove(pos);
+		}
+		
+		public Collection<LightUpdateRequest> valueSet() {
+			return updates.values();
+		}
+	}
+	
 	public static class LightUpdateRequest {
 		public final BlockPos blockPos;
 		public ColorRGB4 lightColor;
-		public final boolean force;
-		public final boolean checkSource;
-		public final boolean repropagate;
+		public boolean force;
+		public boolean checkSource;
+		public boolean repropagate;
 		
 		public LightUpdateRequest(BlockPos blockPos, ColorRGB4 lightColor, boolean force) {
 			this(blockPos, lightColor, force, false, false);

@@ -148,6 +148,8 @@ public class PropagationManager implements Runnable {
 		
 		boolean hasWork = false;
 		for (Propagator propagator : propagators) {
+			propagator.schedule();
+			
 			hasWork = hasWork | propagator.engine.hasWork();
 		}
 		
@@ -398,19 +400,65 @@ public class PropagationManager implements Runnable {
 	
 	public record NearestBlockRequestsResult(CLEngineInnerClasses.BlockRequests blockUpdate, int distanceBlocks) {}
 	public static NearestBlockRequestsResult getNearestBlockRequests(PlayerAccessor player, DefaultBlockLightEngine blockLightEngine) {
-		// find chunk nearest player
-		var iterator = blockLightEngine.blockUpdateIncreaseRequests.iterator();
-		int minDistance = Integer.MAX_VALUE;
-		CLEngineInnerClasses.BlockRequests nearestUpdate = null;
-		while (iterator.hasNext()) {
-			CLEngineInnerClasses.BlockRequests update = iterator.next();
-			int distance = update.blockPos.distManhattan(player.getBlockPos());
-			if (distance < minDistance) {
-				minDistance = distance;
-				nearestUpdate = update;
+		if (blockLightEngine.pendingUpdates.updates.size() < 20_000) {
+			BlockPos pbp = player.getBlockPos();
+			
+			for (LightUpdateRequest update : blockLightEngine.increaseRequests.valueSet()) {
+				BlockPos blockPos = update.blockPos;
+				
+				BlockRequests reqs = new BlockRequests(blockPos);
+				reqs.increaseRequests.add(update);
+				return new NearestBlockRequestsResult(reqs, pbp.distManhattan(blockPos));
 			}
 		}
-		return nearestUpdate == null ? null : new NearestBlockRequestsResult(nearestUpdate, minDistance);
+		
+		BlockPos nearest = null;
+		int minDist = Integer.MAX_VALUE;
+		BlockPos pbp = player.getBlockPos();
+		
+		for (BlockPos blockPos : blockLightEngine.increaseRequests.keySet()) {
+			if (nearest == null) {
+				nearest = blockPos;
+				continue;
+			}
+			
+			int dist = blockPos.distManhattan(pbp);
+			if (dist < minDist) {
+				minDist = dist;
+				nearest = blockPos;
+			}
+		}
+		if (nearest == null) return null;
+		
+		LightUpdateRequest req = blockLightEngine.increaseRequests.get(nearest);
+		BlockRequests reqs = new BlockRequests(nearest);
+		reqs.increaseRequests.add(req);
+		return new NearestBlockRequestsResult(reqs, minDist);
+		
+//		// find chunk nearest player
+//		var iterator = blockLightEngine.blockUpdateIncreaseRequests.iterator();
+//		if (blockLightEngine.blockUpdateIncreaseRequests.size() > 500) {
+//			CLEngineInnerClasses.BlockRequests update = iterator.next();
+//			int distance = update.blockPos.distManhattan(player.getBlockPos());
+//
+//			return new NearestBlockRequestsResult(update, distance);
+//		}
+//		int minDistance = Integer.MAX_VALUE;
+//		CLEngineInnerClasses.BlockRequests nearestUpdate = null;
+//		while (iterator.hasNext()) {
+//			CLEngineInnerClasses.BlockRequests update = iterator.next();
+//			int distance = update.blockPos.distManhattan(player.getBlockPos());
+//			if (distance < minDistance) {
+//				minDistance = distance;
+//				nearestUpdate = update;
+//			}
+//		}
+////		try {
+////			Thread.sleep(10000);
+////		} catch (Throwable ignored) {
+////		}
+//
+//		return nearestUpdate == null ? null : new NearestBlockRequestsResult(nearestUpdate, minDistance);
 	}
 	
 	public record NearestChunkResult(ChunkPos chunkPos, int distanceBlocks) {}
