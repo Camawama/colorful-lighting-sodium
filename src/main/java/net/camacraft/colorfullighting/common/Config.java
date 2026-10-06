@@ -125,6 +125,14 @@ public class Config {
         // nearby entity that caused them; client-lighting mods are handled by the entity
         // tracking in DynamicLightsCompat instead
         if (DynamicLightsCompat.isDynamicLightBlock(block)) {
+            // an API provider's answer for such a block wins over the nearby entity and the ship mirror: a burning
+            // Valkyrien Skies ship (Lively Lighting's light blocks round it) is no entity to take fire's colour from
+            if (lightEmission > 0 && ApiProviderRegistry.hasBlockProviders()) {
+                ColorRGB4 providerColor = ApiProviderRegistry.getBlockColor(level.getLevel(), pos, blockState.getBlockState());
+                if (providerColor != null) {
+                    return providerColor.mul(lightEmission);
+                }
+            }
             ColorRGB4 dynamicColor = DynamicLightsCompat.getDynamicBlockLightColor(level, pos);
             if (dynamicColor != null) {
                 return dynamicColor.mul(lightEmission);
