@@ -1,5 +1,6 @@
 package net.camacraft.colorfullighting.common.util;
 
+import net.camacraft.colorfullighting.api.CLPackedLight;
 import net.minecraft.client.renderer.LightTexture;
 
 public class PackedLightData {
@@ -23,11 +24,22 @@ public class PackedLightData {
 
     public static PackedLightData unpackData(int packedData) {
         PackedLightData data = new PackedLightData();
-        data.red8 = (packedData) & 0xFF;
-        data.green8 = (packedData >>> 8) & 0xFF;
-        data.skyLight4 = (packedData >>> 16) & 0xF;
-        data.blue8 = (packedData >>> 20) & 0xFF;
-        data.alpha4 = (packedData >>> 28) & 0xF;
+        if (CLPackedLight.isColored(packedData)) {
+            data.red8 = CLPackedLight.red8(packedData);
+            data.green8 = CLPackedLight.green8(packedData);
+            data.blue8 = CLPackedLight.blue8(packedData);
+            data.skyLight4 = CLPackedLight.sky4(packedData);
+            data.alpha4 = 15;
+        } else {
+            int block4 = LightTexture.block(packedData);
+            int sky4 = LightTexture.sky(packedData);
+            int lum8 = block4 * 17;
+            data.red8 = lum8;
+            data.green8 = lum8;
+            data.blue8 = lum8;
+            data.skyLight4 = sky4;
+            data.alpha4 = 0;
+        }
         return data;
     }
 
@@ -53,6 +65,18 @@ public class PackedLightData {
     }
 
     public static int blend(int lightColor0, int lightColor1, int lightColor2, int lightColor3) {
+        if (!CLPackedLight.isColored(lightColor0) && !CLPackedLight.isColored(lightColor1) &&
+            !CLPackedLight.isColored(lightColor2) && !CLPackedLight.isColored(lightColor3)) {
+            if (lightColor0 == 0) lightColor0 = lightColor3;
+            if (lightColor1 == 0) lightColor1 = lightColor3;
+            if (lightColor2 == 0) lightColor2 = lightColor3;
+            return (lightColor0 + lightColor1 + lightColor2 + lightColor3) >> 2 & 0x00FF00FF;
+        }
+
+        if (lightColor0 == 0) lightColor0 = lightColor3;
+        if (lightColor1 == 0) lightColor1 = lightColor3;
+        if (lightColor2 == 0) lightColor2 = lightColor3;
+
         var data0 = unpackData(lightColor0);
         var data1 = unpackData(lightColor1);
         var data2 = unpackData(lightColor2);
@@ -97,6 +121,13 @@ public class PackedLightData {
     }
 
     public static int blend(int lightColor0, int lightColor1, int lightColor2, int lightColor3, float weight0, float weight1, float weight2, float weight3) {
+        if (!CLPackedLight.isColored(lightColor0) && !CLPackedLight.isColored(lightColor1) &&
+            !CLPackedLight.isColored(lightColor2) && !CLPackedLight.isColored(lightColor3)) {
+            int i = (int)((float)(lightColor0 >> 16 & 255) * weight0 + (float)(lightColor1 >> 16 & 255) * weight1 + (float)(lightColor2 >> 16 & 255) * weight2 + (float)(lightColor3 >> 16 & 255) * weight3) & 255;
+            int j = (int)((float)(lightColor0 & 255) * weight0 + (float)(lightColor1 & 255) * weight1 + (float)(lightColor2 & 255) * weight2 + (float)(lightColor3 & 255) * weight3) & 255;
+            return i << 16 | j;
+        }
+
         var data0 = unpackData(lightColor0);
         var data1 = unpackData(lightColor1);
         var data2 = unpackData(lightColor2);
