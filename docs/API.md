@@ -29,16 +29,6 @@ Usually not. Work through this list top to bottom and stop at the first tier tha
 
 Colorful Lighting is a client mod; make your dependency optional and client-side.
 
-```gradle
-repositories {
-    maven { url "https://cursemaven.com" }
-}
-dependencies {
-    // compile against the full mod (recommended: everything resolves in your dev runtime)
-    compileOnly fg.deobf("curse.maven:colorful-lighting-reforged-<projectId>:<fileId>")
-}
-```
-
 There is also a thin `-api` classifier jar (the `api` package only, classes + sources) produced
 by the `apiJar` task if you prefer a minimal compile-time artifact.
 
