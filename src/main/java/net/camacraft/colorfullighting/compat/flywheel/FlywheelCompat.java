@@ -133,4 +133,14 @@ public class FlywheelCompat {
 			throw new RuntimeException("Replacing non-deleted light storage.");
 		storage = strg;
 	}
+
+    public void onLightUpdate(int sectionX, int sectionY, int sectionZ, long dirtySection, net.minecraft.world.level.Level level) {
+        getStorage().recollectSectionIfTracked(dirtySection);
+        if (isAvailable && level != null) {
+            var manager = dev.engine_room.flywheel.impl.visualization.VisualizationManagerImpl.get(level);
+            if (manager != null) {
+                manager.onLightUpdate(net.minecraft.core.SectionPos.of(sectionX, sectionY, sectionZ), net.minecraft.world.level.LightLayer.BLOCK);
+            }
+        }
+    }
 }

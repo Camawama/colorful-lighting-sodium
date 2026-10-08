@@ -146,8 +146,8 @@ dependencies {
     compileOnly "org.valkyrienskies.core:api:+"
 
     // RUNTIME ONLY
-    compileOnly fg.deobf("curse.maven:cloth-config-348521:5729105")
-    compileOnly fg.deobf("curse.maven:immersive-portals-for-forge-355440:6368524")
+    runtimeOnly fg.deobf("curse.maven:cloth-config-348521:5729105")
+    runtimeOnly fg.deobf("curse.maven:immersive-portals-for-forge-355440:6368524")
 
     // DH 3.1.2-b for 1.20.1 (API major 7); older curse 508933:7375280 was API 5 and nonfunctional in dev
     // Swap in FWGxbEM3 (DH 3.2.0-b, also API 7) to dev-test the 3.2 textured-LOD contract
@@ -165,9 +165,9 @@ dependencies {
     runtimeOnly fg.deobf("curse.maven:cubes-without-borders-975120:5855464")
     runtimeOnly fg.deobf("curse.maven:free-cam-557076:4643128")
     runtimeOnly fg.deobf("curse.maven:spark-361579:4738952")
-    //runtimeOnly fg.deobf("curse.maven:vanillin-965702:6446560")
-    //runtimeOnly fg.deobf("curse.maven:supplementaries-412082:7884611")
-    //runtimeOnly fg.deobf("curse.maven:selene-499980:7945711")
+    runtimeOnly fg.deobf("curse.maven:vanillin-965702:6446560")
+    runtimeOnly fg.deobf("curse.maven:supplementaries-412082:7884611")
+    runtimeOnly fg.deobf("curse.maven:selene-499980:7945711")
 
     //runtimeOnly fg.deobf("curse.maven:subtle-effects-1023913:8008318")
     //runtimeOnly fg.deobf("curse.maven:fzzy-config-1005914:7568893")

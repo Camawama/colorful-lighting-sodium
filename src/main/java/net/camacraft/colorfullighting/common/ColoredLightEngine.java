@@ -844,7 +844,7 @@ public class ColoredLightEngine {
             }
 
             if (flywheelTracking) {
-	            ((LevelAttachments) this.level).colorfullighting$getFlywheelCompat().getStorage().recollectSectionIfTracked(dirtySection);
+	            ((LevelAttachments) this.level).colorfullighting$getFlywheelCompat().onLightUpdate(sectionX, sectionY, sectionZ, dirtySection, this.level.getLevel());
             }
         }
 
