@@ -48,6 +48,7 @@
     "compat.create.ChainConveyorRendererMixin",
     "compat.create.AnimatedSceneElementBaseMixin",
     "compat.create.ShadeSeparatingSuperByteBufferMixin",
+    "compat.create.VirtualRenderWorldAccessor",
     "compat.dynamiclights.SodiumDynamicLightsMixin",
     "compat.iris.IrisMacroInjection",
     "compat.iris.IrisChunkRendererMixin",

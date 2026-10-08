@@ -47,11 +47,12 @@ ColoredLightFloatData coloredLightData_integerToFloat(ColoredLightIntegerData da
 }
 
 vec4 mixColoredLightWithLightMap(sampler2D lightMap, ColoredLightFloatData data) {
-    vec3 sky = minecraft_sample_vanilla_lightmap(lightMap, ivec2(0, int(data.skyLight * 15) << 4)).xyz;
+    vec2 skyUv = clamp(vec2(0.5 / 16.0, (data.skyLight * 15.0 + 0.5) / 16.0), vec2(0.5 / 16.0), vec2(15.5 / 16.0));
+    vec3 sky = texture(lightMap, skyUv).xyz;
     vec3 block = vec3(
-        minecraft_sample_vanilla_lightmap(lightMap, ivec2(int(data.lightColor.r * 255.0), 0)).r,
-        minecraft_sample_vanilla_lightmap(lightMap, ivec2(int(data.lightColor.g * 255.0), 0)).r,
-        minecraft_sample_vanilla_lightmap(lightMap, ivec2(int(data.lightColor.b * 255.0), 0)).r
+        texture(lightMap, clamp(vec2((data.lightColor.r * 15.0 + 0.5) / 16.0, 0.5 / 16.0), vec2(0.5 / 16.0), vec2(15.5 / 16.0))).r,
+        texture(lightMap, clamp(vec2((data.lightColor.g * 15.0 + 0.5) / 16.0, 0.5 / 16.0), vec2(0.5 / 16.0), vec2(15.5 / 16.0))).r,
+        texture(lightMap, clamp(vec2((data.lightColor.b * 15.0 + 0.5) / 16.0, 0.5 / 16.0), vec2(0.5 / 16.0), vec2(15.5 / 16.0))).r
     );
     return vec4(sky + block * max(0.1, 1.0 - sky.r), 1.0);
 }

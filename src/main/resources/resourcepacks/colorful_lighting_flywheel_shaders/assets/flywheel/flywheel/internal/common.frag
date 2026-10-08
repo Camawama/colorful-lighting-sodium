@@ -132,8 +132,17 @@ void _flw_main() {
             // replaced by the colour. The per-vertex sky lookup this replaces read the cell a vertex
             // floors into, which for an embedded mesh is often the wrong one, and drew contraptions
             // with almost no sky: black by day without a lamp nearby, lamp-coloured with one.
+            #ifdef FLW_EMBEDDED
             data.skyLight = clamp(flw_fragLight.y * (16.0 / 15.0), 0.0, 1.0);
+            float maxBlockColor = max(max(data.lightColor.r, data.lightColor.g), data.lightColor.b);
+            if (maxBlockColor > 0.0) {
+                vec4 coloredLight = mixColoredLightWithLightMap(flw_lightTex, data);
+                lightColor = mix(lightColor, coloredLight, clamp(maxBlockColor * 8.0, 0.0, 1.0));
+            }
+            #else
+            data.skyLight = max(data.skyLight, clamp(flw_fragLight.y * (16.0 / 15.0), 0.0, 1.0));
             lightColor = mixColoredLightWithLightMap(flw_lightTex, data);
+            #endif
         }
         // END colorful lighting
         color *= lightColor;

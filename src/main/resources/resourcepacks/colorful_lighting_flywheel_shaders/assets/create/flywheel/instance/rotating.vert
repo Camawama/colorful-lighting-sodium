@@ -16,6 +16,10 @@ void flw_instanceVertex(in FlwInstance instance) {
     flw_vertexOverlay = instance.overlay;
 
     // START colorful lighting
-    v_lightColor.data = vertexLightColor(instance.light, flw_vertexPos.xyz + flw_renderOrigin.xyz);
+    vec4 vertexPos = flw_vertexPos;
+    #ifdef FLW_EMBEDDED
+    vertexPos = modelMatrix * vertexPos;
+    #endif
+    v_lightColor.data = vertexLightColor(ivec2(instance.light), vertexPos.xyz + flw_renderOrigin.xyz);
     // END colorful lighting
 }

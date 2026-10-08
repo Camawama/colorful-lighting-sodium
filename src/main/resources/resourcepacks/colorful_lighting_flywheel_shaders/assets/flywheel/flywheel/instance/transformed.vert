@@ -9,6 +9,7 @@ void flw_instanceVertex(in FlwInstance i) {
     flw_vertexLight = max(vec2(i.light) / 256.0, flw_vertexLight);
 
     // START colorful lighting
+
     vec4 vertexPos = flw_vertexPos;
     #ifdef FLW_EMBEDDED
     vertexPos = modelMatrix * vertexPos;
