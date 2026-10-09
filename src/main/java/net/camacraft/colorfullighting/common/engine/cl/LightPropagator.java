@@ -215,10 +215,10 @@ public class LightPropagator extends Propagator {
 			CLEngineInnerClasses.BlockUpdates increaseRequests = new CLEngineInnerClasses.BlockUpdates();
 			// find light sources and request their propagation
 			level.findLightSources(chunkPos, (blockPos -> {
-//				increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false, true, false));
-				engine.pendingUpdates.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false, true, false));
+				increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false, true, false));
+//				engine.pendingUpdates.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false, true, false));
 			}));
-//			propagateIncreases(level, increaseRequests);
+			propagateIncreases(level, increaseRequests);
 			// new chunks' light propagation is not synchronized with main thread
 			applyChangesDirectly(clEngine);
 			progressed = true;
@@ -232,6 +232,7 @@ public class LightPropagator extends Propagator {
 			propagateIncreases(level, nearestBlockRequests);
 //			propagateIncreases(level, engine.increaseRequests);
 //			markChangesReady();
+//			applyChangesDirectly(clEngine);
 			progressed = true;
 		}
 		return progressed;
