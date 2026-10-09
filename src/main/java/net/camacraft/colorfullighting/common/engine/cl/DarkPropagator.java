@@ -120,10 +120,10 @@ public class DarkPropagator extends Propagator {
 		
 		var nearestChunkResult = getNearestWaitingChunk(clEngine.frustum, level, player);
 		var nearestBlockRequests = PropagationManager.getNearestBlockRequests(player, engine);
-		if (nearestBlockRequests != null)
-			engine.increaseRequests.add(nearestBlockRequests.blockUpdate().increaseRequests.poll());
+//		if (nearestBlockRequests != null)
+//			engine.increaseRequests.add(nearestBlockRequests.blockUpdate().increaseRequests.poll());
 		
-		if(nearestChunkResult != null && (nearestBlockRequests == null || nearestChunkResult.distanceBlocks() < nearestBlockRequests.distanceBlocks())) {
+		if(nearestChunkResult != null && (nearestBlockRequests == null)) {
 			// propagate chunk
 			ChunkPos chunkPos = nearestChunkResult.chunkPos();
 			engine.chunksWaitingForPropagation.remove(chunkPos);
@@ -139,8 +139,11 @@ public class DarkPropagator extends Propagator {
 			progressed = true;
 		}
 		else if(nearestBlockRequests != null) {
-			engine.increaseRequests.remove(nearestBlockRequests.blockUpdate().blockPos);
-			propagateIncreases(level, nearestBlockRequests.blockUpdate().increaseRequests);
+			for (BlockPos position : nearestBlockRequests.positions) {
+				engine.increaseRequests.remove(position);
+			}
+			propagateIncreases(level, nearestBlockRequests);
+//			propagateIncreases(level, engine.increaseRequests);
 //			markChangesReady();
 			progressed = true;
 		}

@@ -204,10 +204,10 @@ public class LightPropagator extends Propagator {
 		
 		var nearestChunkResult = getNearestWaitingChunk(clEngine.frustum, level, player);
 		var nearestBlockRequests = PropagationManager.getNearestBlockRequests(player, engine);
-		if (nearestBlockRequests != null)
-			engine.increaseRequests.add(nearestBlockRequests.blockUpdate().increaseRequests.poll());
+//		if (nearestBlockRequests != null)
+//			engine.increaseRequests.add(nearestBlockRequests.blockUpdate().increaseRequests.poll());
 		
-		if(nearestChunkResult != null && (nearestBlockRequests == null || nearestChunkResult.distanceBlocks() < nearestBlockRequests.distanceBlocks())) {
+		if(nearestChunkResult != null && (nearestBlockRequests == null)) {
 			// propagate chunk
 			ChunkPos chunkPos = nearestChunkResult.chunkPos();
 			engine.chunksWaitingForPropagation.remove(chunkPos);
@@ -215,9 +215,10 @@ public class LightPropagator extends Propagator {
 			CLEngineInnerClasses.BlockUpdates increaseRequests = new CLEngineInnerClasses.BlockUpdates();
 			// find light sources and request their propagation
 			level.findLightSources(chunkPos, (blockPos -> {
-				increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false, true, false));
+//				increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false, true, false));
+				engine.pendingUpdates.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, Config.getColorEmission(level, blockPos), false, true, false));
 			}));
-			propagateIncreases(level, increaseRequests);
+//			propagateIncreases(level, increaseRequests);
 			// new chunks' light propagation is not synchronized with main thread
 			applyChangesDirectly(clEngine);
 			progressed = true;
@@ -225,9 +226,11 @@ public class LightPropagator extends Propagator {
 			manager.lastChunkNanos = System.nanoTime();
 		}
 		else if(nearestBlockRequests != null) {
-//			engine.increaseRequests.remove(nearestBlockRequests.blockUpdate().blockPos);
-//			propagateIncreases(level, nearestBlockRequests.blockUpdate().increaseRequests);
-			propagateIncreases(level, engine.increaseRequests);
+			for (BlockPos position : nearestBlockRequests.positions) {
+				engine.increaseRequests.remove(position);
+			}
+			propagateIncreases(level, nearestBlockRequests);
+//			propagateIncreases(level, engine.increaseRequests);
 //			markChangesReady();
 			progressed = true;
 		}

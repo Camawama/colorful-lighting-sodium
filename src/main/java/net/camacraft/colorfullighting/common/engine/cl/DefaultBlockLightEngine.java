@@ -26,6 +26,7 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 	// TODO: these should be protected
 	// those first added will be executed first (this order is required by decrease propagation algorithm)
 	public final Queue<CLEngineInnerClasses.LightUpdateRequest> decreaseRequests = new ConcurrentLinkedQueue<>();
+	public final Queue<CLEngineInnerClasses.LightUpdateRequest> pendingDecreases = new ConcurrentLinkedQueue<>();
 	// those nearest to the player will be executed first
 	public final CLEngineInnerClasses.BlockUpdates increaseRequests = new CLEngineInnerClasses.BlockUpdates();
 	public final CLEngineInnerClasses.BlockUpdates pendingUpdates = new CLEngineInnerClasses.BlockUpdates();
@@ -38,14 +39,17 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 	}
 	
 	@Override
-	public void handleBlockUpdate(LevelAccessor level, CLEngineInnerClasses.BlockRequests requests, BlockPos blockPos) {
+	public void handleBlockUpdate(LevelAccessor level, CLEngineInnerClasses.BlockUpdates requests, BlockPos blockPos) {
 		ColorRGB4 lightColor = storage.getEntry(blockPos);
 		if (lightColor == null) lightColor = ColorRGB4.fromRGB4(0,0,0);
 		
-		if(lightColor.red4 == 0 && lightColor.green4 == 0 && lightColor.blue4 == 0)
-			requestLightPullIn(requests.increaseRequests, blockPos);  // block probably destroyed/replaced with transparent, light pull in might be needed
-		else
-			decreaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, lightColor, false)); // block probably placed/replaced with non-transparent, light might need to be decreased
+		if(lightColor.red4 == 0 && lightColor.green4 == 0 && lightColor.blue4 == 0) {
+			requestLightPullIn(requests, blockPos);  // block probably destroyed/replaced with transparent, light pull in might be needed
+		} else {
+			synchronized (pendingDecreases) {
+				pendingDecreases.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, lightColor, false)); // block probably placed/replaced with non-transparent, light might need to be decreased
+			}
+		}
 		
 		// propagate light if new blockState emits light (single lookup for both brightness and color)
 		BlockState blockState = level.getBlockState(blockPos);
@@ -54,13 +58,13 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 		
 		if (blockState != null && emission > 0) {
 			ColorRGB4 color = forLight ? Config.getColorEmission(level, blockPos, blockState) : Config.getAbsorptionColor(level, blockPos, blockState);
-			requests.increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, color, false, true, false));
+			requests.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, color, false, true, false));
 		}
 		
-		if (!requests.increaseRequests.isEmpty()) {
+		if (!requests.isEmpty()) {
 			synchronized (pendingUpdates) {
-				for (CLEngineInnerClasses.LightUpdateRequest increaseRequest : requests.increaseRequests.updates.values()) {
-					pendingUpdates.add(increaseRequest);
+				for (CLEngineInnerClasses.LightUpdateRequest increaseRequest : requests.updates.values()) {
+					pendingUpdates.replace(increaseRequest);
 				}
 			}
 		}

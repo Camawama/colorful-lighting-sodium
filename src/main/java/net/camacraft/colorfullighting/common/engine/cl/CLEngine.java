@@ -224,15 +224,15 @@ public class CLEngine extends AbstractColoredLightEngine {
 	
 	@Override
 	public void blockUpdated(LevelAccessor level, BlockPos blockPos) {
-		CLEngineInnerClasses.BlockRequests increaseRequests = new CLEngineInnerClasses.BlockRequests(blockPos);
+		CLEngineInnerClasses.BlockUpdates increaseRequests = new CLEngineInnerClasses.BlockUpdates();
 		lightEngine.handleBlockUpdate(level, increaseRequests, blockPos);
 		
-		CLEngineInnerClasses.BlockRequests darknessIncreaseRequests = new CLEngineInnerClasses.BlockRequests(blockPos);
+		CLEngineInnerClasses.BlockUpdates darknessIncreaseRequests = new CLEngineInnerClasses.BlockUpdates();
 		darkEngine.handleBlockUpdate(level, darknessIncreaseRequests, blockPos);
 	}
 	
 	// CODE REGION: threading logic
-	public static final boolean USE_THREAD = false;
+	public static final boolean USE_THREAD = true;
 	public volatile boolean running = true;
 	private Thread lightPropagatorThread;
 	

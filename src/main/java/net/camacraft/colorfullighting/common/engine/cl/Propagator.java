@@ -385,8 +385,14 @@ public abstract class Propagator {
 	
 	public void schedule() {
 		synchronized (engine.pendingUpdates) {
-			engine.pendingUpdates.updates.values().forEach(engine.increaseRequests::add);
+			engine.pendingUpdates.updates.values().forEach(engine.increaseRequests::replace);
 			engine.pendingUpdates.updates.clear();
+		}
+		
+		// defer addition of decreases to prevent race conditions
+		synchronized (engine.pendingDecreases) {
+			engine.decreaseRequests.addAll(engine.pendingDecreases);
+			engine.pendingDecreases.clear();
 		}
 	}
 }

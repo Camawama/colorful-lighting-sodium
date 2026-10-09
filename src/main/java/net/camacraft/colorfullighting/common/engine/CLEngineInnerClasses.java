@@ -7,21 +7,17 @@ import net.minecraft.world.level.ChunkPos;
 import java.util.*;
 
 public class CLEngineInnerClasses {
-	public static class BlockRequests {
-		public BlockPos blockPos;
-		// ArrayDeque, not LinkedList: propagation enqueues millions of requests per minute and
-		// LinkedList allocates a Node per element (visible in the 2026-08-06 JFR captures)
-		public BlockUpdates increaseRequests = new BlockUpdates();
-		
-		public BlockRequests(BlockPos blockPos) {
-			this.blockPos = blockPos;
-		}
-	}
-	
 	public static class BlockUpdates {
 		BlockPos latestPoll;
-		public final ArrayDeque<BlockPos> positions = new ArrayDeque<>();
+		public ArrayDeque<BlockPos> positions = new ArrayDeque<>();
 		public final Map<BlockPos, LightUpdateRequest> updates = new HashMap<>();
+		
+		public void replace(LightUpdateRequest increaseRequest) {
+			CLEngineInnerClasses.LightUpdateRequest old = updates.put(increaseRequest.blockPos, increaseRequest);
+			if (old == null) {
+				positions.add(increaseRequest.blockPos);
+			}
+		}
 		
 		public void add(LightUpdateRequest increaseRequest) {
 			add(increaseRequest, true);
