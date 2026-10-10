@@ -23,17 +23,8 @@ public class LightPropagator extends Propagator {
 		super(engine, manager);
 	}
 	
-	Map<BlockPos, Integer> numProps = new HashMap<>();
-	
 	@Override
 	public boolean propagateIncrease(CLEngineInnerClasses.BlockUpdates increaseRequests, CLEngineInnerClasses.LightUpdateRequest request, LevelAccessor level) {
-//		Integer count = numProps.get(request.blockPos);
-//		if (count == null) {
-//			numProps.put(request.blockPos, 1);
-//		} else {
-//			numProps.replace(request.blockPos, count + 1);
-//		}
-		
 		BlockState sourceState = null;
 		
 		if (request.checkSource) {
