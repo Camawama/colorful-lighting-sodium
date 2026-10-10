@@ -350,12 +350,12 @@ public abstract class Propagator {
 				if(neighbourLightColor == null) return false; // section might have got unloaded and propagation should stop
 
 				// if neighbour doesn't have any light
-//				if(neighbourLightColor.red4 == 0 && neighbourLightColor.green4 == 0 && neighbourLightColor.blue4 == 0)
-//					continue;
+				if(neighbourLightColor.red4 == 0 && neighbourLightColor.green4 == 0 && neighbourLightColor.blue4 == 0)
+					continue;
 
 				// if neighbor has either less or the same light as current, then there's no point in propagating
-				if (compareColors(neighbourLightColor, request.lightColor))
-					continue;
+//				if (compareColors(neighbourLightColor, request.lightColor))
+//					continue;
 
 				// force neighbour to propagate light to the region that has been just cleared (decreased)
 				increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(neighbourPos, null, true, false, true));
