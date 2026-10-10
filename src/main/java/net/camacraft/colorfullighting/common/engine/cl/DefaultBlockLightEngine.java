@@ -25,8 +25,8 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 	
 	// TODO: these should be protected
 	// those first added will be executed first (this order is required by decrease propagation algorithm)
-	public final Queue<CLEngineInnerClasses.LightUpdateRequest> decreaseRequests = new ConcurrentLinkedQueue<>();
-	public final Queue<CLEngineInnerClasses.LightUpdateRequest> pendingDecreases = new ConcurrentLinkedQueue<>();
+	public final CLEngineInnerClasses.BlockUpdates decreaseRequests = new CLEngineInnerClasses.BlockUpdates();
+	public final CLEngineInnerClasses.BlockUpdates pendingDecreases = new CLEngineInnerClasses.BlockUpdates();
 	// those nearest to the player will be executed first
 	public final CLEngineInnerClasses.BlockUpdates increaseRequests = new CLEngineInnerClasses.BlockUpdates();
 	public final CLEngineInnerClasses.BlockUpdates pendingUpdates = new CLEngineInnerClasses.BlockUpdates();
@@ -48,6 +48,9 @@ public class DefaultBlockLightEngine extends ColoredBlockLightEngine {
 		} else {
 			synchronized (pendingDecreases) {
 				pendingDecreases.add(new CLEngineInnerClasses.LightUpdateRequest(blockPos, lightColor, false)); // block probably placed/replaced with non-transparent, light might need to be decreased
+				// the decrease request will automatically handle creation of any necessary increase requests
+				// scheduling manually only duplicates the request
+//				return;
 			}
 		}
 		

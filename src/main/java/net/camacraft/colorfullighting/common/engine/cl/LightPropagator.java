@@ -14,9 +14,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
-import java.util.ArrayDeque;
-import java.util.List;
-import java.util.Queue;
+import java.util.*;
 
 import static net.camacraft.colorfullighting.ColorfulLighting.clientAccessor;
 
@@ -25,8 +23,17 @@ public class LightPropagator extends Propagator {
 		super(engine, manager);
 	}
 	
+	Map<BlockPos, Integer> numProps = new HashMap<>();
+	
 	@Override
 	public boolean propagateIncrease(CLEngineInnerClasses.BlockUpdates increaseRequests, CLEngineInnerClasses.LightUpdateRequest request, LevelAccessor level) {
+//		Integer count = numProps.get(request.blockPos);
+//		if (count == null) {
+//			numProps.put(request.blockPos, 1);
+//		} else {
+//			numProps.replace(request.blockPos, count + 1);
+//		}
+		
 		BlockState sourceState = null;
 		
 		if (request.checkSource) {
@@ -50,17 +57,21 @@ public class LightPropagator extends Propagator {
 			}
 		}
 		
-		ColorRGB4 oldLightColor = nullColor ? request.lightColor : getLatestLightColor(request.blockPos);
-		if(oldLightColor == null) return false; // section might have got unloaded and propagation should stop
-		ColorRGB4 newLightColor = ColorRGB4.fromRGB4(
-				Math.max(oldLightColor.red4, request.lightColor.red4),
-				Math.max(oldLightColor.green4, request.lightColor.green4),
-				Math.max(oldLightColor.blue4, request.lightColor.blue4)
-		);
-		
-		// if light color didn't change (check is ignored if request is forced)
-		if(!request.force && newLightColor.red4 == oldLightColor.red4 && newLightColor.green4 == oldLightColor.green4 && newLightColor.blue4 == oldLightColor.blue4) return true;
-		engine.changesInProgress.put(request.blockPos, newLightColor);
+		// if nullColor is true, then we already know the light has not changed
+		// if nullColor is false, then we can check if it changed
+		if (!nullColor) {
+			ColorRGB4 oldLightColor = getLatestLightColor(request.blockPos);
+			if(oldLightColor == null) return false; // section might have got unloaded and propagation should stop
+			ColorRGB4 newLightColor = ColorRGB4.fromRGB4(
+					Math.max(oldLightColor.red4, request.lightColor.red4),
+					Math.max(oldLightColor.green4, request.lightColor.green4),
+					Math.max(oldLightColor.blue4, request.lightColor.blue4)
+			);
+			
+			// if light color didn't change (check is ignored if request is forced)
+			if(!request.force && newLightColor.red4 == oldLightColor.red4 && newLightColor.green4 == oldLightColor.green4 && newLightColor.blue4 == oldLightColor.blue4) return true;
+			engine.changesInProgress.put(request.blockPos, newLightColor);
+		}
 		
 		// Cache source block state and geometry info once, not per-direction
 		if (sourceState == null) {
@@ -80,8 +91,9 @@ public class LightPropagator extends Propagator {
 		
 		for(var direction : Direction.values()) {
 			BlockPos neighbourPos = request.blockPos.relative(direction);
-			
+
 			ColorRGB4 neighborColor = getLatestLightColor(neighbourPos);
+			// check if the neighbor color is already too bright for this propagation to do anything
 			if (neighborColor == null) continue;
 			if (
 					neighborColor.red4 >= request.lightColor.red4 &&
@@ -160,7 +172,7 @@ public class LightPropagator extends Propagator {
 					&& Config.isMultiplyFilter(level, neighbourPos, neighbourState);
 
 			ColorRGB4 coloredLightTransmittance = ColorRGB4.min(exitTransmittance, entryMultiplies ? ColorRGB4.WHITE : entryTransmittance);
-
+			
 			ColorRGB4 attenuated = attenuateLight(request.lightColor, lightBlocked);
 			ColorRGB4 neighbourLightColor = ColorRGB4.fromRGB4(
 					MathExt.clamp(attenuated.red4, 0, coloredLightTransmittance.red4),
@@ -172,12 +184,12 @@ public class LightPropagator extends Propagator {
 			}
 			// if no more color to propagate
 			if(neighbourLightColor.red4 == 0 && neighbourLightColor.green4 == 0 && neighbourLightColor.blue4 == 0) continue;
-			
+
 //			ColorRGB4 neighbourLightColor = attenuateLight(request.lightColor, 1);
-			
+
 			increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(neighbourPos, neighbourLightColor, false));
 //			engine.increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(neighbourPos, neighbourLightColor, false));
-			
+
 			didWork = true;
 		}
 		return didWork;
@@ -198,7 +210,7 @@ public class LightPropagator extends Propagator {
 			CLEngineInnerClasses.BlockUpdates newIncreaseRequests = new CLEngineInnerClasses.BlockUpdates();
 			propagateDecreases(level, engine.decreaseRequests, newIncreaseRequests);
 			propagateIncreases(level, newIncreaseRequests);
-
+			
 //			markChangesReady();
 		}
 		

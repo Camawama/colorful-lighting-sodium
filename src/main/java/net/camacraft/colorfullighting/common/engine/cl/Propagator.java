@@ -244,7 +244,7 @@ public abstract class Propagator {
 	/**
 	 * Handles all decrease propagation requests.
 	 */
-	protected void propagateDecreases(LevelAccessor level, Queue<CLEngineInnerClasses.LightUpdateRequest> decreaseRequests, CLEngineInnerClasses.BlockUpdates increaseRequests) {
+	protected void propagateDecreases(LevelAccessor level, CLEngineInnerClasses.BlockUpdates decreaseRequests, CLEngineInnerClasses.BlockUpdates increaseRequests) {
 		Map<BlockPos, ColorRGB4> visited = new HashMap<>();
 		while(!decreaseRequests.isEmpty()) {
 			CLEngineInnerClasses.LightUpdateRequest req = decreaseRequests.poll();
@@ -267,8 +267,9 @@ public abstract class Propagator {
 				lightColor.green4 <= neighbourLightDecrease.green4;
 	}
 	
-	protected boolean propagateDecrease(CLEngineInnerClasses.BlockUpdates increaseRequests, Queue<CLEngineInnerClasses.LightUpdateRequest> decreaseRequests, CLEngineInnerClasses.LightUpdateRequest request, LevelAccessor level) {
+	protected boolean propagateDecrease(CLEngineInnerClasses.BlockUpdates increaseRequests, CLEngineInnerClasses.BlockUpdates decreaseRequests, CLEngineInnerClasses.LightUpdateRequest request, LevelAccessor level) {
 //		ColorRGB4 oldLightColor = getLatestLightColor(request.blockPos);
+//		ColorRGB4 oldLightColor = request.lightColor;
 //		if(oldLightColor == null) return false; // section might have got unloaded and propagation should stop
 //
 //		int brightness = Math.max(oldLightColor.red4, Math.max(oldLightColor.green4, oldLightColor.blue4));
@@ -297,50 +298,44 @@ public abstract class Propagator {
 //			int offZ = kernelZs[i];
 //
 //			BlockPos neighbourPos = request.blockPos.offset(offX, offY, offZ);
+//			if (!level.isInBounds(neighbourPos)) continue;
 //
 //			ColorRGB4 neighbourLightColor = getLatestLightColor(neighbourPos);
 //			if(neighbourLightColor == null) continue;
 //
 //			ColorRGB4 refCurr = colors[dist];
 //
-////			int r = neighbourLightColor.red4;
-////			if (r <= refCurr.red4) r = 0;
-////			int g = neighbourLightColor.green4;
-////			if (g <= refCurr.green4) g = 0;
-////			int b = neighbourLightColor.blue4;
-////			if (b <= refCurr.blue4) b = 0;
-//			int r = 0, g = 0, b = 0;
+//			if (refCurr.isBlack()) {
+//				increaseRequests.replace(new CLEngineInnerClasses.LightUpdateRequest(neighbourPos, null, true, false, true));
+//			} else {
+//				this.engine.changesInProgress.put(neighbourPos, ColorRGB4.BLACK);
+//				increaseRequests.replace(new CLEngineInnerClasses.LightUpdateRequest(neighbourPos, null, true, false, true));
+//			}
 //
-//			ColorRGB4 color = ColorRGB4.fromRGB4(r, g, b);
-//			this.engine.changesInProgress.put(neighbourPos, color);
-////			this.engine.changesInProgress.put(neighbourPos, ColorRGB4.fromRGB4(0, 0, 0));
-//
-//			if (neighbourLightColor.red4 != 0 || neighbourLightColor.green4 != 0 || neighbourLightColor.blue4 != 0) {
-//				BlockState state = level.getBlockState(neighbourPos);
-//				if (state != null) {
-//					color = getEmission(level, neighbourPos, state);
-//					if (color != null && (color.red4 != 0 || color.blue4 != 0 || color.green4 != 0))
-//						increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(neighbourPos, color, true, false, true));
-//					else
-//						increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(neighbourPos, null, true, false, true));
-//				}
+//			BlockState state = level.getBlockState(neighbourPos);
+//			if (state != null) {
+//				ColorRGB4 color = getEmission(level, neighbourPos, state);
+//				if (color != null && (color.red4 != 0 || color.blue4 != 0 || color.green4 != 0))
+//					increaseRequests.replace(new CLEngineInnerClasses.LightUpdateRequest(neighbourPos, color, true, false, true));
 //			}
 //		}
 		
-		this.engine.changesInProgress.put(request.blockPos, ColorRGB4.fromRGB4(0, 0, 0));
+		ColorRGB4 trgColor = ColorRGB4.BLACK;
+		this.engine.changesInProgress.put(request.blockPos, trgColor);
 
 		BlockState blockState = level.getBlockState(request.blockPos);
 		if(blockState == null) return false; // section might have got unloaded and propagation should stop
 		// repropagate removed light (single lookup for both value and color)
 		if(engine.getValue(level, request.blockPos, blockState) > 0) {
-			increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(request.blockPos, engine.getColor(level, request.blockPos, blockState), false, true, false));
+			trgColor = engine.getColor(level, request.blockPos, blockState);
+			increaseRequests.add(new CLEngineInnerClasses.LightUpdateRequest(request.blockPos, trgColor, false, true, false));
 		}
 
 		// attenuation
 		ColorRGB4 neighbourLightDecrease = attenuateLight(request.lightColor, 1);
 
 		// whether neighbours' light should be decreased or increased (to repropagate), true on "light edges"
-		boolean repropagateNeighbours = neighbourLightDecrease.red4 == 0 && neighbourLightDecrease.green4 == 0 && neighbourLightDecrease.blue4 == 0;
+		boolean repropagateNeighbours = neighbourLightDecrease.red4 <= trgColor.red4 && neighbourLightDecrease.green4 <= trgColor.green4 && neighbourLightDecrease.blue4 <= trgColor.blue4;
 
 		for(var direction : Direction.values()) {
 			BlockPos neighbourPos = request.blockPos.relative(direction);
@@ -391,7 +386,7 @@ public abstract class Propagator {
 		
 		// defer addition of decreases to prevent race conditions
 		synchronized (engine.pendingDecreases) {
-			engine.decreaseRequests.addAll(engine.pendingDecreases);
+			engine.pendingDecreases.updates.values().forEach(engine.decreaseRequests::replace);
 			engine.pendingDecreases.clear();
 		}
 	}
