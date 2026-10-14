@@ -92,6 +92,9 @@ public final class DhTerrainColorShaderProgram implements IDhApiShaderProgram {
     private int uClUltraMin;
     private int uClUltraInvSize;
     private int uClDebugMode;
+    private int uClHasNormals;
+    private int uClHalfTexel;
+    private int uClNightVibrancy;
     /** DH 3.2 textured LODs: DH binds its block atlas on this unit before our fillUniformData. */
     private static final int BLOCK_ATLAS_TEXTURE_UNIT = 1;
     private int uClBlockAtlas;
@@ -242,6 +245,11 @@ public final class DhTerrainColorShaderProgram implements IDhApiShaderProgram {
             uniform3f(uClUltraMin, volume.ultraMinX(), volume.ultraMinY(), volume.ultraMinZ());
             uniform1f(uClUltraInvSize, volume.ultraInvSizeBlocks());
             uniform1i(uClDebugMode, DhCompat.getDebugMode());
+            // The volumes are read half a texel in front of each face (DH 3.2+ sends face normals).
+            uniform1i(uClHasNormals, DhCompatImpl.isTexturedLodContract() ? 1 : 0);
+            uniform3f(uClHalfTexel, DhColorVolume.NEAR_BLOCKS_PER_TEXEL * 0.5f,
+                    DhColorVolume.FAR_BLOCKS_PER_TEXEL * 0.5f, DhColorVolume.ULTRA_BLOCKS_PER_TEXEL * 0.5f);
+            uniform1f(uClNightVibrancy, nightVibrancy());
 
             // DH 3.2 textured LODs: only sample the atlas when DH's config wants it AND DH's
             // meta renderer actually bound an atlas on unit 1 this pass (it skips the bind when
@@ -257,6 +265,15 @@ public final class DhTerrainColorShaderProgram implements IDhApiShaderProgram {
         } catch (Throwable t) {
             fail("fillUniformData", t);
         }
+    }
+
+    /** The in-world shaders' night vibrancy (SodiumShaderCompat), so LODs wash colours the same way. */
+    private static float nightVibrancy() {
+        var level = Minecraft.getInstance().level;
+        if (level == null) return 0.0f;
+        float night = level.getStarBrightness(Minecraft.getInstance().getFrameTime());
+        float vibrancy = night * net.camacraft.colorfullighting.common.Config.getMoonVibrancy(level.getMoonPhase());
+        return Math.max(0.0f, Math.min(1.0f, vibrancy));
     }
 
     @Override
@@ -339,6 +356,9 @@ public final class DhTerrainColorShaderProgram implements IDhApiShaderProgram {
         uClUltraMin = GL20.glGetUniformLocation(program, "uClUltraMin");
         uClUltraInvSize = GL20.glGetUniformLocation(program, "uClUltraInvSize");
         uClDebugMode = GL20.glGetUniformLocation(program, "uClDebugMode");
+        uClHasNormals = GL20.glGetUniformLocation(program, "uClHasNormals");
+        uClHalfTexel = GL20.glGetUniformLocation(program, "uClHalfTexel");
+        uClNightVibrancy = GL20.glGetUniformLocation(program, "uClNightVibrancy");
         uClBlockAtlas = GL20.glGetUniformLocation(program, "uClBlockAtlas");
         uClTexturedLods = GL20.glGetUniformLocation(program, "uClTexturedLods");
 

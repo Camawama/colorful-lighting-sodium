@@ -6,26 +6,15 @@ import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.ClientPacketListener;
-import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
-import net.minecraft.network.protocol.game.ClientboundExplodePacket;
 import net.minecraft.network.protocol.game.ServerboundSetBeaconPacket;
-import net.minecraft.world.level.ChunkPos;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-
-/*
-This mixin is a BAND-AID fix for lingering light from explosions.
-Until I find a better way to handle light updates, this will do.
- */
 
 @Mixin(ClientPacketListener.class)
 public class ClientPacketListenerMixin {
@@ -33,25 +22,6 @@ public class ClientPacketListenerMixin {
 	@Shadow
 	private ClientLevel level;
 	
-	@Inject(
-            method = "handleExplosion(Lnet/minecraft/network/protocol/game/ClientboundExplodePacket;)V",
-            at = @At("TAIL")
-    )
-    private void colorfullighting$handleExplosion(ClientboundExplodePacket packet, CallbackInfo ci) {
-        if (level == null) return;
-
-        List<BlockPos> toBlow = packet.getToBlow();
-        if (toBlow == null || toBlow.isEmpty()) return;
-
-        Set<Long> rebuilt = new HashSet<>();
-        for (BlockPos pos : toBlow) {
-            ChunkPos cp = new ChunkPos(pos);
-            if (rebuilt.add(cp.toLong())) {
-	            ((LevelAttachments) level).colorfullighting$getEngine().rebuildChunk(cp, 500);
-            }
-        }
-    }
-
     /**
      * A block entity's NBT just changed (a beacon's effect was set, a sign was edited, ...). Nothing
      * about the block state changed, so no vanilla light update fires and colored light would stay

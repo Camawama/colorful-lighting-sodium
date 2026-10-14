@@ -13,7 +13,7 @@ void flw_instanceVertex(in FlwInstance instance) {
 
     flw_vertexTexCoord = flw_vertexTexCoord + instance.diff + scroll;
     flw_vertexOverlay = instance.overlay;
-    flw_vertexLight = max(vec2(instance.light) / 256., flw_vertexLight);
+    flw_vertexLight = max(cl_vanillaVertexLight(ivec2(instance.light)), flw_vertexLight); // colorful lighting: packed light
 
     // START colorful lighting
     vec4 vertexPos = flw_vertexPos;

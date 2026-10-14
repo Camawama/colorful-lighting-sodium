@@ -192,6 +192,11 @@ dependencies {
 
     compileOnly "curse.maven:euphoria-patches-915902:8177591"
 
+    // Xaero's Minimap 26.6.0 and World Map 1.47.0, compile only: the map colors in compat/xaero and
+    // mixin/compat/xaero, which ColorfulLightingMixinPlugin applies only when these are installed
+    compileOnly fg.deobf("curse.maven:xaeros-minimap-263420:9067172")
+    compileOnly fg.deobf("curse.maven:xaeros-world-map-317780:9067273")
+
 //    // oculus flywheel compatilayers
 //    compileOnly fg.deobf("curse.maven:iris-flywheel-compat-659897:6694861")
 //    implementation fg.deobf("curse.maven:colorwheel-1254143:8206638")
@@ -252,8 +257,8 @@ tasks.named('jar', Jar).configure {
 }
 
 // Thin API artifact: just the net.camacraft.colorfullighting.api package (classes + sources) for
-// mods that want a compile-time-only dependency. Most consumers can instead depend on the full
-// jar from CurseMaven/Modrinth with fg.deobf; see docs/API.md.
+// mods that want a compile-time-only dependency (the full jar is needed at runtime). The mod is
+// not on any public Maven repository; docs/API.md says how to depend on a built jar.
 tasks.register('apiJar', Jar) {
     dependsOn tasks.named('compileJava')
     archiveClassifier = 'api'

@@ -46,6 +46,12 @@ public class LevelRendererMixin implements LevelRendererAccessor {
         if (!(level instanceof LevelAttachments attachments)) {
             return;
         }
+        // a Level with no colored engine of its own (VMod's schematic preview builds one off-thread to bake a pasted
+        // ship's mesh; it threw a NullPointerException here and the preview thread died): vanilla lighting
+        ColoredLightEngine engine = attachments.colorfullighting$getEngine();
+        if (engine == null) {
+            return;
+        }
 
         int skyLight = level.getBrightness(LightLayer.SKY, pos);
         if(state.emissiveRendering(level, pos)) {
@@ -57,7 +63,7 @@ public class LevelRendererMixin implements LevelRendererAccessor {
             }
         }
 		
-        int color = attachments.colorfullighting$getEngine().sampleLightColorInt(pos);
+        int color = engine.sampleLightColorInt(pos);
         cir.setReturnValue(SodiumPackedLightData.packDataFromRGB4(skyLight, color));
     }
 	

@@ -26,6 +26,7 @@ All of this light propagation runs on a separate background thread, so the game 
 *   NBT can define different colors, for blocks, entities and items (a beacon lit by its effect, a charged creeper, a potion by its type)
 *   Modded light sources with no configured color automatically glow in a color sampled from their own texture
 *   Water subtly tints light passing through it, deepening with distance and matching the biome's water color (swamp water filters light differently than ocean water)
+*   Explosions, `/fill` and anything else that changes many blocks at once relight in place: no flashing purge. `/cl purge` (all, or `chunk` for the 3x3 chunks round you) is still there as a manual reset.
 *   The mod is client-side, so you can play with it on ANY server while still experiencing colorful lighting!
 
 ## 🔗 Mod Compatibility
@@ -46,6 +47,8 @@ All of this light propagation runs on a separate background thread, so the game 
 *   **[Flerovium](https://modrinth.com/mod/flerovium)**: Held and dropped items, and the block-breaking cracks overlay, render with correct lighting instead of appearing dark.
 *   **[AsyncParticles](https://modrinth.com/mod/asyncparticles)**: Particles render with correct colored lighting instead of appearing dark.
 *   **Flopper**: The fluid inside floppers renders with correct lighting.
+*   **[Immersive Portals](https://www.curseforge.com/minecraft/mc-mods/immersive-portals-for-forge)**: A dimension seen through a portal shows its colored light before you have been there.
+*   **[Xaero's Minimap](https://www.curseforge.com/minecraft/mc-mods/xaeros-minimap) and [World Map](https://www.curseforge.com/minecraft/mc-mods/xaeros-world-map)**: With the maps' Lighting on, lit areas show the color of their light at night (in cave mode the minimap draws its own chunks, so caves show color too), and a pixel is redrawn when its light changes color (stained glass placed round a lamp or broken). The World Map records the colors when it updates a chunk you are near and keeps them with its map (a `.clcolors` file beside each region file), so a place keeps the colors it had when you were last there; it never reads light for places you haven't been. Zoomed out and on the minimap's World Map chunks too (`xaeroMinimapColors`, `xaeroWorldMapColors`).
 
 > The Epic Fight, HBM, Flerovium, AsyncParticles and Flopper compats are recent additions; please report any issues.
 
@@ -370,6 +373,9 @@ Define a separate light intensity/vibrancy value for each moon phase.
 | `autoEmitterColors` | `true` | Automatically sample a light color from the block's texture for light sources with no configured color (typically modded blocks). Bright pixels dominate the sample, so a lamp glows in the color of its glowing part rather than its casing. Disable to make unconfigured light sources emit plain white light. |
 | `autoPatchShaderpacks` | `false` | Scan the `shaderpacks` folder on every startup and create patched copies of recognized packs (same as running `/cl patchshaders`; requires Oculus). |
 | `lightUpdateSpeed` | `FASTEST` | How quickly colored light fills in after chunks load. |
+| `smoothLightStaysBehindBlockers` | `true` | Smooth lighting counts a neighbouring cell's colored light only as far as it could reach the face (light loses a level per block, so a neighbour can be at most a level brighter than the cell its light passes through). Open scenes look exactly as with this off; light just doesn't glow round blocks that stop it: no bright patch under and beside a shut door on its dark side, and no light round a beacon or lamp walled in tinted glass. |
+| `xaeroMinimapColors` | `true` | With Xaero's Minimap Lighting on, the block-lit part of a pixel on the chunks the minimap draws itself (without the World Map, or with its World Map chunks option off) takes the color of the light there, in cave mode too. While this is on, the minimap draws its own chunks in cave mode even with the World Map installed (the World Map's cave layers carry no colors in singleplayer); on the surface it keeps its World Map chunks option. |
+| `xaeroWorldMapColors` | `true` | The same on Xaero's World Map (the full-screen map at every zoom, and the minimap when it shows World Map chunks). Colors are recorded when the World Map updates a chunk near you and saved beside its region files (`<region>.clcolors`); off draws the grey lighting and keeps what was recorded. |
 
 <details>
 <summary><b>lightUpdateSpeed</b>: details and tuning</summary>

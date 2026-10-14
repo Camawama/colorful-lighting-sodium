@@ -137,6 +137,12 @@ public class Config {
             if (dynamicColor != null) {
                 return dynamicColor.mul(lightEmission);
             }
+            // nothing colors it (a held enchanted item, a glowing mob, a light whose ship lamp is gone): plain white,
+            // unless emitters.json names the block. The automatic color below read the light item's bulb icon
+            // (minecraft:item/light_NN, 15,13,9) and tinted every such light orange, red at its fringe.
+            if (!colorEmitters.containsKey(block)) {
+                return defaultColor.mul(lightEmission);
+            }
         }
 
         VariantList<ColorEmitter> config = colorEmitters.get(block);
@@ -297,6 +303,12 @@ public class Config {
         }
 
         return baseColor;
+    }
+
+    /** Whether a filter or an absorber is configured for this block: changing it changes colored light even where vanilla light doesn't change. */
+    public static boolean filtersOrAbsorbs(BlockState state) {
+        Block block = state.getBlock();
+        return colorFilters.containsKey(block) || colorAbsorbers.containsKey(block);
     }
 
     public static int getLightAbsorption(@NotNull LevelAccessor level, BlockPos pos, @NotNull BlockStateAccessor blockState) {

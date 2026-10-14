@@ -29,8 +29,56 @@ Usually not. Work through this list top to bottom and stop at the first tier tha
 
 Colorful Lighting is a client mod; make your dependency optional and client-side.
 
-There is also a thin `-api` classifier jar (the `api` package only, classes + sources) produced
-by the `apiJar` task if you prefer a minimal compile-time artifact.
+Colorful Lighting is not published to any public Maven repository, and it has no CurseMaven or
+Modrinth Maven coordinates. You compile against a jar built from its source
+(https://github.com/Camawama/colorful-lighting-sodium). `./gradlew build` there writes three jars
+to `build/libs/`:
+
+| Jar | What it is |
+|---|---|
+| `colorful_lighting-1.20.1-<version>.jar` | the mod, reobfuscated like any Forge release jar (MixinExtras not inside) |
+| `colorful_lighting-1.20.1-<version>-all.jar` | the same plus the bundled MixinExtras: the jar players install |
+| `colorful_lighting-1.20.1-<version>-api.jar` | only the `api` package, classes and sources, compiled in Mojang's official names |
+
+**Option 1: a jar in your project.** Copy the jar into your project's `libs/` folder:
+
+```gradle
+repositories {
+    flatDir { dirs 'libs' }
+}
+dependencies {
+    // the full mod: libs/colorful_lighting-1.20.1-2.7.1.jar (the group part is ignored by flatDir)
+    compileOnly fg.deobf("local:colorful_lighting-1.20.1:2.7.1")
+
+    // or only the API, for compiling: libs/colorful_lighting-1.20.1-2.7.1-api.jar
+    // (already in official names, so no fg.deobf)
+    // compileOnly files('libs/colorful_lighting-1.20.1-2.7.1-api.jar')
+}
+```
+
+- **The `-api` jar is for compiling only.** Its classes call into the rest of the mod, so the
+  full mod must be installed at runtime.
+- **Implementing `CLWrapperAttachments` needs the full jar.** Its default methods return internal
+  types that the `-api` jar does not contain, so compile against the full jar if you implement it.
+- **Running Colorful Lighting in your dev client.** Add the full jar with
+  `runtimeOnly fg.deobf(...)`. Also add MixinExtras, which the plain jar does not bundle (Colorful
+  Lighting uses `io.github.llamalad7:mixinextras-forge:0.4.1`).
+
+**Option 2: your local Maven repository.** In Colorful Lighting's folder:
+
+- `./gradlew publishToMavenLocal` publishes the mod jar and the `-api` jar to `~/.m2`.
+- `./gradlew publish` publishes them to `mcmodsrepo/` in that folder.
+
+The coordinates are `net.camacraft.colorful_lighting:<project folder name>:<version>`, with the
+`-api` jar under the classifier `api`. The artifact id is the name of the folder the project was
+cloned into (`settings.gradle` sets no project name), e.g. `colorful-lighting-sodium-mc1.20.1`.
+
+```gradle
+repositories { mavenLocal() }
+dependencies {
+    compileOnly fg.deobf("net.camacraft.colorful_lighting:colorful-lighting-sodium-mc1.20.1:2.7.1")
+}
+```
 
 At runtime, guard your integration behind `ModList.get().isLoaded("colorful_lighting")` and keep
 all `net.camacraft.colorfullighting.*` imports inside classes that are only loaded when the mod is

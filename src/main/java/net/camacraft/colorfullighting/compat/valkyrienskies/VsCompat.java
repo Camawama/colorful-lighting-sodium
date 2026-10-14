@@ -147,6 +147,21 @@ public final class VsCompat {
     }
 
     /**
+     * Whether a shipyard position lies inside the block bounds of the ship whose shipyard it is in
+     * (false for world positions). Thread-safe (reads the volatile mirror snapshot).
+     */
+    public boolean insideShipBlocks(double x, double y, double z) {
+        for (ShipMirror ship : mirrors) {
+            if (ship.shipyardContains(x, y, z)) {
+                return x >= ship.shipyardMinX() && x < ship.shipyardMaxX()
+                        && y >= ship.shipyardMinY() && y < ship.shipyardMaxY()
+                        && z >= ship.shipyardMinZ() && z < ship.shipyardMaxZ();
+            }
+        }
+        return false;
+    }
+
+    /**
      * Calls the consumer with the shipyard-space mirror of a world position, for every ship whose
      * world bounds inflated by {@code inflate} contain it. Thread-safe (reads the volatile mirror
      * snapshot).
@@ -177,6 +192,12 @@ public final class VsCompat {
 		return compat.shipyardToWorld(x, y, z);
 	}
 	
+	public static boolean insideShipBlocks(LevelAttachments level, double x, double y, double z) {
+		VsCompat compat = level.colorfullighting$getVSCompat();
+		if (compat == null) return false;
+		return compat.insideShipBlocks(x, y, z);
+	}
+
 	public static void forEachShipyardMirror(LevelAttachments level, double x, double y, double z, double inflate, PositionConsumer consumer) {
 		VsCompat compat = level.colorfullighting$getVSCompat();
 		if (compat == null) return;

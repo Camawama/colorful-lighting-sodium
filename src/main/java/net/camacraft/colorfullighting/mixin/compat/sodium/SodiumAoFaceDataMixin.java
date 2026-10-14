@@ -1,6 +1,7 @@
 package net.camacraft.colorfullighting.mixin.compat.sodium;
 
 import net.camacraft.colorfullighting.common.ColoredLightEngine;
+import net.camacraft.colorfullighting.common.ColorfulLightingConfig;
 import net.camacraft.colorfullighting.common.Config;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
 import net.camacraft.colorfullighting.common.util.ColorRGB8;
@@ -72,6 +73,54 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
         // Removed aggressive filtering logic to fix sharp lines at block edges.
         // This allows the corner light to properly blend with neighbors, even if they are bright light sources.
         return getBaseColoredLight(cache, cursor, x, y, z);
+    }
+
+    /**
+     * A neighbour sample as far as its light can reach the face. Light loses at least a level (17 in
+     * 8-bit channels) per block, so in open air an edge cell is never more than a level brighter than
+     * the face's own cell, and a corner never more than a level brighter than the brighter of its two
+     * edges; those samples pass unchanged. Brighter than that, the light came round something that
+     * stops it, and the blend below (which fills unlit samples with the dimmest lit one) would spread it
+     * over the face: a beacon walled in tinted glass lit the floor under and round the glass, a shut
+     * door the floor on its dark side. Such a sample is scaled down to the bound. Emissive-rendering
+     * blocks keep their glow (their colour is not light that travelled).
+     */
+    @Unique
+    private int getReachingNeighborLight(LightDataAccess cache, ColoredLightEngine.SectionCursor cursor, int limit8, int x, int y, int z) {
+        int packed = getBaseColoredLight(cache, cursor, x, y, z);
+        if (LightDataAccess.unpackEM(cache.get(x, y, z))) {
+            return packed;
+        }
+        return limitBlockLight(packed, limit8);
+    }
+
+    /** Scales a sample's block light down (hue kept) so its brightest channel is at most {@code limit8}. */
+    @Unique
+    private static int limitBlockLight(int packed, int limit8) {
+        int r = SodiumPackedLightData.unpackRed(packed);
+        int g = SodiumPackedLightData.unpackGreen(packed);
+        int b = SodiumPackedLightData.unpackBlue(packed);
+        int lum = Math.max(r, Math.max(g, b));
+        if (lum <= limit8) {
+            return packed;
+        }
+        int sky = SodiumPackedLightData.unpackSkyLight(packed);
+        if (limit8 <= 0) {
+            return SodiumPackedLightData.packData(sky, 0, 0, 0);
+        }
+        return SodiumPackedLightData.packData(sky, r * limit8 / lum, g * limit8 / lum, b * limit8 / lum);
+    }
+
+    /** One light level (8-bit channels) above the brighter of two samples: how bright light can be one block further. */
+    @Unique
+    private static int reachLimit(int packedA, int packedB) {
+        return Math.max(blockLum(packedA), blockLum(packedB)) + 17;
+    }
+
+    @Unique
+    private static int blockLum(int packed) {
+        return Math.max(SodiumPackedLightData.unpackRed(packed),
+                Math.max(SodiumPackedLightData.unpackGreen(packed), SodiumPackedLightData.unpackBlue(packed)));
     }
 
     @Unique
@@ -206,54 +255,6 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
 
         final int adjWord = cache.get(adjX, adjY, adjZ);
 
-        Direction[] faces = NEIGHBOR_FACES[direction.get3DDataValue()];
-
-        final int e0 = cache.get(adjX, adjY, adjZ, faces[0]);
-        final int e0lm = getFilteredNeighborLight(cache, cursor, adjX + faces[0].getStepX(), adjY + faces[0].getStepY(), adjZ + faces[0].getStepZ());
-        final boolean e0op = LightDataAccess.unpackOP(e0);
-
-        final int e1 = cache.get(adjX, adjY, adjZ, faces[1]);
-        final int e1lm = getFilteredNeighborLight(cache, cursor, adjX + faces[1].getStepX(), adjY + faces[1].getStepY(), adjZ + faces[1].getStepZ());
-        final boolean e1op = LightDataAccess.unpackOP(e1);
-
-        final int e2 = cache.get(adjX, adjY, adjZ, faces[2]);
-        final int e2lm = getFilteredNeighborLight(cache, cursor, adjX + faces[2].getStepX(), adjY + faces[2].getStepY(), adjZ + faces[2].getStepZ());
-        final boolean e2op = LightDataAccess.unpackOP(e2);
-
-        final int e3 = cache.get(adjX, adjY, adjZ, faces[3]);
-        final int e3lm = getFilteredNeighborLight(cache, cursor, adjX + faces[3].getStepX(), adjY + faces[3].getStepY(), adjZ + faces[3].getStepZ());
-        final boolean e3op = LightDataAccess.unpackOP(e3);
-
-        final int c0lm;
-        if (e2op && e0op) {
-            c0lm = e0lm;
-        } else {
-            c0lm = getFilteredNeighborLight(cache, cursor, adjX + faces[0].getStepX() + faces[2].getStepX(), adjY + faces[0].getStepY() + faces[2].getStepY(), adjZ + faces[0].getStepZ() + faces[2].getStepZ());
-        }
-
-        final int c1lm;
-        if (e3op && e0op) {
-            c1lm = e0lm;
-        } else {
-            c1lm = getFilteredNeighborLight(cache, cursor, adjX + faces[0].getStepX() + faces[3].getStepX(), adjY + faces[0].getStepY() + faces[3].getStepY(), adjZ + faces[0].getStepZ() + faces[3].getStepZ());
-        }
-
-        final int c2lm;
-        if (e2op && e1op) {
-            c2lm = e1lm;
-        } else {
-            c2lm = getFilteredNeighborLight(cache, cursor, adjX + faces[1].getStepX() + faces[2].getStepX(), adjY + faces[1].getStepY() + faces[2].getStepY(), adjZ + faces[1].getStepZ() + faces[2].getStepZ());
-        }
-
-        final int c3lm;
-        if (e3op && e1op) {
-            c3lm = e1lm;
-        } else {
-            c3lm = getFilteredNeighborLight(cache, cursor, adjX + faces[1].getStepX() + faces[3].getStepX(), adjY + faces[1].getStepY() + faces[3].getStepY(), adjZ + faces[1].getStepZ() + faces[3].getStepZ());
-        }
-
-        int[] cb = this.lm;
-
         final int calm;
 
         if (offset && LightDataAccess.unpackFO(adjWord)) {
@@ -261,6 +262,59 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
         } else {
             calm = getFilteredNeighborLight(cache, cursor, adjX, adjY, adjZ);
         }
+
+        // Edges reach the face only as far as the face's own cell lets light through, corners only as far as
+        // the brighter of their two edges (getReachingNeighborLight).
+        final boolean reach = ColorfulLightingConfig.smoothLightStaysBehindBlockers();
+        final int limit = reach ? reachLimit(calm, calm) : Integer.MAX_VALUE;
+
+        Direction[] faces = NEIGHBOR_FACES[direction.get3DDataValue()];
+
+        final int e0 = cache.get(adjX, adjY, adjZ, faces[0]);
+        final int e0lm = getReachingNeighborLight(cache, cursor, limit, adjX + faces[0].getStepX(), adjY + faces[0].getStepY(), adjZ + faces[0].getStepZ());
+        final boolean e0op = LightDataAccess.unpackOP(e0);
+
+        final int e1 = cache.get(adjX, adjY, adjZ, faces[1]);
+        final int e1lm = getReachingNeighborLight(cache, cursor, limit, adjX + faces[1].getStepX(), adjY + faces[1].getStepY(), adjZ + faces[1].getStepZ());
+        final boolean e1op = LightDataAccess.unpackOP(e1);
+
+        final int e2 = cache.get(adjX, adjY, adjZ, faces[2]);
+        final int e2lm = getReachingNeighborLight(cache, cursor, limit, adjX + faces[2].getStepX(), adjY + faces[2].getStepY(), adjZ + faces[2].getStepZ());
+        final boolean e2op = LightDataAccess.unpackOP(e2);
+
+        final int e3 = cache.get(adjX, adjY, adjZ, faces[3]);
+        final int e3lm = getReachingNeighborLight(cache, cursor, limit, adjX + faces[3].getStepX(), adjY + faces[3].getStepY(), adjZ + faces[3].getStepZ());
+        final boolean e3op = LightDataAccess.unpackOP(e3);
+
+        final int c0lm;
+        if (e2op && e0op) {
+            c0lm = e0lm;
+        } else {
+            c0lm = getReachingNeighborLight(cache, cursor, reach ? reachLimit(e0lm, e2lm) : Integer.MAX_VALUE, adjX + faces[0].getStepX() + faces[2].getStepX(), adjY + faces[0].getStepY() + faces[2].getStepY(), adjZ + faces[0].getStepZ() + faces[2].getStepZ());
+        }
+
+        final int c1lm;
+        if (e3op && e0op) {
+            c1lm = e0lm;
+        } else {
+            c1lm = getReachingNeighborLight(cache, cursor, reach ? reachLimit(e0lm, e3lm) : Integer.MAX_VALUE, adjX + faces[0].getStepX() + faces[3].getStepX(), adjY + faces[0].getStepY() + faces[3].getStepY(), adjZ + faces[0].getStepZ() + faces[3].getStepZ());
+        }
+
+        final int c2lm;
+        if (e2op && e1op) {
+            c2lm = e1lm;
+        } else {
+            c2lm = getReachingNeighborLight(cache, cursor, reach ? reachLimit(e1lm, e2lm) : Integer.MAX_VALUE, adjX + faces[1].getStepX() + faces[2].getStepX(), adjY + faces[1].getStepY() + faces[2].getStepY(), adjZ + faces[1].getStepZ() + faces[2].getStepZ());
+        }
+
+        final int c3lm;
+        if (e3op && e1op) {
+            c3lm = e1lm;
+        } else {
+            c3lm = getReachingNeighborLight(cache, cursor, reach ? reachLimit(e1lm, e3lm) : Integer.MAX_VALUE, adjX + faces[1].getStepX() + faces[3].getStepX(), adjY + faces[1].getStepY() + faces[3].getStepY(), adjZ + faces[1].getStepZ() + faces[3].getStepZ());
+        }
+
+        int[] cb = this.lm;
 
         cb[0] = blend(e3lm, e0lm, c1lm, calm);
         cb[1] = blend(e2lm, e0lm, c0lm, calm);

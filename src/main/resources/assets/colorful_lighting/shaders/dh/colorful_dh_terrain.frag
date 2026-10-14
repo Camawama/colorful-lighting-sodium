@@ -27,6 +27,9 @@ uniform float uClFarInvSize;
 uniform vec3 uClUltraMin;
 uniform float uClUltraInvSize;
 uniform int uClDebugMode;         // 0 off, 1 volume debug view
+uniform int uClHasNormals;        // DH 3.2+: irisData.y carries every quad's face index
+uniform vec3 uClHalfTexel;        // half a texel of the near/far/ultra volume, in blocks
+uniform float uClNightVibrancy;   // same value the in-world shaders get (night factor x moon phase)
 
 uniform float uClipDistance;     // near fade start, from DH's render params
 
@@ -54,6 +57,23 @@ vec2 blockFaceUv()
     }
 }
 
+/**
+ * The face's outward normal (EDhDirection order), or zero where DH doesn't send it (3.1.2).
+ */
+vec3 faceNormal()
+{
+    if (uClHasNormals == 0) return vec3(0.0);
+    switch (vNormalIndex)
+    {
+        case 0u: return vec3(0.0, -1.0, 0.0);
+        case 1u: return vec3(0.0, 1.0, 0.0);
+        case 2u: return vec3(0.0, 0.0, -1.0);
+        case 3u: return vec3(0.0, 0.0, 1.0);
+        case 4u: return vec3(-1.0, 0.0, 0.0);
+        default: return vec3(1.0, 0.0, 0.0);
+    }
+}
+
 // DH's 4x4 Bayer matrix, for the same dithered fade its own shader uses
 float bayerMatrix4x4(vec2 st)
 {
@@ -74,9 +94,14 @@ void main()
 
     // Prefer the finest volume that covers this fragment. A small margin keeps linear filtering
     // from reading clamped edge texels.
-    vec3 nearCoord = (absPos - uClNearMin) * uClNearInvSize;
-    vec3 farCoord = (absPos - uClFarMin) * uClFarInvSize;
-    vec3 ultraCoord = (absPos - uClUltraMin) * uClUltraInvSize;
+    // Each volume is read half a texel IN FRONT of the face: an LOD face lies on the boundary
+    // between the solid block (no light inside) and the lit air before it, and at a texel
+    // boundary linear filtering averaged the two, so a remembered light showed at about half
+    // its level once its chunk turned into an LOD (the owner's "loses some of its brightness").
+    vec3 normal = faceNormal();
+    vec3 nearCoord = (absPos + normal * uClHalfTexel.x - uClNearMin) * uClNearInvSize;
+    vec3 farCoord = (absPos + normal * uClHalfTexel.y - uClFarMin) * uClFarInvSize;
+    vec3 ultraCoord = (absPos + normal * uClHalfTexel.z - uClUltraMin) * uClUltraInvSize;
     bool inNear = all(greaterThan(nearCoord, vec3(0.005))) && all(lessThan(nearCoord, vec3(0.995)));
     bool inFar = all(greaterThan(farCoord, vec3(0.005))) && all(lessThan(farCoord, vec3(0.995)));
     bool inUltra = all(greaterThan(ultraCoord, vec3(0.005))) && all(lessThan(ultraCoord, vec3(0.995)));
@@ -145,11 +170,23 @@ void main()
     // is why a pure white colored light looks white in-world. Multiplying the warm lightmap by the
     // hue instead rendered white light orange on LODs. Per channel, sample the neutral curve at
     // that channel's own level (hue-scaled), then composite the same way the core shader does.
+    vec3 channelCoord = mix(vec3(LIGHT0), vec3(blockCoord), tint);
     vec3 blockColored = vec3(
-        texture(uLightMap, vec2(mix(LIGHT0, blockCoord, tint.r), LIGHT0)).r,
-        texture(uLightMap, vec2(mix(LIGHT0, blockCoord, tint.g), LIGHT0)).r,
-        texture(uLightMap, vec2(mix(LIGHT0, blockCoord, tint.b), LIGHT0)).r);
-    vec3 colored = skyOnly + blockColored * max(0.1, 1.0 - skyOnly.r);
+        texture(uLightMap, vec2(channelCoord.r, LIGHT0)).r,
+        texture(uLightMap, vec2(channelCoord.g, LIGHT0)).r,
+        texture(uLightMap, vec2(channelCoord.b, LIGHT0)).r);
+    // The lightmap's darkest texel (block 0, sky 0) is a floor every sample above includes, and
+    // skyOnly already carries it: adding it again lit every remembered section at night, unlit
+    // parts included, a 16x16 patch brighter than DH's own LODs around it (2026-10-12 screenshot).
+    // It fades out as the level rises, so bright light still matches the in-world shaders.
+    float lightFloor = texture(uLightMap, vec2(LIGHT0, LIGHT0)).r;
+    blockColored = max(blockColored - lightFloor * (1.0 - (channelCoord - LIGHT0) / (LIGHT15 - LIGHT0)), 0.0);
+    // Same wash and composite as the in-world shaders (cl_blendLight since 2026-09): the LOD
+    // copy still had the older composite and drew coloured light dimmer than the chunks it replaced.
+    float effectiveSkyBrightness = skyOnly.r * (1.0 - uClNightVibrancy) * vertexLightCoord.y;
+    float washFactor = max(0.1, 1.0 - effectiveSkyBrightness);
+    blockColored = mix(vec3(length(blockColored)), blockColored, washFactor * 0.25 + 0.75);
+    vec3 colored = skyOnly + blockColored * (max(0.1, 1.0 - skyOnly.r) * 0.9 + 0.1);
     vec3 light = mix(combined, colored, colorWeight);
 
     fragColor = vec4(light, 1.0) * vertexAlbedo;

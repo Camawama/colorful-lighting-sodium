@@ -1,6 +1,7 @@
 package net.camacraft.colorfullighting.common;
 
 import net.camacraft.colorfullighting.ColorfulLighting;
+import net.camacraft.colorfullighting.accessors.BlockStateWrapper;
 import net.camacraft.colorfullighting.common.accessors.BlockStateAccessor;
 import net.camacraft.colorfullighting.common.accessors.ClientAccessor;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
@@ -13,6 +14,7 @@ import net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat;
 import net.camacraft.colorfullighting.compat.flywheel.FlywheelCompat;
 import net.camacraft.colorfullighting.compat.oculus.OculusCompat;
 import net.camacraft.colorfullighting.compat.sodium.SodiumCompat;
+import net.camacraft.colorfullighting.compat.xaero.XaeroChunkRefresh;
 import net.camacraft.colorfullighting.mixin.compat.sodium.SodiumWorldRendererAccessor;
 import net.camacraft.colorfullighting.resourcemanager.InternalPackRegistration;
 import net.camacraft.colorfullighting.compat.distanthorizons.DhColorCache;
@@ -26,6 +28,7 @@ import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LightLayer;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
@@ -111,7 +114,6 @@ public class ColoredLightEngine {
      * showed up on the render thread.
      */
     protected final LongOpenHashSet dirtySections = new LongOpenHashSet();
-	protected final Set<Long> sectionsToRebuildLater = ConcurrentHashMap.newKeySet();
 
     protected final ConcurrentLinkedQueue<DelayedChunkUpdate> delayedChunkUpdates = new ConcurrentLinkedQueue<>();
     protected final Set<ChunkPos> pendingDelayedUpdates = ConcurrentHashMap.newKeySet();
@@ -754,14 +756,43 @@ public class ColoredLightEngine {
         }
     }
 
-    private void handleBlockUpdate(LevelAccessor level, Queue<LightUpdateRequest> increaseRequests, Queue<LightUpdateRequest> decreaseRequests, BlockPos blockPos) {
-        ColorRGB4 lightColor = storage.getEntry(blockPos);
-        if (lightColor == null) lightColor = ColorRGB4.fromRGB4(0,0,0);
+    /**
+     * The light a removed light source gave its own cell, by position, recorded the moment its block is replaced on the
+     * client (LevelChunkMixin) and taken by handleBlockUpdate. The light check that tells the engine about the change
+     * can come later (vanilla's runs at the end of the frame), and by then the stored light at the cell may already be
+     * gone (another change's decrease cleared it): the lamp then read as dark and the edge of its light stayed.
+     */
+    private final ConcurrentHashMap<Long, ColorRGB4> replacedSourceLight = new ConcurrentHashMap<>();
 
-        if(lightColor.red4 == 0 && lightColor.green4 == 0 && lightColor.blue4 == 0)
-            requestLightPullIn(increaseRequests, blockPos);  // block probably destroyed/replaced with transparent, light pull in might be needed
-        else
-            decreaseRequests.add(new LightUpdateRequest(blockPos, lightColor, false)); // block probably placed/replaced with non-transparent, light might need to be decreased
+    /**
+     * Called on the client thread just before a block at {@code pos} is replaced. Recorded as white at the source's
+     * brightness, all channels: a source's color can change while it stands without the engine being told (a dynamic
+     * lighting mod's light block takes the color of whatever entity is nearest when it is relit, Lively Lighting's
+     * flashing TNT among dropped lamp items), so the light it spread can hold channels its color no longer has. Taken
+     * out by its current color only, those channels stayed as a dim fringe after a TNT chain. Taking out all channels
+     * is safe: what is still lit spreads back in.
+     */
+    public void onBlockReplacing(BlockPos pos, BlockState oldState) {
+        if (!enabled || oldState.getLightEmission() <= 0) return;
+        int brightness = Math.max(oldState.getLightEmission(),
+                Config.getEmissionBrightness(level, pos, new BlockStateWrapper(oldState)));
+        if (replacedSourceLight.size() > 4096) replacedSourceLight.clear(); // never taken (no light check followed): drop
+        replacedSourceLight.merge(pos.asLong(), ColorRGB4.fromRGB4(brightness, brightness, brightness), ColorRGB4::max);
+    }
+
+    private void handleBlockUpdate(LevelAccessor level, Queue<LightUpdateRequest> increaseRequests, Queue<LightUpdateRequest> decreaseRequests, BlockPos blockPos) {
+        // Whether light must be taken out of this cell (a block that stops light placed where there was light, a lamp
+        // removed) or pulled in (a transparent block where there was none) is decided on the propagator thread
+        // (LightPropagator.propagateDecreases), from the brighter of the light stored here now and the light that thread
+        // has worked out for the cell by then. Either alone leaves light behind when many blocks change at once:
+        // the storage lags light still being spread when the block arrived, and by the time the request is handled
+        // another change's decrease may already have cleared this cell, so a removed lamp read as dark and its light
+        // was never taken out. Taking out too much is safe (what is still lit spreads back in); too little lingers.
+        ColorRGB4 stored = storage.getEntry(blockPos);
+        if (stored == null) stored = ColorRGB4.fromRGB4(0, 0, 0);
+        ColorRGB4 replacedSource = replacedSourceLight.remove(blockPos.asLong());
+        if (replacedSource != null) stored = ColorRGB4.max(stored, replacedSource);
+        decreaseRequests.add(LightUpdateRequest.blockChanged(blockPos, stored));
 
         // propagate light if new blockState emits light (single lookup for both brightness and color)
         BlockStateAccessor blockState = level.getBlockState(blockPos);
@@ -782,17 +813,6 @@ public class ColoredLightEngine {
         BlockStateAccessor blockState = level.getBlockState(blockPos);
         if (blockState != null && Config.getAbsorption(level, blockPos, blockState) > 0)
             increaseRequests.add(new LightUpdateRequest(blockPos, Config.getAbsorptionColor(level, blockPos, blockState), false, true, false));
-    }
-
-    private void requestLightPullIn(Queue<LightUpdateRequest> increaseRequests, BlockPos blockPos) {
-        for(var direction : Direction.values()) {
-            BlockPos neighbourPos = blockPos.relative(direction);
-            ColorRGB4 neighbourLight = storage.getEntry(neighbourPos);
-            if(neighbourLight == null) continue;
-
-            if(neighbourLight.red4 == 0 && neighbourLight.green4 == 0 && neighbourLight.blue4 == 0) continue;
-            increaseRequests.add(new LightUpdateRequest(neighbourPos, null, true, false, true));
-        }
     }
 
     private void requestDarknessPullIn(Queue<LightUpdateRequest> increaseRequests, BlockPos blockPos) {
@@ -852,6 +872,9 @@ public class ColoredLightEngine {
         if (DhCompat.isOverrideEnabled()) {
             DhCompat.onSectionsDirty(this, sectionsToUpdate);
         }
+
+        // Xaero's maps redraw the chunks whose colored light changed (no-op without Xaero's mods)
+        XaeroChunkRefresh.coloredSectionsChanged(level.getLevel(), sectionsToUpdate);
     }
 
     /**
@@ -976,6 +999,7 @@ public class ColoredLightEngine {
 		dirtySections.clear();
 		blockUpdateIncreaseRequests.clear();
 		blockUpdateDecreaseRequests.clear();
+		replacedSourceLight.clear();
 		darknessUpdateIncreaseRequests.clear();
 		darknessUpdateDecreaseRequests.clear();
 		chunksWaitingForPropagation.clear();
@@ -1008,6 +1032,14 @@ public class ColoredLightEngine {
         boolean force;
         boolean checkSource;
         boolean repropagate;
+        /** A block whose light properties changed; {@code lightColor} is the light stored at it then (handleBlockUpdate). */
+        boolean blockChanged;
+
+        static LightUpdateRequest blockChanged(BlockPos blockPos, ColorRGB4 storedLight) {
+            LightUpdateRequest request = new LightUpdateRequest(blockPos, storedLight, false);
+            request.blockChanged = true;
+            return request;
+        }
 
         public LightUpdateRequest(BlockPos blockPos, ColorRGB4 lightColor, boolean force) {
             this(blockPos, lightColor, force, false, false);

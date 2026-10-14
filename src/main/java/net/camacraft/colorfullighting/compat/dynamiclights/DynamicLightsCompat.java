@@ -3,6 +3,7 @@ package net.camacraft.colorfullighting.compat.dynamiclights;
 import net.camacraft.colorfullighting.ColorfulLighting;
 import net.camacraft.colorfullighting.common.ColoredLightEngine;
 import net.camacraft.colorfullighting.common.Config;
+import net.camacraft.colorfullighting.common.accessors.BlockStateAccessor;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
 import net.camacraft.colorfullighting.common.api.ApiProviderRegistry;
@@ -100,6 +101,21 @@ public final class DynamicLightsCompat {
      * inside the ship's world bounds, at most ~2 blocks of anchor displacement outside them.
      */
     private static final double BLOCK_SHIP_MIRROR_RANGE = 8.0;
+    /**
+     * A projected light block only takes a hue from the other space when a real lamp (a light-emitting block that
+     * is not itself a dynamic light block) stands this close (blocks, per axis) to its mirrored position: the lamp
+     * it re-emits. Without one, the stored light there is only the projection's own counterpart (a held light is
+     * placed in the world AND in the shipyard of a ship beside it), and the two coloured each other.
+     */
+    private static final int MIRROR_LAMP_RADIUS = 3;
+    /** How far (blocks, per axis) round that lamp the open cells are searched for the colour its light leaves with. */
+    private static final int MIRROR_HUE_RADIUS = 4;
+    /**
+     * The least a stored colour's brightest channel must be to give a hue. Light loses one level per channel per
+     * block, so a warm light's dim fringe keeps only red (15,13,9 at level 2 is 2,0,0): scaled to full, such a
+     * sample made the projection pure red.
+     */
+    private static final int MIRROR_HUE_MIN = 4;
 
     /** Light-emitting blocks placed by dynamic lighting mods, colored by the entity that caused them. */
     private static final Set<ResourceLocation> DYNAMIC_LIGHT_BLOCK_IDS = Set.of(
@@ -477,11 +493,23 @@ public final class DynamicLightsCompat {
      * Color for a light block Lively Lighting projected across the Valkyrien Skies world/ship
      * boundary from a *block* lamp — a ship's lantern lighting the world around it, a world lamp
      * post lighting a passing ship's hull, or one ship's lamps lighting another. There is no entity
-     * to take the color from, so the colored light this engine has already stored at the block's
-     * mirrored position in the other space is sampled instead: for a world block projected from a
-     * ship lamp that is the spot amid the shipyard lamps whose light it re-emits, and vice versa.
-     * The sample is scaled to a full-intensity hue — the light block's own (already
-     * distance-dimmed) emission scales it back down in Config.getColorEmission.
+     * to take the color from, so the colored light this engine has already stored round the lamp
+     * in the other space is sampled instead (see {@link #hueRoundLamp}). The sample is scaled to a
+     * full-intensity hue — the light block's own (already distance-dimmed) emission scales it back
+     * down in Config.getColorEmission.
+     *
+     * <p>A world light block takes a hue only from a real ship lamp near its mirror (2026-10-10).
+     * Before, both sides took the stored light right at the mirror, whatever it came from: a held
+     * light (an enchanted sword, no color of its own) is placed both in the world and, projected,
+     * in the shipyard of a ship beside it, and each of the two took its hue from the other one's
+     * light. Light loses a level per channel per block, so the dim fringe of either was red only,
+     * scaled up to pure red, and the pair then held each other red ("the light my enchanted item
+     * emits turns red" near a ship). A world light block now looks for a ship lamp (see
+     * {@link #hueRoundLamp}), so it never takes its hue from a projection; a shipyard light block
+     * (a world lamp lighting the ship, or another ship's lamps through their world projections) still
+     * takes the world's own light where the ship is, the brightest channel at least
+     * {@link #MIRROR_HUE_MIN}: the lamp lighting it can be 15 blocks away, and the world light there
+     * no longer holds any of the ship's own projections' hues.
      */
     @Nullable
     private static ColorRGB4 sampleShipMirrorHue(ColoredLightEngine engine, LevelAccessor level, double x, double y, double z) {
@@ -495,10 +523,14 @@ public final class DynamicLightsCompat {
         } else {
             // per-channel max over the mirrors: light from several ships blends like light does
             VsCompat.forEachShipyardMirror(attachments, x, y, z, BLOCK_SHIP_MIRROR_RANGE,
-                    (mx, my, mz) -> sampleNeighborhoodMax(engine, mx, my, mz, max));
+                    (mx, my, mz) -> hueRoundLamp(engine, level, attachments, mx, my, mz, max));
         }
-        int r = max[0], g = max[1], b = max[2];
+        return fullHue(max[0], max[1], max[2]);
+    }
 
+    /** A stored colour scaled up to a full-intensity hue (its brightest channel 15), null for black. */
+    @Nullable
+    private static ColorRGB4 fullHue(int r, int g, int b) {
         int brightest = Math.max(r, Math.max(g, b));
         if (brightest == 0) return null;
         if (brightest == 15) return ColorRGB4.fromRGB4(r, g, b);
@@ -507,12 +539,89 @@ public final class DynamicLightsCompat {
     }
 
     /**
-     * Per-channel max of the stored colored light in the 3x3x3 blocks around a mirrored position.
-     * A single-point sample was too brittle: the mirror comes from the client's ship transform
-     * while the block was placed with the server's transform of an earlier tick, so on a moving
-     * ship it lands up to a block or two off — often inside an opaque hull block right next to the
-     * lamp (stored light 0), which resolved white and flickered as placements landed in and out of
-     * the hull. The brightest nearby sample is the lamp light the projected block re-emits.
+     * The color a lamp near a mirrored position sends out, max-merged into {@code max}; false (nothing merged) when
+     * no real lamp stands within {@link #MIRROR_LAMP_RADIUS} of it. First a cheap look at the stored light in the 3x3x3
+     * blocks round the mirror (the mirror comes from the client's ship transform while the block was placed with the
+     * server's of an earlier tick, so on a moving ship it lands a block or two off): nothing bright there, no lamp near.
+     * Then the nearest light-emitting block that is not itself a dynamic light block, and round it the open cells
+     * (air, or a dynamic light block's cell) within {@link #MIRROR_HUE_RADIUS}: the brightest one whose brightest
+     * channel reaches {@link #MIRROR_HUE_MIN}, outside the ship's own blocks when there is one (a beacon in a shell of
+     * red glass lights the world red, as the same beacon in the world does: its open neighbours inside the shell are
+     * none, the air beyond the glass is red; before, the stored light at the beacon's own cell, white, was taken).
+     */
+    private static boolean hueRoundLamp(ColoredLightEngine engine, LevelAccessor level, LevelAttachments attachments,
+                                        double x, double y, double z, int[] max) {
+        int blockX = (int) Math.floor(x), blockY = (int) Math.floor(y), blockZ = (int) Math.floor(z);
+        int peak = 0;
+        for (int dx = -1; dx <= 1 && peak < MIRROR_HUE_MIN; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    peak = Math.max(peak, peakOf(engine.sampleLightColorPacked(blockX + dx, blockY + dy, blockZ + dz)));
+                }
+            }
+        }
+        if (peak < MIRROR_HUE_MIN) return false;
+
+        // the nearest real lamp
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        int lampX = 0, lampY = 0, lampZ = 0, lampDistance = Integer.MAX_VALUE;
+        for (int dx = -MIRROR_LAMP_RADIUS; dx <= MIRROR_LAMP_RADIUS; dx++) {
+            for (int dy = -MIRROR_LAMP_RADIUS; dy <= MIRROR_LAMP_RADIUS; dy++) {
+                for (int dz = -MIRROR_LAMP_RADIUS; dz <= MIRROR_LAMP_RADIUS; dz++) {
+                    int distance = dx * dx + dy * dy + dz * dz;
+                    if (distance >= lampDistance) continue;
+                    BlockStateAccessor state = level.getBlockState(cursor.set(blockX + dx, blockY + dy, blockZ + dz));
+                    if (state == null || state.isAir() || state.getLightEmission() <= 0) continue;
+                    // a dynamic light block is a lamp only when an API provider colours it on its own (Lively
+                    // Lighting's light of a burning ship: fire's colour), never by a mirror of its own
+                    if (isDynamicLightBlock(state.getBlock()) && (!ApiProviderRegistry.hasBlockProviders()
+                            || ApiProviderRegistry.getBlockColor(level.getLevel(), cursor, state.getBlockState()) == null)) continue;
+                    lampX = blockX + dx;
+                    lampY = blockY + dy;
+                    lampZ = blockZ + dz;
+                    lampDistance = distance;
+                }
+            }
+        }
+        if (lampDistance == Integer.MAX_VALUE) return false;
+
+        // the color its light leaves with: the brightest open cell round it, outside the ship's blocks if any is
+        int bestOut = 0, bestOutPeak = 0, bestIn = 0, bestInPeak = 0;
+        for (int dx = -MIRROR_HUE_RADIUS; dx <= MIRROR_HUE_RADIUS; dx++) {
+            for (int dy = -MIRROR_HUE_RADIUS; dy <= MIRROR_HUE_RADIUS; dy++) {
+                for (int dz = -MIRROR_HUE_RADIUS; dz <= MIRROR_HUE_RADIUS; dz++) {
+                    if (dx == 0 && dy == 0 && dz == 0) continue;
+                    int cx = lampX + dx, cy = lampY + dy, cz = lampZ + dz;
+                    int packed = engine.sampleLightColorPacked(cx, cy, cz);
+                    int cellPeak = peakOf(packed);
+                    if (cellPeak < MIRROR_HUE_MIN || (cellPeak <= bestOutPeak && cellPeak <= bestInPeak)) continue;
+                    BlockStateAccessor state = level.getBlockState(cursor.set(cx, cy, cz));
+                    if (state == null || !(state.isAir() || isDynamicLightBlock(state.getBlock()))) continue;
+                    if (VsCompat.insideShipBlocks(attachments, cx + 0.5, cy + 0.5, cz + 0.5)) {
+                        if (cellPeak > bestInPeak) {
+                            bestIn = packed;
+                            bestInPeak = cellPeak;
+                        }
+                    } else if (cellPeak > bestOutPeak) {
+                        bestOut = packed;
+                        bestOutPeak = cellPeak;
+                    }
+                }
+            }
+        }
+        int chosen = bestOutPeak > 0 ? bestOut : bestIn;
+        if (chosen == 0) return false;
+        max[0] = Math.max(max[0], (chosen >>> 8) & 0x0F);
+        max[1] = Math.max(max[1], (chosen >>> 4) & 0x0F);
+        max[2] = Math.max(max[2], chosen & 0x0F);
+        return true;
+    }
+
+    /**
+     * Per-channel max of the stored colored light in the 3x3x3 blocks around a mirrored position, over the cells
+     * whose brightest channel reaches {@link #MIRROR_HUE_MIN}. A single-point sample was too brittle: the mirror comes
+     * from the client's ship transform while the block was placed with the server's transform of an earlier tick, so
+     * on a moving ship it lands up to a block or two off — often inside an opaque hull block (stored light 0).
      */
     private static void sampleNeighborhoodMax(ColoredLightEngine engine, double x, double y, double z, int[] max) {
         int blockX = (int) Math.floor(x), blockY = (int) Math.floor(y), blockZ = (int) Math.floor(z);
@@ -520,12 +629,17 @@ public final class DynamicLightsCompat {
             for (int dy = -1; dy <= 1; dy++) {
                 for (int dz = -1; dz <= 1; dz++) {
                     int packed = engine.sampleLightColorPacked(blockX + dx, blockY + dy, blockZ + dz);
+                    if (peakOf(packed) < MIRROR_HUE_MIN) continue;
                     max[0] = Math.max(max[0], (packed >>> 8) & 0x0F);
                     max[1] = Math.max(max[1], (packed >>> 4) & 0x0F);
                     max[2] = Math.max(max[2], packed & 0x0F);
                 }
             }
         }
+    }
+
+    private static int peakOf(int packed) {
+        return Math.max((packed >>> 8) & 0x0F, Math.max((packed >>> 4) & 0x0F, packed & 0x0F));
     }
 
     /** Luminance an entity should cast on its own (held/equipped/dropped light items, fire). */
@@ -558,19 +672,8 @@ public final class DynamicLightsCompat {
     /** Light color a dynamic light source entity should cast, or null when nothing about it resolves. */
     @Nullable
     private ColorRGB4 resolveEntityColor(Entity entity) {
-        ResourceLocation entityId = ForgeRegistries.ENTITY_TYPES.getKey(entity.getType());
-        if (entityId != null) {
-            VariantList<Config.ColorEmitter> config = Config.getEntityEmitterConfig(entityId);
-            if (config != null) {
-                Config.ColorEmitter emitter = config.resolve(null, config.needsNbt() ? entityNbt(entity) : null);
-                if (emitter != null) return emitter.color();
-            }
-        }
-
-        // API providers: dynamic entity colors JSON cannot express. Run after explicit
-        // entities.json config (user/pack intent wins) and before the built-in heuristics.
-        ColorRGB4 providerColor = ApiProviderRegistry.getEntityColor(entity);
-        if (providerColor != null) return providerColor;
+        ColorRGB4 own = resolveOwnEntityColor(entity);
+        if (own != null) return own;
 
         if (entity instanceof ItemEntity itemEntity) {
             ColorRGB4 color = resolveStackColor(itemEntity.getItem());
@@ -595,6 +698,73 @@ public final class DynamicLightsCompat {
 
         if (entity.isOnFire()) return Config.getLightColor(Blocks.FIRE);
         return null;
+    }
+
+    /** The entity's own light color (entities.json, then API providers), whatever it holds; null when neither has one. */
+    @Nullable
+    private ColorRGB4 resolveOwnEntityColor(Entity entity) {
+        ResourceLocation entityId = ForgeRegistries.ENTITY_TYPES.getKey(entity.getType());
+        if (entityId != null) {
+            VariantList<Config.ColorEmitter> config = Config.getEntityEmitterConfig(entityId);
+            if (config != null) {
+                Config.ColorEmitter emitter = config.resolve(null, config.needsNbt() ? entityNbt(entity) : null);
+                if (emitter != null) return emitter.color();
+            }
+        }
+
+        // API providers: dynamic entity colors JSON cannot express. Run after explicit
+        // entities.json config (user/pack intent wins) and before the built-in heuristics.
+        return ApiProviderRegistry.getEntityColor(entity);
+    }
+
+    // ---- Lively Lighting's client half (2026-10-12) -----------------------------------------------------------------
+    // Lively Lighting tells its clients what each of its light blocks stands for (an entity's light and the slot it
+    // comes from, a lamp, a burning ship) and answers the block light color API for them, so a light keeps its source's
+    // colour however far behind a fast holder it is, after the holder put the light away, merged with other lights or
+    // at the dim edge of a lamp's reach, where the nearest-entity and ship-mirror guesses above found nothing (white).
+    // These give it the colour Colorful Lighting gives that source, as 0xRRGGBB at full intensity (the light block's
+    // emission scales it), -1 when nothing resolves. Called by reflection, on the client thread.
+
+    /** An entity's light colour: with {@code withItems}, as for its dynamic light (its own, then what it holds, then fire); without, its own or fire's. */
+    public static int entityLightColor(Entity entity, boolean withItems) {
+        DynamicLightsCompat instance = entity.level() instanceof LevelAttachments attachments ? attachments.colorfullighting$getDynamicLights() : null;
+        if (instance == null) return -1;
+        ColorRGB4 color = withItems ? instance.resolveEntityColor(entity) : instance.resolveOwnEntityColor(entity);
+        if (color == null && !withItems && entity.isOnFire()) color = Config.getLightColor(Blocks.FIRE);
+        return rgb8(color);
+    }
+
+    /** A held, worn or dropped stack's light colour. */
+    public static int itemLightColor(ItemStack stack) {
+        return rgb8(resolveStackColor(stack));
+    }
+
+    /** A burning entity's light colour (minecraft:fire's). */
+    public static int fireLightColor() {
+        return rgb8(Config.getLightColor(Blocks.FIRE));
+    }
+
+    /** Colorful Lighting's colour for light that resolves nothing (plain white unless configured). */
+    public static int defaultLightColor() {
+        return rgb8(Config.defaultColor);
+    }
+
+    /**
+     * The colour of the light leaving the lamp at {@code lamp} (in the world or in a ship's shipyard) as stored round it,
+     * filters next to it included (see {@link #hueRoundLamp}); -1 while its light isn't there yet.
+     */
+    public static int lampLightColor(net.minecraft.world.level.Level level, BlockPos lamp) {
+        if (!(level instanceof LevelAttachments attachments) || !ColoredLightEngine.isEnabled()) return -1;
+        ColoredLightEngine engine = attachments.colorfullighting$getEngine();
+        LevelAccessor accessor = attachments.colorfullighting$getAccessor();
+        if (engine == null || accessor == null) return -1;
+        int[] max = new int[3];
+        if (!hueRoundLamp(engine, accessor, (LevelAttachments) accessor, lamp.getX() + 0.5, lamp.getY() + 0.5, lamp.getZ() + 0.5, max)) return -1;
+        return rgb8(fullHue(max[0], max[1], max[2]));
+    }
+
+    private static int rgb8(@Nullable ColorRGB4 color) {
+        return color == null ? -1 : (color.red4 * 17) << 16 | (color.green4 * 17) << 8 | color.blue4 * 17;
     }
 
     /** Item NBT is already a live tag on the stack, so there is nothing to serialize or cache. */

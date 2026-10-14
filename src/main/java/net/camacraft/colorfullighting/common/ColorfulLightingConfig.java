@@ -48,6 +48,9 @@ public class ColorfulLightingConfig {
     public static final ForgeConfigSpec.BooleanValue FLYWHEEL_FORCE_TEXTURE_MODE;
     public static final ForgeConfigSpec.BooleanValue AUTO_EMITTER_COLORS;
     public static final ForgeConfigSpec.BooleanValue DH_LOD_COLOR;
+    public static final ForgeConfigSpec.BooleanValue SMOOTH_LIGHT_STAYS_BEHIND_BLOCKERS;
+    public static final ForgeConfigSpec.BooleanValue XAERO_MINIMAP_COLORS;
+    public static final ForgeConfigSpec.BooleanValue XAERO_WORLD_MAP_COLORS;
 
     public static final ForgeConfigSpec SPEC;
 
@@ -79,6 +82,33 @@ public class ColorfulLightingConfig {
                         "Needs Distant Horizons 3.x (DhApi 7). Costs ~56MB of VRAM while enabled.",
                         "Toggle in-game with '/cl dh on' and '/cl dh off'.")
                 .define("dhLodColor", false);
+        SMOOTH_LIGHT_STAYS_BEHIND_BLOCKERS = BUILDER
+                .comment(
+                        "Smooth lighting takes a block face's light from the cells round its corners. With this on, a",
+                        "neighbour's colored light counts only as far as it could reach the face: light loses a level per",
+                        "block, so a cell more than a level brighter than the way it would come by got its light round",
+                        "something that stops it. Open scenes look exactly as with this off; light just doesn't glow round",
+                        "blocks that stop it: no bright patch under and beside a shut door on its dark side, no light round",
+                        "a beacon or lamp walled in tinted glass. Off: the old blend, which spread such light a block wide.")
+                .define("smoothLightStaysBehindBlockers", true);
+        XAERO_MINIMAP_COLORS = BUILDER
+                .comment(
+                        "Xaero's Minimap with its Lighting option on, on the chunks the minimap draws itself (without Xaero's",
+                        "World Map, or with its 'World Map chunks' option off): the block-lit part of a map pixel takes the",
+                        "color of the light there (a red lamp's surroundings show red at night), in cave mode too. A pixel is",
+                        "redrawn when its light's color changes. While on, the minimap draws its own chunks in cave mode even",
+                        "with the World Map installed (its cave layers carry no colors in singleplayer). Off: Xaero's grey",
+                        "lighting and its own choice of chunks.")
+                .define("xaeroMinimapColors", true);
+        XAERO_WORLD_MAP_COLORS = BUILDER
+                .comment(
+                        "Xaero's World Map with its Lighting option on (the World Map screen, and the minimap when it shows",
+                        "World Map chunks): the same colors, recorded when the World Map itself updates a chunk you are near",
+                        "and kept with its map (a .clcolors file beside each region), so a place keeps the colors it had when",
+                        "you were last there. Nothing is read for places you haven't been. The World Map's cave layers stay",
+                        "grey in singleplayer (it builds them from the world save); the minimap shows caves from its own",
+                        "chunks (xaeroMinimapColors). Off: Xaero's grey lighting (what was recorded stays on disk).")
+                .define("xaeroWorldMapColors", true);
         LIGHT_UPDATE_SPEED = BUILDER
                 .comment(
                         "How quickly colored light fills in after chunks load.",
@@ -101,6 +131,21 @@ public class ColorfulLightingConfig {
     /** Safe before the config file is loaded; DH LOD colour stays off until the config is available. */
     public static boolean dhLodColor() {
         return SPEC.isLoaded() && DH_LOD_COLOR.get();
+    }
+
+    /** Safe before the config file is loaded; on (the default) until the config is available. */
+    public static boolean xaeroMinimapColors() {
+        return !SPEC.isLoaded() || XAERO_MINIMAP_COLORS.get();
+    }
+
+    /** Safe before the config file is loaded; on (the default) until the config is available. */
+    public static boolean xaeroWorldMapColors() {
+        return !SPEC.isLoaded() || XAERO_WORLD_MAP_COLORS.get();
+    }
+
+    /** Safe before the config file is loaded; on (the default) until the config is available. */
+    public static boolean smoothLightStaysBehindBlockers() {
+        return !SPEC.isLoaded() || SMOOTH_LIGHT_STAYS_BEHIND_BLOCKERS.get();
     }
 
     /** Safe before the config file is loaded (e.g. during early startup), where {@code get()} would throw. */

@@ -38,6 +38,19 @@ bool isPackedDataColored(int packedData) {
     return ((packedData >> 28) & 0xF) == 0xF;
 }
 
+// An instance's light as vanilla's (block, sky) / 16, the way flw_vertexLight wants it. A visual that relights its
+// instances from LevelRenderer.getLightColor (every block entity visual) gets Colorful Lighting's packed light there,
+// not vanilla's: read as vanilla's it is garbage (the sky half comes out negative and is dropped). The world's shaders
+// replace that light anyway, but an embedded visual keeps it: Valkyrien Skies draws a ship's block entities embedded,
+// and Create's shafts and cogs on a ship drew black by day.
+vec2 cl_vanillaVertexLight(ivec2 instanceLight) {
+    int packedData = ivec2ToInt(instanceLight);
+    if (!isPackedDataColored(packedData)) return vec2(instanceLight) / 256.0;
+    ColoredLightIntegerData data = unpackColoredLightData(packedData);
+    float block = float(max(data.r8g8b8.r, max(data.r8g8b8.g, data.r8g8b8.b))) / 17.0;
+    return vec2(block, float(data.skyLight4)) / 16.0;
+}
+
 ColoredLightFloatData coloredLightData_integerToFloat(ColoredLightIntegerData data) {
     return ColoredLightFloatData(
         data.r8g8b8 / 255.0,

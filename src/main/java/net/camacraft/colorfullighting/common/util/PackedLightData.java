@@ -1,6 +1,7 @@
 package net.camacraft.colorfullighting.common.util;
 
 import net.camacraft.colorfullighting.api.CLPackedLight;
+import net.camacraft.colorfullighting.common.ColorfulLightingConfig;
 import net.minecraft.client.renderer.LightTexture;
 
 public class PackedLightData {
@@ -64,6 +65,23 @@ public class PackedLightData {
         return Math.min(a, b);
     }
 
+    private static int blockLum(PackedLightData data) {
+        return Math.max(data.red8, Math.max(data.green8, data.blue8));
+    }
+
+    /** Scales the block light down (hue kept) so its brightest channel is at most {@code limit8}. */
+    private static void limitBlockLight(PackedLightData data, int limit8) {
+        int lum = blockLum(data);
+        if (lum <= limit8) return;
+        if (limit8 <= 0) {
+            data.red8 = data.green8 = data.blue8 = 0;
+            return;
+        }
+        data.red8 = data.red8 * limit8 / lum;
+        data.green8 = data.green8 * limit8 / lum;
+        data.blue8 = data.blue8 * limit8 / lum;
+    }
+
     public static int blend(int lightColor0, int lightColor1, int lightColor2, int lightColor3) {
         if (!CLPackedLight.isColored(lightColor0) && !CLPackedLight.isColored(lightColor1) &&
             !CLPackedLight.isColored(lightColor2) && !CLPackedLight.isColored(lightColor3)) {
@@ -81,6 +99,18 @@ public class PackedLightData {
         var data1 = unpackData(lightColor1);
         var data2 = unpackData(lightColor2);
         var data3 = unpackData(lightColor3);
+
+        // Light loses at least a level (17) per block: the edges (0, 1) are never more than a level
+        // brighter than the face's own cell (3) in open air, the corner (2) never more than a level
+        // brighter than the brighter edge. Brighter samples came round something that stops light (a
+        // beacon walled in tinted glass lit the floor under and round the glass) and are scaled down to
+        // that bound. Full-bright (emissive) samples keep their glow.
+        if (ColorfulLightingConfig.smoothLightStaysBehindBlockers()) {
+            int edgeLimit = blockLum(data3) + 17;
+            if (lightColor0 != LightTexture.FULL_BRIGHT) limitBlockLight(data0, edgeLimit);
+            if (lightColor1 != LightTexture.FULL_BRIGHT) limitBlockLight(data1, edgeLimit);
+            if (lightColor2 != LightTexture.FULL_BRIGHT) limitBlockLight(data2, Math.max(blockLum(data0), blockLum(data1)) + 17);
+        }
 
         int sky = blendChannel(data0.skyLight4, data1.skyLight4, data2.skyLight4, data3.skyLight4);
 

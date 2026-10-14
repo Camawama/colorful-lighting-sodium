@@ -237,15 +237,6 @@ public class LightPropagator implements Runnable {
 				hasDarknessWork = !engine.darknessUpdateDecreaseRequests.isEmpty() || !engine.darknessUpdateIncreaseRequests.isEmpty() || !engine.chunksWaitingForDarknessPropagation.isEmpty();
 				// stop early when nothing moved: the queue is waiting on chunks to load
 			} while (running && progressedThisPass && (hasLightWork || hasDarknessWork) && System.nanoTime() < deadline);
-		} else {
-			// If idle, check if we have sections to rebuild from explosions
-			if (!engine.sectionsToRebuildLater.isEmpty()) {
-				synchronized (engine.dirtySections) {
-					engine.dirtySections.addAll(engine.sectionsToRebuildLater);
-				}
-				engine.sectionsToRebuildLater.clear();
-				Minecraft.getInstance().execute(engine::onLightUpdate);
-			}
 		}
 		
 		if (this.hasReadyChanges()) {
@@ -612,7 +603,7 @@ public class LightPropagator implements Runnable {
             detail.append("]  ");
         }
         ColorfulLighting.LOGGER.warn(
-                "Colored light queue [{}] is stalled with waiting chunks NEAR the player ({} queued): {}(this is the '/cl purge' bug; please report this line)",
+                "Colored light queue [{}] is stalled with waiting chunks NEAR the player ({} queued): {}(the client holds no data for the missing neighbours; if the game still runs and they never arrive, this is the '/cl purge' bug; please report this line)",
                 levelName(engine), engine.chunksWaitingForPropagation.size(), detail);
     }
 
@@ -933,11 +924,12 @@ public class LightPropagator implements Runnable {
             }
 
             if (customAbsorption >= 0) {
-                if (customAbsorption < 15) {
-                    lightBlocked = Math.max(1, customAbsorption);
-                } else {
-                    lightBlocked = geometryOccludes ? 15 : 1;
-                }
+                // A filter's absorption replaces the block's own light blocking: 0 lets all light through, 15
+                // stops it (README: "0=full pass, 15=blocked"). 15 used to stop light only where the block's
+                // shape covers the face and let it through with the usual 1 everywhere else, so a block with a
+                // full-absorption filter but no occluding shape passed light: the owner's pack gives Lighting
+                // Utils' redstone tinted glass "white;15" at power 0, and a beacon walled in it lit the room.
+                lightBlocked = customAbsorption >= 15 ? 15 : Math.max(1, customAbsorption);
             } else if (geometryOccludes) {
                 lightBlocked = 15;
             }
@@ -1080,6 +1072,19 @@ public class LightPropagator implements Runnable {
         Map<BlockPos, ColorRGB4> visited = new HashMap<>();
         while(!decreaseRequests.isEmpty()) {
             ColoredLightEngine.LightUpdateRequest req = decreaseRequests.poll();
+            if (req.blockChanged) {
+                // a block whose light properties changed (ColoredLightEngine.handleBlockUpdate): the brighter of the
+                // light stored there when it changed and the light this thread has for it now is taken out; none, and
+                // the lit neighbours spread into it
+                ColorRGB4 latest = getLatestLightColor(engine, req.blockPos);
+                if (latest == null) continue; // section unloaded
+                ColorRGB4 light = ColorRGB4.max(latest, req.lightColor);
+                if (light.red4 == 0 && light.green4 == 0 && light.blue4 == 0) {
+                    pullLightIn(engine, req.blockPos, increaseRequests);
+                    continue;
+                }
+                req = new ColoredLightEngine.LightUpdateRequest(req.blockPos, light, false);
+            }
             ColorRGB4 prev = visited.get(req.blockPos);
             if (prev != null && prev.red4 >= req.lightColor.red4 && prev.green4 >= req.lightColor.green4 && prev.blue4 >= req.lightColor.blue4) {
                 continue;
@@ -1090,6 +1095,17 @@ public class LightPropagator implements Runnable {
                 visited.put(req.blockPos, ColorRGB4.max(prev, req.lightColor));
             }
             propagateDecrease(engine, increaseRequests, decreaseRequests, req, level);
+        }
+    }
+
+    /** Lit neighbours of {@code blockPos} spread their light into it again. */
+    private void pullLightIn(ColoredLightEngine engine, BlockPos blockPos, Queue<ColoredLightEngine.LightUpdateRequest> increaseRequests) {
+        for (var direction : Direction.values()) {
+            BlockPos neighbourPos = blockPos.relative(direction);
+            ColorRGB4 neighbourLight = getLatestLightColor(engine, neighbourPos);
+            if (neighbourLight == null) continue;
+            if (neighbourLight.red4 == 0 && neighbourLight.green4 == 0 && neighbourLight.blue4 == 0) continue;
+            increaseRequests.add(new ColoredLightEngine.LightUpdateRequest(neighbourPos, null, true, false, true));
         }
     }
 
@@ -1117,9 +1133,16 @@ public class LightPropagator implements Runnable {
         addLightColorChange(request.blockPos, ColorRGB4.fromRGB4(0, 0, 0));
 
         BlockStateAccessor blockState = level.getBlockState(request.blockPos);
-        if(blockState == null) return false; // section might have got unloaded and propagation should stop
-        // repropagate removed light (single lookup for both brightness and color)
-        if(Config.getEmissionBrightness(level, request.blockPos, blockState) > 0) {
+        if (blockState == null) {
+            // The block couldn't be read: its section is being rewritten on the main thread (a palette resize, e.g.
+            // a whole section of stone getting its first air from an explosion). Stopping here left the neighbours'
+            // light in place for good. The clearing goes on, and the block is looked at again on the main thread
+            // (onBlockLightPropertiesChanged reads the view area and the extra regions, which only that thread may
+            // touch), which re-adds its light if it emits.
+            BlockPos recheck = request.blockPos;
+            Minecraft.getInstance().execute(() -> engine.onBlockLightPropertiesChanged(recheck));
+        } else if (Config.getEmissionBrightness(level, request.blockPos, blockState) > 0) {
+            // repropagate removed light (single lookup for both brightness and color)
             increaseRequests.add(new ColoredLightEngine.LightUpdateRequest(request.blockPos, Config.getColorEmission(level, request.blockPos, blockState), false, true, false));
         }
 

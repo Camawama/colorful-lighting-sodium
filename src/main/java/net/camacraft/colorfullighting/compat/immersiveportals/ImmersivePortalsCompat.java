@@ -15,10 +15,12 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.WeakHashMap;
 
 /**
  * Keeps colored light alive in client levels the player is not currently in.
@@ -67,6 +69,12 @@ public final class ImmersivePortalsCompat {
      * the regions it still holds. Only columns nothing else tracks lose their sections.
      */
     private static final Map<Long, ColoredLightEngine.LightRegion> NO_REGIONS = Map.of();
+    /**
+     * Every client level that has had a chunk, for {@link #clientTick}: the per-level state lives in
+     * the level's compat registry, which cannot be enumerated. Weak, so a level that unloads without
+     * its LevelEvent.Unload is not pinned; removed explicitly in {@link #onLevelUnload}.
+     */
+    private static final Set<Level> LEVELS = Collections.newSetFromMap(new WeakHashMap<>());
 
     private ImmersivePortalsCompat() {}
 
@@ -87,6 +95,7 @@ public final class ImmersivePortalsCompat {
 
     public static void onChunkLoad(ClientLevel level, ChunkPos pos) {
 	    LevelState state = ((CompatRegistry<Level>) level).colorfullighting$getCompatInstance(COMPAT_KEY);
+        LEVELS.add(level);
         state.chunkLoads++;
         long cell = cellKey(pos.x >> CELL_SHIFT, pos.z >> CELL_SHIFT);
         if (state.cellChunks.computeIfAbsent(cell, c -> new HashSet<>()).add(pos)) {
@@ -140,21 +149,38 @@ public final class ImmersivePortalsCompat {
                 "[CL portal] {} is now the current level: withdrew {} cells, view area {}, sections {} -> {}, queued chunks {} -> {}",
                 level.dimension().location(), state.regions.size(), engine.debugViewArea(),
                 sectionsBefore, engine.debugStoredSectionCount(), queuedBefore, engine.debugQueuedChunkCount());
-	    
-	    // Mirrors loaded chunks of non-current levels (Immersive Portals remote dimensions) into
-	    // their engines as light regions; no-op when only the player's own level exists
-		
-	    // The current level is covered by its view area; its handover runs from the level tick.
-	    if (level == Minecraft.getInstance().level) return;
-	    
-	    boolean validate = ++state.tickCounter % VALIDATE_INTERVAL_TICKS == 0;
+    }
 
-        if (validate) validateAgainstChunkSource(level, state);
-        rebuildDirtyCells(state);
-        // Synced every tick even when unchanged: an engine reset (/cl on, /cl purge) drops all
-        // extra regions and relies on their owners re-syncing them.
-        engine.syncExtraRegions(ColoredLightEngine.REGION_NAMESPACE_REMOTE_LEVEL, state.regions);
-        state.cellsHeldByEngine = true;
+    public static void onLevelUnload(Level level) {
+        LEVELS.remove(level);
+    }
+
+    /**
+     * Called once per client tick (ClientTickEvent END) from ClientEventListener. Keeps the cells
+     * of every level that is NOT the current one synced into that level's engine. This is the one
+     * place that must visit all levels, hence a client tick rather than a level tick: only the
+     * current level receives LevelTickEvent. (The 2026-09-05 refactor folded this into
+     * onCurrentLevelTick, which only ever runs for the current level and returned before it, so
+     * remote levels never got their cells and portals showed them white again.)
+     */
+    public static void clientTick(Minecraft minecraft) {
+        if (LEVELS.isEmpty()) return;
+        for (Level level : LEVELS) {
+            // The current level is covered by its view area; its handover runs from the level tick.
+            if (level == minecraft.level) continue;
+            LevelState state = ((CompatRegistry<Level>) level).colorfullighting$getCompatInstance(COMPAT_KEY);
+            if (state == null) continue;
+            ColoredLightEngine engine = ((LevelAttachments) level).colorfullighting$getEngine();
+            if (engine == null) continue;
+
+            boolean validate = ++state.tickCounter % VALIDATE_INTERVAL_TICKS == 0;
+            if (validate) validateAgainstChunkSource(level, state);
+            rebuildDirtyCells(state);
+            // Synced every tick even when unchanged: an engine reset (/cl on, /cl purge) drops all
+            // extra regions and relies on their owners re-syncing them.
+            engine.syncExtraRegions(ColoredLightEngine.REGION_NAMESPACE_REMOTE_LEVEL, state.regions);
+            state.cellsHeldByEngine = true;
+        }
     }
 
     private static void validateAgainstChunkSource(Level level, LevelState state) {

@@ -2,6 +2,7 @@ package net.camacraft.colorfullighting.mixin;
 
 import net.camacraft.colorfullighting.common.BlockEntityNbtCache;
 import net.camacraft.colorfullighting.common.ColoredLightEngine;
+import net.camacraft.colorfullighting.common.Config;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
 import net.camacraft.colorfullighting.common.util.ShapeOcclusion;
 import net.minecraft.client.Minecraft;
@@ -31,6 +32,20 @@ public abstract class LevelChunkMixin {
 	@Final
 	private Level level;
 	
+	/**
+	 * A light source about to be replaced: its light is recorded now, while it is certain (ColoredLightEngine
+	 * .onBlockReplacing). The light check that reports the change can come after another change's decrease has already
+	 * cleared the cell.
+	 */
+	@Inject(method = "setBlockState", at = @At("HEAD"))
+	private void colorfullighting$beforeSetBlockState(BlockPos pos, BlockState newState, boolean isMoving, CallbackInfoReturnable<BlockState> cir) {
+		if (!ColoredLightEngine.isEnabled() || !level.isClientSide || !Minecraft.getInstance().isSameThread()) return;
+		BlockState oldState = ((LevelChunk) (Object) this).getBlockState(pos);
+		if (oldState == newState || oldState.getLightEmission() <= 0) return;
+		ColoredLightEngine engine = ((LevelAttachments) level).colorfullighting$getEngine();
+		if (engine != null) engine.onBlockReplacing(pos, oldState);
+	}
+
 	@Inject(method = "setBlockState", at = @At("RETURN"))
     private void colorfullighting$onSetBlockState(BlockPos pos, BlockState newState, boolean isMoving, CallbackInfoReturnable<BlockState> cir) {
         ColoredLightEngine engine = ((LevelAttachments) level).colorfullighting$getEngine();
@@ -43,7 +58,12 @@ public abstract class LevelChunkMixin {
         if (!level.isClientSide) return;
         if (!Minecraft.getInstance().isSameThread()) return;
 
-        if (!ShapeOcclusion.isDynamicShapeBlocker(oldState) && !ShapeOcclusion.isDynamicShapeBlocker(newState)) return;
+        // Doors and trapdoors change shape without changing vanilla's light properties; a block with a colored-light
+        // filter or absorber (stained glass, tinted glass, honey...) swapped for one with none, or another, changes
+        // colored light only. Vanilla fires no light check for either, so the engine is told here. Without this,
+        // stained glass broken (or placed) left the light beyond it tinted (or untinted) until something else relit it.
+        if (!ShapeOcclusion.isDynamicShapeBlocker(oldState) && !ShapeOcclusion.isDynamicShapeBlocker(newState)
+                && !Config.filtersOrAbsorbs(oldState) && !Config.filtersOrAbsorbs(newState)) return;
         // if light properties differ, vanilla (or Starlight) fires a light check and the existing hooks handle it
         if (LightEngine.hasDifferentLightProperties(level, pos, oldState, newState)) return;
 

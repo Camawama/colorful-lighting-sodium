@@ -109,6 +109,12 @@ public class ClientEventListener {
         // Keeps the DH color cache's active-level pointer fresh and autosaves it (no-op without DH)
         DhCompat.clientTick();
 
+        // Mirrors loaded chunks of non-current levels (Immersive Portals remote dimensions) into
+        // their engines as light regions; no-op when only the player's own level exists. Runs from
+        // the client tick because it must visit every level, and only the current level gets
+        // LevelTickEvent; the current level itself is handled in the LevelTickEvent handler above.
+        ImmersivePortalsCompat.clientTick(Minecraft.getInstance());
+
         if (ColorfulLighting.clientAccessor == null) return;
         var player = ColorfulLighting.clientAccessor.getPlayer();
         if (player == null) return;
@@ -153,6 +159,7 @@ public class ClientEventListener {
         if (!event.getLevel().isClientSide()) return;
         if (event.getLevel() instanceof net.minecraft.world.level.Level level) {
             DhCompat.onLevelUnload(level);
+            ImmersivePortalsCompat.onLevelUnload(level);
         }
 	    ((LevelAttachments) event.getLevel()).colorfullighting$getNbtCache().clear();
         BeaconEffectSync.clear();
