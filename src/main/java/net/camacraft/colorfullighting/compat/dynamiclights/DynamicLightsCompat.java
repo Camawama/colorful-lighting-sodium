@@ -663,8 +663,8 @@ public final class DynamicLightsCompat {
             return color != null ? color : Config.defaultColor;
         }
         if (source instanceof BlockEntity blockEntity) {
-            VariantList<Config.ColorEmitter> config = Config.getBlockEmitterConfig(blockEntity.getBlockState().getBlock());
-            if (config != null && config.getDefault() != null) return config.getDefault().color();
+            // the colour the block emits placed: configured, "auto", or an unconfigured lamp's automatic colour
+            return Config.getLightColor(blockEntity.getBlockState());
         }
         return Config.defaultColor;
     }
@@ -806,17 +806,20 @@ public final class DynamicLightsCompat {
             if (itemEmitter != null) return itemEmitter.color();
         }
 
-        // most placeable light sources share the block's id (torch, lantern, glowstone, ...)
+        // most placeable light sources share the block's id (torch, lantern, glowstone, ...): the colour the placed
+        // block emits, an emitters.json "auto" entry's and an automatic emitter's (sampled from the block's texture)
+        // included (2026-10-17: a held automatic emitter was white, placed it had its colour)
         VariantList<Config.ColorEmitter> blockConfig = Config.getBlockEmitterConfig(itemId);
-        if (blockConfig != null && blockConfig.getDefault() != null) return blockConfig.getDefault().color();
+        if (blockConfig != null && blockConfig.getDefault() != null) {
+            Config.ColorEmitter emitter = blockConfig.getDefault();
+            Block block = emitter.autoColor() ? ForgeRegistries.BLOCKS.getValue(itemId) : null;
+            return block != null && block != Blocks.AIR ? Config.getLightColor(block.defaultBlockState()) : emitter.color();
+        }
 
         if (stack.getItem() instanceof BlockItem blockItem && blockItem.getBlock().defaultBlockState().getLightEmission() > 0) {
-            ResourceLocation blockId = ForgeRegistries.BLOCKS.getKey(blockItem.getBlock());
-            if (blockId != null && !blockId.equals(itemId)) {
-                VariantList<Config.ColorEmitter> config = Config.getBlockEmitterConfig(blockItem.getBlock());
-                if (config != null && config.getDefault() != null) return config.getDefault().color();
-            }
-            return Config.defaultColor; // emits light but has no configured color
+            // a lamp whose item has another id, or one no emitters.json names: whatever the placed block emits (its
+            // configured colour; else, with autoEmitterColors, the colour sampled from its texture; else white)
+            return Config.getLightColor(blockItem.getBlock().defaultBlockState());
         }
         return null;
     }

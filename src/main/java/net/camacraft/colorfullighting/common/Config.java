@@ -238,13 +238,9 @@ public class Config {
         }
         return defaultColor;
     }
+    /** The block's default state's light colour (an "auto" entry's and an unconfigured lamp's automatic colour included). */
     public static ColorRGB4 getLightColor(@Nullable Block block) {
-        if(block != null) {
-            VariantList<ColorEmitter> config = colorEmitters.get(block);
-            if(config != null && config.getDefault() != null)
-                return config.getDefault().color();
-        }
-        return defaultColor;
+        return block == null ? defaultColor : getLightColor(block.defaultBlockState());
     }
 
     public static ColorRGB4 getColoredLightTransmittance(@NotNull LevelAccessor level, BlockPos pos, ColorRGB4 defaultValue) {
