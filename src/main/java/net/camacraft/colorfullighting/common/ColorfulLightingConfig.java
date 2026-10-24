@@ -51,6 +51,7 @@ public class ColorfulLightingConfig {
     public static final ForgeConfigSpec.BooleanValue SMOOTH_LIGHT_STAYS_BEHIND_BLOCKERS;
     public static final ForgeConfigSpec.BooleanValue XAERO_MINIMAP_COLORS;
     public static final ForgeConfigSpec.BooleanValue XAERO_WORLD_MAP_COLORS;
+    public static final ForgeConfigSpec.BooleanValue PARTICLE_LIGHT_RAMPS;
 
     public static final ForgeConfigSpec SPEC;
 
@@ -75,6 +76,14 @@ public class ColorfulLightingConfig {
                         "color depends on position (via a block color provider) are tinted per position.",
                         "Disable to make unconfigured light sources emit plain white light as before.")
                 .define("autoEmitterColors", true);
+        PARTICLE_LIGHT_RAMPS = BUILDER
+                .comment(
+                        "Vanilla's own particle light ramps redone in the colored light format. The portal and",
+                        "enchantment-table particles brighten with age by raising the sky byte of their light,",
+                        "flames and glow particles raise the block byte, lava's ember sets it full; that bit",
+                        "arithmetic reads a colored value wrongly (a portal particle by day was black and faded",
+                        "to purple). On: the same ramps on the colored value, colour kept. Off: vanilla's math.")
+                .define("particleLightRamps", true);
         DH_LOD_COLOR = BUILDER
                 .comment(
                         "Colored lighting on Distant Horizons LODs. Remembers the light colours of chunks you",
@@ -126,6 +135,11 @@ public class ColorfulLightingConfig {
     /** Safe before the config file is loaded; auto colors stay off until the config is available. */
     public static boolean autoEmitterColors() {
         return SPEC.isLoaded() && AUTO_EMITTER_COLORS.get();
+    }
+
+    /** Safe before the config file is loaded; the particle ramps stay vanilla's until the config is available. */
+    public static boolean particleLightRamps() {
+        return SPEC.isLoaded() && PARTICLE_LIGHT_RAMPS.get();
     }
 
     /** Safe before the config file is loaded; DH LOD colour stays off until the config is available. */
