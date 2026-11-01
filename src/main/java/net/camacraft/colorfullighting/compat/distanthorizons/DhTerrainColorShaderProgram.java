@@ -6,6 +6,7 @@ import com.seibel.distanthorizons.api.objects.math.DhApiMat4f;
 import com.seibel.distanthorizons.api.objects.math.DhApiVec3f;
 import net.camacraft.colorfullighting.ColorfulLighting;
 import net.camacraft.colorfullighting.common.ColoredLightEngine;
+import net.camacraft.colorfullighting.common.ColorfulLightingConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.phys.Vec3;
 import org.lwjgl.opengl.GL;
@@ -81,6 +82,12 @@ public final class DhTerrainColorShaderProgram implements IDhApiShaderProgram {
     private int uMircoOffset;
     private int uLightMap;
     private int uClipDistance;
+    /** A clip past any LOD: every fragment is discarded (dhLodsHiddenInFluids). */
+    static final float HIDDEN_CLIP = 1.0e9f;
+    /** LOD passes drawn empty because the camera was in a fluid or blind (the pack harness reads it). */
+    public static volatile int hiddenPasses;
+    private int uClHardClip;
+    private int uClWaterClip;
     private int uClVolumeNear;
     private int uClVolumeFar;
     private int uClCameraPos;
@@ -224,7 +231,26 @@ public final class DhTerrainColorShaderProgram implements IDhApiShaderProgram {
             uniform1f(uMircoOffset, 0.01f);
             uniform1i(uLightMap, 0);
             uniform1f(uWorldYOffset, param.worldYOffset);
-            uniform1f(uClipDistance, param.nearClipPlane + 16.0f);
+            // DH's own near clip (nearClipPlane + 16, dithered to 1.5x) lets LODs under the vanilla terrain show
+            // through non-full blocks from about half the render distance; with dhLodsStartAtVanillaFade they start
+            // outright where DH begins fading the vanilla terrain into them, (nearClipPlane + 16) x 1.5
+            // (kept a chunk inside the vanilla render distance, or a ring of nothing could open past it)
+            boolean atFade = ColorfulLightingConfig.dhLodsStartAtVanillaFade();
+            float clip = param.nearClipPlane + 16.0f;
+            // dhTranslucentLodsKeepDhFade: translucent LODs (the sea's surface) keep DH's own dithered start from its near
+            // clip, or the vanilla sea floor is swapped for the LOD sea outright at the fade start (a sharp ring on deep water)
+            float waterClip = atFade && ColorfulLightingConfig.dhTranslucentLodsKeepDhFade() ? clip : 0.0f;
+            if (atFade) clip = Math.min(clip * 1.5f, (Minecraft.getInstance().options.getEffectiveRenderDistance() - 1) * 16f);
+            // with the camera in a fluid or blind DH paints every LOD in the fog colour, which stood out against a sky
+            // drawn without that fog: no LOD at all then (dhLodsHiddenInFluids; DhFogState mirrors DH's own test)
+            boolean hide = ColorfulLightingConfig.dhLodsHiddenInFluids() && DhFogState.special();
+            if (hide) {
+                clip = HIDDEN_CLIP;
+                hiddenPasses++;
+            }
+            uniform1f(uClipDistance, clip);
+            if (uClHardClip >= 0) uniform1i(uClHardClip, atFade || hide ? 1 : 0);
+            if (uClWaterClip >= 0) uniform1f(uClWaterClip, hide ? 0.0f : waterClip);
 
             uniform1i(uClVolumeNear, NEAR_VOLUME_TEXTURE_UNIT);
             uniform1i(uClVolumeFar, FAR_VOLUME_TEXTURE_UNIT);
@@ -345,6 +371,8 @@ public final class DhTerrainColorShaderProgram implements IDhApiShaderProgram {
         uMircoOffset = GL20.glGetUniformLocation(program, "uMircoOffset");
         uLightMap = GL20.glGetUniformLocation(program, "uLightMap");
         uClipDistance = GL20.glGetUniformLocation(program, "uClipDistance");
+        uClHardClip = GL20.glGetUniformLocation(program, "uClHardClip");
+        uClWaterClip = GL20.glGetUniformLocation(program, "uClWaterClip");
         uClVolumeNear = GL20.glGetUniformLocation(program, "uClVolumeNear");
         uClVolumeFar = GL20.glGetUniformLocation(program, "uClVolumeFar");
         uClCameraPos = GL20.glGetUniformLocation(program, "uClCameraPos");

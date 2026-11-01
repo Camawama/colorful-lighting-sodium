@@ -252,10 +252,13 @@ public class ClientEventListener {
                                     return 1;
                                 })
                                 .then(Commands.literal("on")
-                                        .executes(context -> setDhLodColor(context.getSource(), true))
+                                        .executes(context -> setDhLodColor(context.getSource(), ColorfulLightingConfig.DhLodColorMode.ON))
                                 )
                                 .then(Commands.literal("off")
-                                        .executes(context -> setDhLodColor(context.getSource(), false))
+                                        .executes(context -> setDhLodColor(context.getSource(), ColorfulLightingConfig.DhLodColorMode.OFF))
+                                )
+                                .then(Commands.literal("auto")
+                                        .executes(context -> setDhLodColor(context.getSource(), ColorfulLightingConfig.DhLodColorMode.AUTO))
                                 )
                                 .then(Commands.literal("debug")
                                         .executes(context -> {
@@ -370,9 +373,11 @@ public class ClientEventListener {
 
     /**
      * Enables or disables colored lighting on Distant Horizons LODs, persisting the choice to the
-     * config. Enabling also relights the current area so the color memory has data to start from.
+     * config ({@code auto}: on whenever DH is installed, the default). Enabling also relights the
+     * current area so the color memory has data to start from.
      */
-    private static int setDhLodColor(CommandSourceStack source, boolean enable) {
+    private static int setDhLodColor(CommandSourceStack source, ColorfulLightingConfig.DhLodColorMode mode) {
+        boolean enable = mode != ColorfulLightingConfig.DhLodColorMode.OFF;
         String message;
         if (enable && !ColoredLightEngine.isEnabled()) {
             // The clientTick reconcile will bind the override once '/cl on' turns the engine on.
@@ -381,7 +386,7 @@ public class ClientEventListener {
             message = DhCompat.setOverrideEnabled(enable);
         }
         if (DhCompat.isLoaded()) {
-            ColorfulLightingConfig.DH_LOD_COLOR.set(enable);
+            ColorfulLightingConfig.DH_LOD_COLOR_MODE.set(mode);
             ColorfulLightingConfig.save();
         }
         if (enable && DhCompat.isOverrideEnabled()) {

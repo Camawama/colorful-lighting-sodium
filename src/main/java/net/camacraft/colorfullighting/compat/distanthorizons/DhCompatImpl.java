@@ -377,6 +377,10 @@ final class DhCompatImpl {
         StringBuilder sb = new StringBuilder();
         sb.append("Colored LOD lighting: ").append(overrideBound ? "ON" : "OFF");
         try {
+            sb.append(" (config ").append(ColorfulLightingConfig.DH_LOD_COLOR_MODE.get()).append(")");
+        } catch (RuntimeException ignored) {
+        }
+        try {
             sb.append(" (DH ").append(DhApi.getModVersion()).append(", DhApi ").append(DhApi.getApiMajorVersion()).append(")");
         } catch (Throwable ignored) {
         }

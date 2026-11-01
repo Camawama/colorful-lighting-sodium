@@ -47,7 +47,18 @@ public class ColorfulLightingConfig {
     public static final ForgeConfigSpec.EnumValue<LightUpdateSpeed> LIGHT_UPDATE_SPEED;
     public static final ForgeConfigSpec.BooleanValue FLYWHEEL_FORCE_TEXTURE_MODE;
     public static final ForgeConfigSpec.BooleanValue AUTO_EMITTER_COLORS;
-    public static final ForgeConfigSpec.BooleanValue DH_LOD_COLOR;
+    /**
+     * Colored lighting on Distant Horizons LODs. {@link #AUTO} (the default) is on whenever Distant Horizons is installed;
+     * {@code /cl dh on|off} pins it. Replaces the boolean {@code dhLodColor} (default false) of 2.7.2 and before, which every
+     * existing config held as {@code false} whether or not anyone chose it, so it isn't read: an install that wants it off
+     * says so again with {@code /cl dh off}.
+     */
+    public enum DhLodColorMode { AUTO, ON, OFF }
+
+    public static final ForgeConfigSpec.EnumValue<DhLodColorMode> DH_LOD_COLOR_MODE;
+    public static final ForgeConfigSpec.BooleanValue DH_LODS_START_AT_VANILLA_FADE;
+    public static final ForgeConfigSpec.BooleanValue DH_LODS_HIDDEN_IN_FLUIDS;
+    public static final ForgeConfigSpec.BooleanValue DH_TRANSLUCENT_LODS_KEEP_DH_FADE;
     public static final ForgeConfigSpec.BooleanValue SMOOTH_LIGHT_STAYS_BEHIND_BLOCKERS;
     public static final ForgeConfigSpec.BooleanValue XAERO_MINIMAP_COLORS;
     public static final ForgeConfigSpec.BooleanValue XAERO_WORLD_MAP_COLORS;
@@ -84,13 +95,38 @@ public class ColorfulLightingConfig {
                         "arithmetic reads a colored value wrongly (a portal particle by day was black and faded",
                         "to purple). On: the same ramps on the colored value, colour kept. Off: vanilla's math.")
                 .define("particleLightRamps", true);
-        DH_LOD_COLOR = BUILDER
+        DH_LOD_COLOR_MODE = BUILDER
                 .comment(
                         "Colored lighting on Distant Horizons LODs. Remembers the light colours of chunks you",
                         "visit and replays them on the LODs after those chunks unload, out to about 1500 blocks.",
                         "Needs Distant Horizons 3.x (DhApi 7). Costs ~56MB of VRAM while enabled.",
-                        "Toggle in-game with '/cl dh on' and '/cl dh off'.")
-                .define("dhLodColor", false);
+                        "  AUTO - on whenever Distant Horizons is installed (default)",
+                        "  ON   - on (the same as AUTO; kept so a choice made in game reads back as made)",
+                        "  OFF  - off",
+                        "Set in game with '/cl dh on', '/cl dh off' and '/cl dh auto'.")
+                .defineEnum("dhLodColorMode", DhLodColorMode.AUTO);
+        DH_LODS_START_AT_VANILLA_FADE = BUILDER
+                .comment(
+                        "With colored LOD lighting on, where the colored LODs begin. On: where Distant Horizons starts fading",
+                        "the vanilla terrain into its LODs, outright. Off: DH's own near clip, dithered out to 1.5 times it,",
+                        "about half the render distance; an LOD there sits under the vanilla terrain and shows through every",
+                        "non-full block (carpets, slabs, iron bars) as a full cube. Camafy does the same for DH's own LOD",
+                        "program (render.distantHorizonsLodsStartAtVanillaFade).")
+                .define("dhLodsStartAtVanillaFade", true);
+        DH_TRANSLUCENT_LODS_KEEP_DH_FADE = BUILDER
+                .comment(
+                        "With dhLodsStartAtVanillaFade on, translucent LODs (water, ice, glass) still dither in from Distant",
+                        "Horizons' own near clip as DH draws them; the opaque ones (land, the sea floor) start at the vanilla fade.",
+                        "Off: every LOD starts outright at the vanilla fade, which over deep water drew a sharp ring there (DH's",
+                        "vanilla fade counts the vanilla sea floor as far away and swaps it for the LOD sea as soon as there is one).")
+                .define("dhTranslucentLodsKeepDhFade", true);
+        DH_LODS_HIDDEN_IN_FLUIDS = BUILDER
+                .comment(
+                        "With colored LOD lighting on, no LOD is drawn while the camera is in water, lava or powder snow (or",
+                        "blind). Distant Horizons paints every LOD in the fog colour then, but the sky behind them isn't that",
+                        "colour, so far land showed through the water as pale shapes. Vanilla has no terrain past its fog there",
+                        "either. Camafy does the same for DH's own LOD program (render.distantHorizonsLodsHiddenInFluids).")
+                .define("dhLodsHiddenInFluids", true);
         SMOOTH_LIGHT_STAYS_BEHIND_BLOCKERS = BUILDER
                 .comment(
                         "Smooth lighting takes a block face's light from the cells round its corners. With this on, a",
@@ -142,9 +178,27 @@ public class ColorfulLightingConfig {
         return SPEC.isLoaded() && PARTICLE_LIGHT_RAMPS.get();
     }
 
-    /** Safe before the config file is loaded; DH LOD colour stays off until the config is available. */
+    /**
+     * Whether Distant Horizons' LODs get colored light (only asked with Distant Horizons installed): on unless the config
+     * says {@code OFF}. Safe before the config file is loaded; off until the config is available.
+     */
     public static boolean dhLodColor() {
-        return SPEC.isLoaded() && DH_LOD_COLOR.get();
+        return SPEC.isLoaded() && DH_LOD_COLOR_MODE.get() != DhLodColorMode.OFF;
+    }
+
+    /** Safe before the config file is loaded; on (the default) until the config is available. */
+    public static boolean dhLodsStartAtVanillaFade() {
+        return !SPEC.isLoaded() || DH_LODS_START_AT_VANILLA_FADE.get();
+    }
+
+    /** Safe before the config file is loaded; on (the default) until the config is available. */
+    public static boolean dhTranslucentLodsKeepDhFade() {
+        return !SPEC.isLoaded() || DH_TRANSLUCENT_LODS_KEEP_DH_FADE.get();
+    }
+
+    /** Safe before the config file is loaded; on (the default) until the config is available. */
+    public static boolean dhLodsHiddenInFluids() {
+        return !SPEC.isLoaded() || DH_LODS_HIDDEN_IN_FLUIDS.get();
     }
 
     /** Safe before the config file is loaded; on (the default) until the config is available. */

@@ -9,14 +9,14 @@ import javax.annotation.Nullable;
 /**
  * Distant Horizons compatibility: colored lighting on LODs.
  *
- * <p>Three pieces, all behind the {@code dhLodColor} config (default off) and touching nothing
- * unless DH is installed:
+ * <p>Three pieces, all behind the {@code dhLodColorMode} config (default {@code AUTO}: on whenever DH
+ * is installed; {@code /cl dh on|off|auto}) and touching nothing unless DH is installed:
  * <ul>
  * <li>{@link DhColorCache}: remembers each visited section's net light colour (downsampled),
  *     persisted per world+dimension under {@code <gamedir>/colorful_lighting/dh_color_cache/}.</li>
  * <li>{@link DhColorVolume}: two moving 3D textures around the camera filled from the cache.</li>
  * <li>{@link DhTerrainColorShaderProgram}: a DH API shader override that samples the volumes and
- *     tints LOD block light. Bound/unbound at runtime via {@code /cl dh on|off}.</li>
+ *     tints LOD block light. Bound/unbound at runtime via {@code /cl dh on|off|auto}.</li>
  * </ul>
  *
  * <p>Capture runs on a single daemon worker thread fed from the client thread's dirty-section drain

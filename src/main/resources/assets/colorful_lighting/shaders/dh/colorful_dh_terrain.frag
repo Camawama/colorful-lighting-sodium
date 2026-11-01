@@ -32,6 +32,8 @@ uniform vec3 uClHalfTexel;        // half a texel of the near/far/ultra volume, 
 uniform float uClNightVibrancy;   // same value the in-world shaders get (night factor x moon phase)
 
 uniform float uClipDistance;     // near fade start, from DH's render params
+uniform int uClHardClip;         // 1: LODs start at uClipDistance outright (DH's vanilla-fade start), no dither
+uniform float uClWaterClip;      // with uClHardClip, over 0: translucent LODs dither in from here to 1.5x it instead (DH's own start)
 
 // DH 3.2 textured LODs. uClTexturedLods gates the whole path: under 3.1.2 the irisData
 // attribute array is disabled, so vTextureTileId reads the integer-attribute default (0,0,0,1)
@@ -234,12 +236,33 @@ void main()
         fragColor = vec4(vertexLightCoord.x, vertexLightCoord.y, 0.0, 1.0);
     }
 
-    // DH's dithered near fade (ditherDhFade default): LODs dissolve where vanilla chunks take over
+    // DH's dithered near fade (ditherDhFade default): LODs dissolve where vanilla chunks take over;
+    // or (dhLodsStartAtVanillaFade) no LOD at all before DH starts fading the vanilla terrain into them,
+    // since an LOD under the vanilla terrain shows through every non-full block as a full cube
     float viewDist = length(vertexWorldPos);
-    float worldNoise = bayerMatrix4x4(gl_FragCoord.xy) + 0.001;
-    float fadeStep = smoothstep(uClipDistance, uClipDistance * 1.5, viewDist);
-    if (fadeStep <= worldNoise)
+    if (uClHardClip != 0)
     {
-        discard;
+        if (uClWaterClip > 0.0 && vertexAlbedo.a < 0.999)
+        {
+            // dhTranslucentLodsKeepDhFade: the LOD sea's surface comes in as DH brings it in, dithered from its own clip
+            float fadeIn = smoothstep(uClWaterClip, uClWaterClip * 1.5, viewDist);
+            if (fadeIn <= bayerMatrix4x4(gl_FragCoord.xy) + 0.001)
+            {
+                discard;
+            }
+        }
+        else if (viewDist < uClipDistance)
+        {
+            discard;
+        }
+    }
+    else
+    {
+        float worldNoise = bayerMatrix4x4(gl_FragCoord.xy) + 0.001;
+        float fadeStep = smoothstep(uClipDistance, uClipDistance * 1.5, viewDist);
+        if (fadeStep <= worldNoise)
+        {
+            discard;
+        }
     }
 }
