@@ -4,6 +4,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import dev.engine_room.flywheel.backend.gl.GlCompat;
 import net.camacraft.colorfullighting.ColorfulLighting;
 import net.camacraft.colorfullighting.common.ColoredLightEngine;
+import net.camacraft.colorfullighting.common.Config;
 import net.camacraft.colorfullighting.common.accessors.LevelAccessor;
 import net.camacraft.colorfullighting.common.accessors.mixin.LevelAttachments;
 
@@ -90,6 +91,17 @@ public class FlywheelCompat {
 
     public static boolean isTextureFallback() {
         return textureFallback;
+    }
+
+    /**
+     * The moon's night vibrancy as the chunk and core shaders get it (SodiumShaderCompat, ShaderInstanceMixin): the star
+     * brightness times the phase's vibrancy, 0 by day. Render thread. Since 2.7.6.
+     */
+    public static float nightVibrancy() {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.level == null) return 0f;
+        float night = mc.level.getStarBrightness(mc.getFrameTime());
+        return Math.max(0f, Math.min(1f, night * Config.getMoonVibrancy(mc.level.getMoonPhase())));
     }
 
     /** '/cl flywheel report': one line per live storage so per-level state is visible. */

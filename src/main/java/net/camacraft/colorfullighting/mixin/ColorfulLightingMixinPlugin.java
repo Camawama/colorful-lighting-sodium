@@ -79,6 +79,10 @@ public class ColorfulLightingMixinPlugin implements IMixinConfigPlugin {
             // Ensure Flywheel 1.0+ is installed before applying flywheel mixins
             return hasClass("dev.engine_room.flywheel.backend.engine.LightStorage");
         }
+        if (mixinClassName.contains(".vanillin.")) {
+            // Vanillin's chest visual rebuilds a double chest's light from vanilla's nibbles (2.7.6)
+            return hasClass("dev.engine_room.vanillin.visuals.ChestVisual");
+        }
         if (mixinClassName.contains(".create.")) {
             // Ensure Create 0.6+ is installed before applying create mixins
             return hasClass("net.createmod.catnip.render.ShadeSeparatingSuperByteBuffer");

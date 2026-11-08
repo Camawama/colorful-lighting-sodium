@@ -9,6 +9,7 @@ import net.camacraft.colorfullighting.common.accessors.mixin.LevelRendererAccess
 import net.camacraft.colorfullighting.common.util.ColorRGB8;
 import net.camacraft.colorfullighting.common.util.PackedLightData;
 import net.camacraft.colorfullighting.compat.create.CreateCompat;
+import net.camacraft.colorfullighting.compat.vanillin.VanillinChestLight;
 import net.camacraft.colorfullighting.compat.sodium.SodiumPackedLightData;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
@@ -58,13 +59,17 @@ public class LevelRendererMixin implements LevelRendererAccessor {
             BlockStateAccessor stateAccessor = new BlockStateWrapper(state);
             if (Config.getEmissionBrightness(stateAccessor) > 0) {
                 var emission = Config.getLightColor(state);
-                cir.setReturnValue(PackedLightData.packData(skyLight, ColorRGB8.fromRGB4(emission)));
+                int emissive = PackedLightData.packData(skyLight, ColorRGB8.fromRGB4(emission));
+                VanillinChestLight.answered(emissive);
+                cir.setReturnValue(emissive);
                 return;
             }
         }
 		
         int color = engine.sampleLightColorInt(pos);
-        cir.setReturnValue(SodiumPackedLightData.packDataFromRGB4(skyLight, color));
+        int packed = SodiumPackedLightData.packDataFromRGB4(skyLight, color);
+        VanillinChestLight.answered(packed);
+        cir.setReturnValue(packed);
     }
 	
 	@Override

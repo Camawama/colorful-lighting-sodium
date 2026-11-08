@@ -28,6 +28,24 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class GlProgramMixin {
     @Unique
     private boolean colorfullighting$samplerBound;
+    /** {@code _cl_nightVibrancy}'s location in this program: -2 not looked up yet, -1 none. */
+    @Unique
+    private int colorfullighting$vibrancyLocation = -2;
+
+    /**
+     * The night vibrancy for the colored light composite ({@code mixColoredLightWithLightMap} in colored_light.glsl), set on
+     * every bind as the chunk and core shaders get theirs each frame. Since 2.7.6.
+     */
+    @Inject(method = "bind", at = @At("TAIL"))
+    private void colorfullighting$setNightVibrancy(CallbackInfo ci) {
+        if (!FlywheelCompat.isAvailable()) return;
+        if (colorfullighting$vibrancyLocation == -2) {
+            colorfullighting$vibrancyLocation = ((GlProgram) (Object) this).getUniformLocation("_cl_nightVibrancy");
+        }
+        if (colorfullighting$vibrancyLocation >= 0) {
+            GL20C.glUniform1f(colorfullighting$vibrancyLocation, FlywheelCompat.nightVibrancy());
+        }
+    }
 
     @Inject(method = "bind", at = @At("TAIL"))
     private void colorfullighting$bindColoredLightSampler(CallbackInfo ci) {

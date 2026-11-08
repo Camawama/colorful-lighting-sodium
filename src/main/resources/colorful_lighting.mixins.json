@@ -62,6 +62,8 @@
     "compat.flywheel.InstancedLightMixin",
     "compat.flywheel.GlProgramMixin",
     "compat.flywheel.GlCompatMixin",
+    "compat.flywheel.ColoredLitInstanceMixin",
+    "compat.vanillin.VanillinChestVisualMixin",
     "compat.create.ChainConveyorRendererMixin",
     "compat.create.AnimatedSceneElementBaseMixin",
     "compat.create.ShadeSeparatingSuperByteBufferMixin",

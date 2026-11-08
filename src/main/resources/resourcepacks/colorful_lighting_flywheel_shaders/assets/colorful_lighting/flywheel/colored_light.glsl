@@ -59,6 +59,15 @@ ColoredLightFloatData coloredLightData_integerToFloat(ColoredLightIntegerData da
     );
 }
 
+// The moon's night vibrancy (the star brightness times the phase's vibrancy), set on every program bind by
+// GlProgramMixin; 0 when nothing sets it.
+uniform float _cl_nightVibrancy;
+
+// The in-world composite of sky and colored block light: the same as cl_blendLight (the chunk shaders), the vanilla core
+// shaders' sample_lightmap_colored and the Distant Horizons LODs. The block light is washed toward grey under bright sky
+// and under moonlight, then scaled by max(0.1, 1 - sky) * 0.9 + 0.1. Before 2.7.6 this read sky + block * max(0.1, 1 - sky),
+// an older composite: a Flywheel-drawn chest by a torch drew about 5% darker by day than the same chest from vanilla's
+// renderer (pack harness chest_flw, a double chest and a torch, 0.941 and 0.956 of vanilla's brightness).
 vec4 mixColoredLightWithLightMap(sampler2D lightMap, ColoredLightFloatData data) {
     vec2 skyUv = clamp(vec2(0.5 / 16.0, (data.skyLight * 15.0 + 0.5) / 16.0), vec2(0.5 / 16.0), vec2(15.5 / 16.0));
     vec3 sky = texture(lightMap, skyUv).xyz;
@@ -67,7 +76,12 @@ vec4 mixColoredLightWithLightMap(sampler2D lightMap, ColoredLightFloatData data)
         texture(lightMap, clamp(vec2((data.lightColor.g * 15.0 + 0.5) / 16.0, 0.5 / 16.0), vec2(0.5 / 16.0), vec2(15.5 / 16.0))).r,
         texture(lightMap, clamp(vec2((data.lightColor.b * 15.0 + 0.5) / 16.0, 0.5 / 16.0), vec2(0.5 / 16.0), vec2(15.5 / 16.0))).r
     );
-    return vec4(sky + block * max(0.1, 1.0 - sky.r), 1.0);
+    float moonWashoutFactor = 1.0 - _cl_nightVibrancy;
+    float skyExposure = data.skyLight * 15.0 / 16.0;
+    float effectiveSkyBrightness = sky.r * moonWashoutFactor * skyExposure;
+    float washFactor = max(0.1, 1.0 - effectiveSkyBrightness);
+    block = mix(vec3(length(block)), block, washFactor * 0.25 + 0.75);
+    return vec4(sky + block * (max(0.1, 1.0 - sky.r) * 0.9 + 0.1), 1.0);
 }
 
 // get packed colored light from the section buffer
