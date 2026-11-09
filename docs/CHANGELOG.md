@@ -18,6 +18,14 @@ Planned
   at walls like a block's, is baked into meshes, sampled for entities and read by shader packs as block light; cells that change tell the engine as
   block light changes, and the straight-line path leaves those lights out. Spot lights stay on the straight-line path.
 - `DynamicLightsCompat.of(LevelAccessor)` for the engine's lookups.
+- Three faults in the shader path, found by looking at the picture (the samples the numeric tests read go through the CPU twin, which was
+  right): the volume's texture unit is selected through `GlStateManager` (a raw `glActiveTexture` left vanilla's tracking believing another
+  unit was active, and the atlas and the lightmap were then bound on the wrong units: whole sections with garbage light); the inverse view
+  rotation is the transpose of the view rotation the game builds for the frame (pitch about X, then yaw plus 180 about Y), not the camera's
+  quaternion (used as such, every vertex turned half round the camera and the lights landed behind the player: a torch lighting far
+  rectangles and not the ground at the player's feet); and the volume uploads with a reset unpack state, in the layout the shaders sample
+  (vanilla's 16-wide lightmap upload every frame leaves `GL_UNPACK_ROW_LENGTH` at 16, which scrambled the 64-wide slices and made the
+  volume solid everywhere: a black field under a held torch).
 
 2026-11-09 (2.8.0)
 - Dynamic light provider API (`api.dynamic.DynamicLightProvider`, `DynamicLightSink`; `DynamicLightsCompat.registerExternalProvider`):

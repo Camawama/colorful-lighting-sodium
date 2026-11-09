@@ -150,9 +150,13 @@ public final class ShaderDynamicLights {
             dir[o + 3] = l[11] < 1f ? l[11] : 1f;
         }
         count = n;
-        // the camera's rotation: eye space back to the world's axes (the inverse of the view rotation)
-        Matrix3f m = new Matrix3f().rotation(camera.rotation());
-        m.get(invView);
+        // eye space back to the world's axes: the inverse of the view rotation the game builds for the frame (pitch about X,
+        // then yaw plus 180 about Y, as GameRenderer.renderLevel does; a rotation's inverse is its transpose). The camera's own
+        // quaternion is not that inverse: used as such it turned every vertex half round the camera, and the lights landed behind
+        // the player (2026-11-09, the owner's torch lighting far rectangles and not the ground at their feet)
+        Matrix3f view = new Matrix3f().rotation(com.mojang.math.Axis.XP.rotationDegrees(camera.getXRot()))
+                .rotate(com.mojang.math.Axis.YP.rotationDegrees(camera.getYRot() + 180f));
+        view.transpose().get(invView);
         return count > 0;
     }
 

@@ -93,7 +93,7 @@ public final class VoxelOcclusion {
                     pos.set(ox + x, wy, oz + z);
                     if (!level.hasChunkAt(pos)) continue;
                     BlockState state = level.getBlockState(pos);
-                    int i = ((y * SIZE + z) * SIZE + x) * 4;
+                    int i = ((z * SIZE + y) * SIZE + x) * 4;
                     if (state.isAir()) {
                         data[i] = data[i + 1] = data[i + 2] = (byte) 255;
                         continue;
@@ -122,9 +122,13 @@ public final class VoxelOcclusion {
     public static boolean bind() {
         if (!enabled) return false;
         if (!RenderSystem.isOnRenderThread()) return uploadedOriginX != Integer.MIN_VALUE;
+        // the active texture unit goes through GlStateManager, which tracks it: a raw glActiveTexture left vanilla's state
+        // believing another unit was active, and the lightmap and the atlas were then bound to the wrong units (whole
+        // sections drawn with garbage light, 2026-11-09)
+        int previousUnit = com.mojang.blaze3d.platform.GlStateManager._getActiveTexture();
         if (textureId <= 0) {
             textureId = GL11C.glGenTextures();
-            GL13C.glActiveTexture(GL13C.GL_TEXTURE0 + TEXTURE_UNIT);
+            com.mojang.blaze3d.platform.GlStateManager._activeTexture(GL13C.GL_TEXTURE0 + TEXTURE_UNIT);
             GL11C.glBindTexture(GL12C.GL_TEXTURE_3D, textureId);
             GL11C.glTexParameteri(GL12C.GL_TEXTURE_3D, GL11C.GL_TEXTURE_MIN_FILTER, GL11C.GL_NEAREST);
             GL11C.glTexParameteri(GL12C.GL_TEXTURE_3D, GL11C.GL_TEXTURE_MAG_FILTER, GL11C.GL_NEAREST);
@@ -133,14 +137,23 @@ public final class VoxelOcclusion {
             GL11C.glTexParameteri(GL12C.GL_TEXTURE_3D, GL12C.GL_TEXTURE_WRAP_R, GL12C.GL_CLAMP_TO_EDGE);
             upload = MemoryUtil.memAlloc(BYTES);
             GL12C.glTexImage3D(GL12C.GL_TEXTURE_3D, 0, GL11C.GL_RGBA8, SIZE, SIZE, SIZE, 0, GL11C.GL_RGBA, GL11C.GL_UNSIGNED_BYTE, (ByteBuffer) null);
-            GL13C.glActiveTexture(GL13C.GL_TEXTURE0);
         }
         byte[] data = ready.getAndSet(null);
-        GL13C.glActiveTexture(GL13C.GL_TEXTURE0 + TEXTURE_UNIT);
+        com.mojang.blaze3d.platform.GlStateManager._activeTexture(GL13C.GL_TEXTURE0 + TEXTURE_UNIT);
         GL11C.glBindTexture(GL12C.GL_TEXTURE_3D, textureId);
         if (data != null) {
             upload.clear();
             upload.put(data).flip();
+            // the unpack state is whatever the last texture upload left, and vanilla uploads its 16-wide lightmap every frame:
+            // with a row length of 16 the 64-wide slices read scrambled and the volume came out solid everywhere (a black
+            // field under a held torch in the shader path, 2026-11-09). The layout is x fastest, then y, then z: slice z,
+            // row y, as the shaders sample it with (x, y, z) and as transmit() below indexes it.
+            com.mojang.blaze3d.platform.GlStateManager._pixelStore(GL11C.GL_UNPACK_ROW_LENGTH, 0);
+            com.mojang.blaze3d.platform.GlStateManager._pixelStore(GL11C.GL_UNPACK_SKIP_ROWS, 0);
+            com.mojang.blaze3d.platform.GlStateManager._pixelStore(GL11C.GL_UNPACK_SKIP_PIXELS, 0);
+            com.mojang.blaze3d.platform.GlStateManager._pixelStore(GL11C.GL_UNPACK_ALIGNMENT, 4);
+            com.mojang.blaze3d.platform.GlStateManager._pixelStore(GL12C.GL_UNPACK_IMAGE_HEIGHT, 0);
+            com.mojang.blaze3d.platform.GlStateManager._pixelStore(GL12C.GL_UNPACK_SKIP_IMAGES, 0);
             GL12C.glTexSubImage3D(GL12C.GL_TEXTURE_3D, 0, 0, 0, 0, SIZE, SIZE, SIZE, GL11C.GL_RGBA, GL11C.GL_UNSIGNED_BYTE, upload);
             uploadedOriginX = readyOriginX;
             uploadedOriginY = readyOriginY;
@@ -150,7 +163,7 @@ public final class VoxelOcclusion {
             currentY = readyOriginY;
             currentZ = readyOriginZ;
         }
-        GL13C.glActiveTexture(GL13C.GL_TEXTURE0);
+        com.mojang.blaze3d.platform.GlStateManager._activeTexture(previousUnit);
         return uploadedOriginX != Integer.MIN_VALUE;
     }
 
@@ -173,7 +186,7 @@ public final class VoxelOcclusion {
             double t = start + (end - start) * (s + 0.5) / steps;
             int x = (int) Math.floor(fromX + dx / len * t) - ox, y = (int) Math.floor(fromY + dy / len * t) - oy, z = (int) Math.floor(fromZ + dz / len * t) - oz;
             if (x < 0 || y < 0 || z < 0 || x >= SIZE || y >= SIZE || z >= SIZE) continue;
-            int i = ((y * SIZE + z) * SIZE + x) * 4;
+            int i = ((z * SIZE + y) * SIZE + x) * 4;
             out[0] *= (data[i] & 0xFF) / 255.0;
             out[1] *= (data[i + 1] & 0xFF) / 255.0;
             out[2] *= (data[i + 2] & 0xFF) / 255.0;
