@@ -320,6 +320,12 @@ public abstract class SodiumAoFaceDataMixin implements SodiumAoFaceDataExtension
         cb[1] = blend(e2lm, e0lm, c0lm, calm);
         cb[2] = blend(e2lm, e1lm, c2lm, calm);
         cb[3] = blend(e3lm, e1lm, c3lm, calm);
+        // the face these vertices belong to, in the light's top nibble (2.9.0): the terrain shaders sample the dynamic light
+        // field half a block out along it, as smooth lighting reads the blocks in front of a face
+        int facing = net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.facingBits(direction);
+        if (facing != 0) {
+            for (int i = 0; i < 4; i++) cb[i] = (cb[i] & 0x0FFFFFFF) | facing;
+        }
     }
 
     /**

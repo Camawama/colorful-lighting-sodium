@@ -13,15 +13,17 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * The shader path for dynamic lights (2.8.0): the external providers' lights drawn per vertex in the Embeddium terrain
- * shaders ({@code light.glsl}, {@code cl_dynamicLight}) and per fragment in Flywheel's ({@code colored_light.glsl},
- * {@code common.frag}), so a light that moves rebuilds no mesh. Each pass the lights nearest the camera (at most
- * {@link #maxLights}, within {@link #maxDistance}) go up as three vec4 arrays, camera-relative: position and level (the
- * falloff folded into the level's 32s), colour and range, direction and the cosine of the cone's half angle (1 for a point
- * light), plus the inverse of the camera's rotation so a vertex of a Valkyrien Skies ship, drawn in the ship's own frame,
- * finds its place in the world. Available where Embeddium's pipeline runs Colorful Lighting's shaders and no Oculus shader
- * pack replaces them (under a pack the lights go through the packed light the pack decodes instead). Uniform locations are
- * cached per program handle; a program without the uniforms (the define off, a pack's program) is skipped.
+ * The shader path for dynamic lights (2.8.0): the external providers' lights drawn in the Embeddium terrain shaders
+ * ({@code light.glsl}, {@code cl_dynamicLight}) and in Flywheel's ({@code colored_light.glsl}, {@code common.frag}), so a
+ * light that moves rebuilds no mesh. Since 2.9.0 the light near the camera comes from the {@link DynamicLightField}, the
+ * lights propagated through the blocks and sampled as a 3D texture; the arrays uploaded here carry every light nearest the
+ * camera (at most {@link #maxLights}, within {@link #maxDistance}), camera-relative, for the straight-line falloff the
+ * shaders use outside the field: position and level (the falloff folded into the level's 32s, 64 added when the field holds
+ * the light), colour and range, direction and the cosine of the cone's half angle (1 for a point light), plus the inverse of
+ * the camera's rotation so a vertex of a Valkyrien Skies ship, drawn in the ship's own frame, finds its place in the world.
+ * Available where Embeddium's pipeline runs Colorful Lighting's shaders and no Oculus shader pack replaces them (under a pack
+ * the lights go through the packed light the pack decodes instead). Uniform locations are cached per program handle; a
+ * program without the uniforms (the define off, a pack's program) is skipped.
  */
 public final class ShaderDynamicLights {
     public static final int MAX_LIGHTS = 64;
@@ -31,25 +33,26 @@ public final class ShaderDynamicLights {
 
     private static volatile boolean transmission;
 
-    /** Light through blocks for the lights (the provider's client.transmission): walls stop it, stained glass tints it. */
+    /** Light through blocks for the lights (the provider's client.transmission): propagated through the blocks round the camera. */
     public static void setTransmission(boolean value) {
         transmission = value;
         VoxelOcclusion.setEnabled(value);
+        DynamicLightField.setEnabled(value);
     }
 
     public static boolean transmission() {
         return transmission;
     }
 
-    /** Uniform locations of one program: count, pos[], color[], dir[], invView, transmission, occ, occOrigin; -1 where missing. */
-    private record Locations(int count, int pos, int color, int dir, int invView, int shadow, int occ, int occOrigin) {
+    /** Uniform locations of one program: count, pos[], color[], dir[], invView, field, fieldTex, fieldOrigin, fieldSize; -1 where missing. */
+    private record Locations(int count, int pos, int color, int dir, int invView, int field, int fieldTex, int fieldOrigin, int fieldSize) {
         boolean usable() {
             return count >= 0 && pos >= 0 && color >= 0 && dir >= 0;
         }
     }
 
     private static final Map<Integer, Locations> LOCATIONS = new ConcurrentHashMap<>();
-    private static final Locations NONE = new Locations(-1, -1, -1, -1, -1, -1, -1, -1);
+    private static final Locations NONE = new Locations(-1, -1, -1, -1, -1, -1, -1, -1, -1);
 
     // the frame's light arrays, built once per frame (keyed by the frame's partial tick and level) and uploaded per pass
     private static float[] pos = new float[MAX_LIGHTS * 4], color = new float[MAX_LIGHTS * 4], dir = new float[MAX_LIGHTS * 4];
@@ -138,8 +141,9 @@ public final class ShaderDynamicLights {
             pos[o] = (float) (l[0] - cam.x);
             pos[o + 1] = (float) (l[1] - cam.y);
             pos[o + 2] = (float) (l[2] - cam.z);
-            // the level, with the falloff (0 diamond, 1 round) folded in as 32s; a spot is always round
-            pos[o + 3] = Math.min(15f, l[3]) + (l[13] >= 0.5f ? 32f : 0f);
+            // the level, with the falloff (0 diamond, 1 round) folded in as 32s, and 64 when the field holds the light (the
+            // straight-line term is then only for points outside the field); a spot is always round
+            pos[o + 3] = Math.min(15f, l[3]) + (l[13] >= 0.5f ? 32f : 0f) + (l[14] >= 0.5f ? 64f : 0f);
             color[o] = l[4];
             color[o + 1] = l[5];
             color[o + 2] = l[6];
@@ -181,13 +185,27 @@ public final class ShaderDynamicLights {
         if (loc == null) {
             loc = new Locations(GL20C.glGetUniformLocation(programHandle, "cl_dynCount"), GL20C.glGetUniformLocation(programHandle, "cl_dynPos"),
                     GL20C.glGetUniformLocation(programHandle, "cl_dynColor"), GL20C.glGetUniformLocation(programHandle, "cl_dynDir"),
-                    GL20C.glGetUniformLocation(programHandle, "cl_dynInvView"), GL20C.glGetUniformLocation(programHandle, "cl_dynTransmission"),
-                    GL20C.glGetUniformLocation(programHandle, "cl_dynOcc"), GL20C.glGetUniformLocation(programHandle, "cl_dynOccOrigin"));
+                    GL20C.glGetUniformLocation(programHandle, "cl_dynInvView"), GL20C.glGetUniformLocation(programHandle, "cl_dynField"),
+                    GL20C.glGetUniformLocation(programHandle, "cl_dynFieldTex"), GL20C.glGetUniformLocation(programHandle, "cl_dynFieldOrigin"),
+                    GL20C.glGetUniformLocation(programHandle, "cl_dynFieldSize"));
             if (!loc.usable()) loc = NONE;
             LOCATIONS.put(programHandle, loc);
         }
         if (loc == NONE) return;
+        // the field first: its upload tells which lights it holds, which the arrays below flag
+        boolean fieldOn = transmission && !DynamicLightsCompat.externalMeshLighting() && DynamicLightField.bind();
         boolean any = prepare();
+        if (loc.field >= 0) {
+            GL20C.glUniform1i(loc.field, fieldOn ? 1 : 0);
+            if (fieldOn) {
+                if (loc.fieldTex >= 0) GL20C.glUniform1i(loc.fieldTex, DynamicLightField.TEXTURE_UNIT);
+                if (loc.fieldOrigin >= 0) {
+                    float[] o = DynamicLightField.originRelative(Minecraft.getInstance().gameRenderer.getMainCamera().getPosition());
+                    GL20C.glUniform3f(loc.fieldOrigin, o[0], o[1], o[2]);
+                }
+                if (loc.fieldSize >= 0) GL20C.glUniform1f(loc.fieldSize, DynamicLightField.SIZE);
+            }
+        }
         if (!any) {
             GL20C.glUniform1i(loc.count, 0);
             return;
@@ -206,18 +224,6 @@ public final class ShaderDynamicLights {
             INV_VIEW_BUF.clear();
             INV_VIEW_BUF.put(invView).flip();
             GL20C.glUniformMatrix3fv(loc.invView, false, INV_VIEW_BUF);
-        }
-        // transmission: the volume bound on its unit, the sampler and origin set; off when no volume is ready
-        if (loc.shadow >= 0) {
-            boolean on = transmission && VoxelOcclusion.bind();
-            GL20C.glUniform1i(loc.shadow, on ? 1 : 0);
-            if (on) {
-                if (loc.occ >= 0) GL20C.glUniform1i(loc.occ, VoxelOcclusion.TEXTURE_UNIT);
-                if (loc.occOrigin >= 0) {
-                    float[] o = VoxelOcclusion.originRelative(Minecraft.getInstance().gameRenderer.getMainCamera().getPosition());
-                    GL20C.glUniform3f(loc.occOrigin, o[0], o[1], o[2]);
-                }
-            }
         }
     }
 

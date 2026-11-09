@@ -35,6 +35,11 @@ public class SodiumPackedLightData {
         return red8 | green8 << 8 | skyLight4 << 16 | blue8 << 20 | alpha4 << 28;
     }
 
+    /** The packed light with a face's bits (DynamicLightsCompat.facingBits) in the top nibble; unchanged for 0. */
+    public static int withFacing(int packedData, int facingBits) {
+        return facingBits == 0 ? packedData : (packedData & 0x0FFFFFFF) | facingBits;
+    }
+
     // Field accessors for hot paths that must not allocate. Same layout as unpackData.
     public static int unpackRed(int packedData) { return packedData & 0xFF; }
     public static int unpackGreen(int packedData) { return (packedData >>> 8) & 0xFF; }

@@ -42,7 +42,8 @@ public abstract class VanillaLikeChunkVertexMixin {
             // Check for our magic number. If present, we write the packed 32-bit color
             // directly to the buffer. Otherwise, we replicate the vanilla behavior
             // to ensure normal lighting is not broken.
-            if (((vertex.light >> 28) & 0xF) == 0xF) {
+            // the coloured format: marker 15, or 8 plus a face since 2.9.0 (the 16 bits here have no room for the face)
+            if (((vertex.light >> 28) & 0xF) >= 8) {
                 // Compress 32-bit light data into 16 bits to fit alongside drawParams
                 int r = (vertex.light & 0xFF) >> 4; // 4 bits
                 int g = ((vertex.light >> 8) & 0xFF) >> 4; // 4 bits

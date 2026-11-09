@@ -137,7 +137,7 @@ public final class DynamicLightsCompat {
      * {@code range} the reach for 0 and 1; a spot has {@code outerCos} below 1 (the cosine of half its full angle),
      * {@code innerCos} where it is fully lit, and a direction. {@code level} may be fractional while a light fades.
      */
-    private record DynamicSource(double x, double y, double z, int luminance, ColorRGB4 color, float level, int falloff, float range,
+    record DynamicSource(double x, double y, double z, int luminance, ColorRGB4 color, float level, int falloff, float range,
                                  double dx, double dy, double dz, float outerCos, float innerCos, boolean external, long key, boolean propagatedFlag) {
         DynamicSource(double x, double y, double z, int luminance, ColorRGB4 color) {
             this(x, y, z, luminance, color, luminance, 2, (float) MAX_RADIUS, 0, 0, 0, 1f, 1f, false, 0L, false);
@@ -176,6 +176,34 @@ public final class DynamicLightsCompat {
     private static volatile boolean externalPropagation = true;
     /** The virtual emitters in force: cell -> colour at level, read by the engine's emission lookups on any thread. */
     private volatile Map<Long, ColorRGB4> virtualEmitters = Collections.emptyMap();
+
+    /**
+     * Registers who adds the blocks of moving structures (a Valkyrien Skies ship's, in the shipyard) to the block volume the
+     * dynamic lights are propagated through (2.9.0); null for none. One at a time.
+     */
+    public static void setExternalBlockFiller(@Nullable VoxelOcclusion.BlockFiller filler) {
+        VoxelOcclusion.setExternalFiller(filler);
+    }
+
+    /** The colour Colorful Lighting gives a block state's light, as 0xRRGGBB (white when it has none). For the providers' lamps. */
+    public static int blockLightColor(net.minecraft.world.level.block.state.BlockState state) {
+        return rgb8(Config.getLightColor(state));
+    }
+
+    /** Whether terrain meshes carry each vertex's face in its light's top nibble (2.9.0); written on the client tick, read by the mesher threads. */
+    private static volatile boolean facingInMeshes;
+
+    /**
+     * The bits a terrain vertex's packed light carries for its face (8 plus the face's 3D index, in the top nibble, where the
+     * coloured format's marker 15 was), or 0 while meshes carry no faces: without a dynamic light provider, under an Oculus
+     * shader pack, or with {@code -Dcolorfullighting.meshFacing=false}. The shaders sample the dynamic light field half a
+     * block out along the face; a nibble of 15 still reads as coloured light with no face known.
+     */
+    public static int facingBits(net.minecraft.core.Direction face) {
+        return facingInMeshes && face != null ? (8 | face.get3DDataValue()) << 28 : 0;
+    }
+
+    private static final boolean MESH_FACING_ALLOWED = !"false".equalsIgnoreCase(System.getProperty("colorfullighting.meshFacing"));
 
     public static void setExternalPropagation(boolean value) {
         externalPropagation = value;
@@ -277,7 +305,7 @@ public final class DynamicLightsCompat {
     public static List<float[]> externalLightsForFrame(ClientLevel level, float partialTick) {
         List<float[]> out = new ArrayList<>();
         collectExternal(level, partialTick, s -> out.add(new float[]{(float) s.x, (float) s.y, (float) s.z, s.level, s.color.red4 / 15f, s.color.green4 / 15f,
-                s.color.blue4 / 15f, s.range, (float) s.dx, (float) s.dy, (float) s.dz, s.outerCos, s.innerCos, s.falloff}));
+                s.color.blue4 / 15f, s.range, (float) s.dx, (float) s.dy, (float) s.dz, s.outerCos, s.innerCos, s.falloff, DynamicLightField.holds(s.key) ? 1f : 0f}));
         return out;
     }
 
@@ -350,6 +378,7 @@ public final class DynamicLightsCompat {
      * chunk-build threads never touches live collections. Called once per tick of this level.
      */
     public void clientTick(ClientLevel level) {
+        facingInMeshes = MESH_FACING_ALLOWED && !EXTERNAL.isEmpty() && !ShaderDynamicLights.shaderPackActive();
 	    ColoredLightEngine engine = ((LevelAttachments) level).colorfullighting$getEngine();
 	    if (engine == null || !ColoredLightEngine.isEnabled()) {
             entitySources = NO_SOURCES;
@@ -388,6 +417,20 @@ public final class DynamicLightsCompat {
         if (!EXTERNAL.isEmpty()) collectExternalSources(level, sources);
         entitySources = sources.isEmpty() ? NO_SOURCES : sources.toArray(NO_SOURCES);
         blockColorSources = (colors == null || colors.isEmpty()) ? NO_COLOR_SOURCES : colors.toArray(NO_COLOR_SOURCES);
+        // the propagated field for the shader path (2.9.0): the external lights at their tick positions, through the blocks
+        if (ShaderDynamicLights.transmission() && !externalMeshLighting) DynamicLightField.tick(level, fieldLights(entitySources));
+    }
+
+    /** The external lights as the field takes them (the straight-line copies the lightmap path mirrors into shipyards are left out by the cube). */
+    private static List<DynamicLightField.Light> fieldLights(DynamicSource[] sources) {
+        List<DynamicLightField.Light> out = new ArrayList<>();
+        for (DynamicSource s : sources) {
+            if (!s.external || s.level <= 0f) continue;
+            float pruneCos = s.isSpot() ? (float) Math.cos(Math.min(Math.PI, Math.acos(Math.max(-1.0, Math.min(1.0, s.outerCos))) + Math.toRadians(20))) : -1f;
+            out.add(new DynamicLightField.Light(s.key, s.x, s.y, s.z, Math.min(15f, s.level), s.color.red4, s.color.green4, s.color.blue4, s.falloff,
+                    Math.max(1f, s.range), s.isSpot(), s.dx, s.dy, s.dz, s.outerCos, s.innerCos, pruneCos));
+        }
+        return out;
     }
 
     /**
@@ -645,6 +688,9 @@ public final class DynamicLightsCompat {
      * Allocation-free equivalent of {@link #maxWithDynamicLight}, taking and returning a packed 12-bit
      * {@code r << 8 | g << 4 | b}. Sits on the chunk-build hot path, so it must not allocate.
      */
+    /** The render thread's scratch for a field sample (the only thread that takes the field here). */
+    private static final int[] FIELD_SAMPLE = new int[3];
+
     public int maxWithDynamicLightPacked(int blockX, int blockY, int blockZ, int base) {
         DynamicSource[] sources = entitySources;
         if (sources.length == 0) return base;
@@ -655,15 +701,25 @@ public final class DynamicLightsCompat {
         // thread's samples (entities, block entities, particles) always take them
         boolean onRenderThread = com.mojang.blaze3d.systems.RenderSystem.isOnRenderThread();
         boolean meshesTakeExternal = externalMeshLighting || onRenderThread;
-        // render-thread samples (entities, block entities, particles) pass through the same volume the shaders march
-        boolean transmit = onRenderThread && ShaderDynamicLights.transmission();
-        double[] through = transmit ? new double[3] : null;
+        // render-thread samples (entities, block entities, particles) read the propagated field the shaders sample (2.9.0), for
+        // the lights it holds; the rest keep the straight-line falloff
+        boolean fieldCovers = false;
+        if (onRenderThread && !externalMeshLighting && ShaderDynamicLights.transmission()) {
+            int[] f = FIELD_SAMPLE;
+            if (DynamicLightField.sample(blockX, blockY, blockZ, f)) {
+                fieldCovers = true;
+                r = Math.max(r, (f[0] * 15 + 127) / 255);
+                g = Math.max(g, (f[1] * 15 + 127) / 255);
+                b = Math.max(b, (f[2] * 15 + 127) / 255);
+            }
+        }
         for (DynamicSource source : sources) {
             double dx = x - source.x, dy = y - source.y, dz = z - source.z;
             double distanceSquared = dx * dx + dy * dy + dz * dz;
             double level;
             if (source.external) {
                 if (!meshesTakeExternal || source.propagatedFlag) continue;
+                if (fieldCovers && DynamicLightField.holds(source.key)) continue;
                 if (distanceSquared > (double) source.range * source.range) continue;
                 if (source.isSpot()) {
                     double d = Math.sqrt(distanceSquared);
@@ -685,14 +741,6 @@ public final class DynamicLightsCompat {
             }
             if (level <= 0.0) continue;
             float scale = (float) (Math.min(15.0, level) / 15.0);
-            if (transmit && source.external) {
-                VoxelOcclusion.transmit(x, y, z, source.x, source.y, source.z, through);
-                if (through[0] + through[1] + through[2] <= 0.0) continue;
-                r = Math.max(r, Math.round(source.color.red4 * scale * (float) through[0]));
-                g = Math.max(g, Math.round(source.color.green4 * scale * (float) through[1]));
-                b = Math.max(b, Math.round(source.color.blue4 * scale * (float) through[2]));
-                continue;
-            }
             r = Math.max(r, Math.round(source.color.red4 * scale));
             g = Math.max(g, Math.round(source.color.green4 * scale));
             b = Math.max(b, Math.round(source.color.blue4 * scale));

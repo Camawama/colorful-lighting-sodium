@@ -6,6 +6,25 @@ Planned
 - keep Valkyrien Skies compatibility on every version where VS exists
 - add Sable / Create Aeronautics compatibility alongside Valkyrien Skies where possible
 
+2026-11-09 (2.9.0)
+- Dynamic light propagated through the blocks (`DynamicLightField`): the external providers' lights are spread cell by cell from each light the way
+  the engine spreads a lamp's light (a level lost per block along the path, Manhattan for a diamond light, straight for a round one; stopped by opaque
+  blocks, tinted per channel by filter blocks, round corners), on a worker whenever a light moved or changed or the blocks were rebuilt under it, and
+  uploaded as a 96-block RGBA8 3D texture on unit 12 (the box that changed) for the terrain and Flywheel shaders, which sample it trilinearly half a
+  block out along the face's normal, as smooth lighting reads the blocks in front of a face. This replaces 2.8.1's straight-line march from each
+  vertex to each light, which gave hard shadows with jagged edges and black behind every wall where Minecraft's own light wraps a corner and fades
+  (Lively Lighting's client module, the owner's screenshots of 2026-11-09). A spot light is propagated the same and cut by its cone where it is
+  written; a light whose cell is outside the cube, and points outside the cube, keep the straight-line falloff (no occlusion). The CPU samples
+  (entities, block entities, particles) read the same array.
+- The block volume (`VoxelOcclusion`) is 96 blocks a side (was 64: at 30 blocks a wall could lie outside it and stop nothing), reads chunk sections
+  directly, is rebuilt the tick after a block changes in view (`ClientLevelBlockChangeMixin`) as well as every half second, no longer goes to the GPU,
+  and takes the blocks of moving structures from an external `BlockFiller` (`DynamicLightsCompat.setExternalBlockFiller`; Lively Lighting gives it
+  Valkyrien Skies ships' blocks, so a ship's hull stops its lamps' light and its glass tints it).
+- Terrain vertices carry their face in the packed light's top nibble (8 plus the face's 3D index; 15 still means coloured light with no face known),
+  written by the smooth and flat light pipelines while a dynamic light provider is registered and no shader pack is active
+  (`-Dcolorfullighting.meshFacing=false` leaves it off); the shaders turn it with the model-view rotation, so a ship's faces point where the ship does.
+- `DynamicLightsCompat.blockLightColor(BlockState)`: the colour the mod gives a block state's light, for the providers' lamps.
+
 2026-11-09 (2.8.1)
 - Transmission for the shader path's dynamic lights (`VoxelOcclusion`, `cl_dynTransmit`): a 64-block cube round the camera of what each block lets
   through per channel (air 1, an opaque block 0, a filter block its filter colour), rebuilt on a worker every half second or when the camera

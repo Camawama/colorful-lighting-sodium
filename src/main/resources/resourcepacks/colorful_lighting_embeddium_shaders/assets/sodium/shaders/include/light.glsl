@@ -3,56 +3,52 @@ uniform float u_ColoredLightingEnabled;
 #ifdef CL_DYNAMIC_LIGHTS
 uniform mat3 cl_dynInvView;
 
-// --- dynamic lights (2.8.0): the external providers' lights, per vertex, camera-relative ---
-// cl_dynPos: xyz the light relative to the camera, w its level (0..15) plus 32 when it falls off by straight distance
-// (a round light) rather than by Manhattan distance (vanilla's diamond). cl_dynColor: rgb 0..1, w the reach in blocks.
-// cl_dynDir: xyz a spot light's axis, w the cosine of half its full angle (1.0 for a point light). The inner, fully lit
-// cone is 0.6 of the outer angle: its cosine is approximated from the outer's.
+// --- dynamic lights (2.8.0, the field since 2.9.0): the external providers' lights, camera-relative ---
+// cl_dynPos: xyz the light relative to the camera, w its level (0..15) plus 32 when it falls off by straight distance (a
+// round light) rather than by Manhattan distance (vanilla's diamond), plus 64 when the field below holds the light.
+// cl_dynColor: rgb 0..1, w the reach in blocks. cl_dynDir: xyz a spot light's axis, w the cosine of half its full angle (1.0
+// for a point light). The inner, fully lit cone is 0.6 of the outer angle: its cosine is approximated from the outer's.
 #define CL_DYN_MAX 64
 uniform int cl_dynCount;
 uniform vec4 cl_dynPos[CL_DYN_MAX];
 uniform vec4 cl_dynColor[CL_DYN_MAX];
 uniform vec4 cl_dynDir[CL_DYN_MAX];
 
-// Transmission (2.8.1): cl_dynTransmission 1 samples cl_dynOcc, a 64-block cube round the camera (origin cl_dynOccOrigin,
-// camera-relative) holding what each block lets through, per channel: air 1, an opaque block 0, stained glass its filter
-// colour. The march from the point lit toward the light multiplies the light by every block it crosses (one sample a block),
-// so a wall stops the light and glass tints it, as Colorful Lighting's engine does for block light. The first and last 0.6
-// blocks are skipped (the lit block's own face, the lamp's own block).
-uniform int cl_dynTransmission;
-uniform sampler3D cl_dynOcc;
-uniform vec3 cl_dynOccOrigin;
+// The field (2.9.0): cl_dynField 1 samples cl_dynFieldTex, a cl_dynFieldSize-block cube round the camera (origin
+// cl_dynFieldOrigin, camera-relative) holding the lights propagated through the blocks the way Colorful Lighting's engine
+// propagates a lamp: a level lost per block along the path, stopped by opaque blocks, tinted by filters, round corners.
+// It is sampled half a block out along the face's normal (trilinear), as vanilla's smooth lighting reads the blocks in
+// front of a face. A light the field holds adds no straight-line term inside the field; outside it, and for lights it
+// doesn't hold, the straight-line falloff applies.
+uniform int cl_dynField;
+uniform sampler3D cl_dynFieldTex;
+uniform vec3 cl_dynFieldOrigin;
+uniform float cl_dynFieldSize;
 
-vec3 cl_dynTransmit(vec3 from, vec3 to) {
-    vec3 seg = to - from;
-    float len = length(seg);
-    if (len < 1.5) return vec3(1.0);
-    vec3 dir = seg / len;
-    float start = 0.6, end = len - 0.6;
-    int steps = int(clamp(ceil(end - start), 1.0, 32.0));
-    vec3 through = vec3(1.0);
-    for (int s = 0; s < steps; s++) {
-        float t = start + (end - start) * (float(s) + 0.5) / float(steps);
-        vec3 w = from + dir * t;
-        vec3 tc = (w - cl_dynOccOrigin) / 64.0;
-        if (any(lessThan(tc, vec3(0.0))) || any(greaterThan(tc, vec3(1.0)))) continue;
-        through *= texture(cl_dynOcc, tc).rgb;
-        if (max(max(through.r, through.g), through.b) <= 0.01) return vec3(0.0);
-    }
-    return through;
-}
-
-vec3 cl_dynamicLight(vec3 wrel) {
+vec3 cl_dynamicLight(vec3 wrel, vec3 normal) {
     vec3 acc = vec3(0.0);
+    bool inField = false;
+    if (cl_dynField > 0) {
+        vec3 tc = (wrel + normal * 0.5 - cl_dynFieldOrigin) / cl_dynFieldSize;
+        if (all(greaterThanEqual(tc, vec3(0.0))) && all(lessThanEqual(tc, vec3(1.0)))) {
+            acc = texture(cl_dynFieldTex, tc).rgb;
+            inField = true;
+        }
+    }
     for (int i = 0; i < cl_dynCount; i++) {
         vec4 p = cl_dynPos[i];
+        float w = p.w;
+        if (w >= 64.0) {
+            if (inField) continue;
+            w -= 64.0;
+        }
         vec3 d = wrel - p.xyz;
         vec4 c = cl_dynColor[i];
         float range = c.w;
         float dist2 = dot(d, d);
         if (dist2 > range * range) continue;
-        float falloff = floor(p.w / 32.0);
-        float level = p.w - falloff * 32.0;
+        float falloff = floor(w / 32.0);
+        float level = w - falloff * 32.0;
         vec4 dir = cl_dynDir[i];
         float l;
         if (dir.w < 1.0) {
@@ -68,12 +64,7 @@ vec3 cl_dynamicLight(vec3 wrel) {
             l = level - (abs(d.x) + abs(d.y) + abs(d.z));
         }
         if (l <= 0.0) continue;
-        vec3 lit = c.rgb * (min(l, 15.0) / 15.0);
-        if (cl_dynTransmission > 0) {
-            lit *= cl_dynTransmit(wrel, p.xyz);
-            if (max(max(lit.r, lit.g), lit.b) <= 0.0) continue;
-        }
-        acc = max(acc, lit);
+        acc = max(acc, c.rgb * (min(l, 15.0) / 15.0));
     }
     return acc;
 }
@@ -102,20 +93,29 @@ vec4 _sample_colored_common(sampler2D lightMap, uint sl4, uint red8, uint green8
     return vec4(sky + block * (max(0.1, 1.0 - sky.r) * 0.9 + 0.1), 1.0);
 }
 
-vec4 _sample_lightmap_dyn(sampler2D lightMap, ivec2 uv, vec3 wrel);
+vec4 _sample_lightmap_dyn(sampler2D lightMap, ivec2 uv, vec3 wrel, mat3 toWorld);
 
 vec4 _sample_lightmap(sampler2D lightMap, ivec2 uv) {
-    return _sample_lightmap_dyn(lightMap, uv, vec3(0.0));
+    return _sample_lightmap_dyn(lightMap, uv, vec3(0.0), mat3(1.0));
 }
 
-// wrel: the vertex relative to the camera, along the world's axes (the dynamic lights are given that way)
-vec4 _sample_lightmap_dyn(sampler2D lightMap, ivec2 uv, vec3 wrel) {
-    vec3 dyn = vec3(0.0);
 #ifdef CL_DYNAMIC_LIGHTS
-    if (cl_dynCount > 0) dyn = cl_dynamicLight(wrel) * 255.0;
+// the face a vertex belongs to, from the top nibble of its packed light (8 plus the face's index since 2.9.0; 15: not known)
+vec3 cl_facingNormal(uint nib) {
+    if (nib >= 14u) return vec3(0.0);
+    uint f = nib & 7u;
+    if (f == 0u) return vec3(0.0, -1.0, 0.0);
+    if (f == 1u) return vec3(0.0, 1.0, 0.0);
+    if (f == 2u) return vec3(0.0, 0.0, -1.0);
+    if (f == 3u) return vec3(0.0, 0.0, 1.0);
+    if (f == 4u) return vec3(-1.0, 0.0, 0.0);
+    return vec3(1.0, 0.0, 0.0);
+}
 #endif
-    uvec3 dyn8 = uvec3(clamp(dyn, 0.0, 255.0));
 
+// wrel: the vertex relative to the camera, along the world's axes (the dynamic lights are given that way); toWorld turns
+// the vertex's face the same way (a ship's faces point where the ship does)
+vec4 _sample_lightmap_dyn(sampler2D lightMap, ivec2 uv, vec3 wrel, mat3 toWorld) {
     uint packed_light;
     #ifdef USE_VERTEX_COMPRESSION
     packed_light = (uint(uv.y) << 16) | uint(uv.x);
@@ -124,10 +124,20 @@ vec4 _sample_lightmap_dyn(sampler2D lightMap, ivec2 uv, vec3 wrel) {
     // We need to reconstruct the 16-bit value here.
     packed_light = (uint(uv.y) << 8) | uint(uv.x);
     #endif
+    uint nib = (packed_light >> 28) & 0xFu;
 
-    // Check for our magic number in the highest 4 bits.
-    if (((packed_light >> 28) & 0xFu) == 0xFu) {
-        // It's our format (Compact), unpack the full color data.
+    vec3 dyn = vec3(0.0);
+#ifdef CL_DYNAMIC_LIGHTS
+    if (cl_dynCount > 0 || cl_dynField > 0) {
+        vec3 n = cl_facingNormal(nib);
+        if (dot(n, n) > 0.5) n = normalize(toWorld * n);
+        dyn = cl_dynamicLight(wrel, n) * 255.0;
+    }
+#endif
+    uvec3 dyn8 = uvec3(clamp(dyn, 0.0, 255.0));
+
+    // Our format (compact): the top nibble is 15, or 8 plus the vertex's face.
+    if (nib >= 8u) {
         uint red8 = (packed_light >> 0) & 0xFFu;
         uint green8 = (packed_light >> 8) & 0xFFu;
         uint skyLight4 = (packed_light >> 16) & 0xFu;

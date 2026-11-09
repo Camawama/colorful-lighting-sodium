@@ -96,7 +96,8 @@ public abstract class SodiumSmoothLightPipelineMixin {
         float ao = faceData.getBlendedShade(w);
 
         out.br[i] = ao;
-        out.lm[i] = SodiumPackedLightData.packData((int)s, (int)r, (int)g, (int)b);
+        out.lm[i] = SodiumPackedLightData.withFacing(SodiumPackedLightData.packData((int)s, (int)r, (int)g, (int)b),
+                net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.facingBits(dir));
     }
     
     /**
@@ -141,6 +142,7 @@ public abstract class SodiumSmoothLightPipelineMixin {
         float s = (n1.getBlendedSky(w) * n1d) + (n2.getBlendedSky(w) * n2d);
 
         out.br[i] = ao;
-        out.lm[i] = SodiumPackedLightData.packData((int)s, (int)r, (int)g, (int)b);
+        out.lm[i] = SodiumPackedLightData.withFacing(SodiumPackedLightData.packData((int)s, (int)r, (int)g, (int)b),
+                net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.facingBits(dir));
     }
 }

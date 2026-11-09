@@ -129,7 +129,7 @@ void _flw_main() {
         // dynamic lights (2.8.0): the providers' lights at this fragment, camera-relative as the world's terrain gets them;
         // a fragment without coloured data takes its own block light as grey and goes through the composite too
         if (cl_dynCount > 0) {
-            vec3 dyn = cl_dynamicLight(flw_vertexPos.xyz - flw_cameraPos.xyz);
+            vec3 dyn = cl_dynamicLight(flw_vertexPos.xyz - flw_cameraPos.xyz, flw_vertexNormal);
             if (max(max(dyn.r, dyn.g), dyn.b) > 0.0) {
                 if (data.alpha <= 0.0) {
                     data.lightColor = vec3(clamp(flw_fragLight.x * (16.0 / 15.0), 0.0, 1.0));

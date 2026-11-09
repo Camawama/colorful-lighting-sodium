@@ -136,7 +136,7 @@ public abstract class SodiumFlatLightPipelineMixin {
             }
         }
 
-        Arrays.fill(out.lm, lightmap);
+        Arrays.fill(out.lm, SodiumPackedLightData.withFacing(lightmap, net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.facingBits(lightFace)));
         if((quad.getFlags() & ModelQuadFlags.IS_VANILLA_SHADED) != 0 || !this.useQuadNormalsForShading) {
             Arrays.fill(out.br, this.lightCache.getWorld().getShade(lightFace, shade));
         } else {

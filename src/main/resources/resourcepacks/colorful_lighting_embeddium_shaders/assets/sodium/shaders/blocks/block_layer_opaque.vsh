@@ -52,7 +52,9 @@ void main() {
     // the vertex relative to the camera along the world's axes: through eye space, so a Valkyrien Skies ship drawn in its
     // own frame lands where it is in the world
     vec3 cl_wrel = cl_dynInvView * (u_ModelViewMatrix * vec4(position, 1.0)).xyz;
-    v_Color = _vert_color * _sample_lightmap_dyn(u_LightTex, _vert_tex_light_coord, cl_wrel);
+    // the vertex's face (in its light's top nibble) turned the same way, so a ship's faces point where the ship does
+    mat3 cl_toWorld = cl_dynInvView * mat3(u_ModelViewMatrix);
+    v_Color = _vert_color * _sample_lightmap_dyn(u_LightTex, _vert_tex_light_coord, cl_wrel, cl_toWorld);
 #else
     v_Color = _vert_color * _sample_lightmap(u_LightTex, _vert_tex_light_coord);
 #endif
