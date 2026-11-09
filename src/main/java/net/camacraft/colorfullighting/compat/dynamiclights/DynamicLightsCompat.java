@@ -301,11 +301,17 @@ public final class DynamicLightsCompat {
         return ColorRGB4.fromRGB8((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
     }
 
+    /**
+     * One external light at a moment of the frame, for the shader path: its key (its slab in the {@link DynamicLightField}) and
+     * x, y, z, level, r, g, b (0..1), range, direction x, y, z, the cosines of the outer and inner half angles, the falloff.
+     */
+    public record FrameLight(long key, float[] v) {}
+
     /** The external lights at a moment of the frame, for the shader path: positions, colours, shapes. */
-    public static List<float[]> externalLightsForFrame(ClientLevel level, float partialTick) {
-        List<float[]> out = new ArrayList<>();
-        collectExternal(level, partialTick, s -> out.add(new float[]{(float) s.x, (float) s.y, (float) s.z, s.level, s.color.red4 / 15f, s.color.green4 / 15f,
-                s.color.blue4 / 15f, s.range, (float) s.dx, (float) s.dy, (float) s.dz, s.outerCos, s.innerCos, s.falloff, DynamicLightField.holds(s.key) ? 1f : 0f}));
+    public static List<FrameLight> externalLightsForFrame(ClientLevel level, float partialTick) {
+        List<FrameLight> out = new ArrayList<>();
+        collectExternal(level, partialTick, s -> out.add(new FrameLight(s.key, new float[]{(float) s.x, (float) s.y, (float) s.z, s.level, s.color.red4 / 15f,
+                s.color.green4 / 15f, s.color.blue4 / 15f, s.range, (float) s.dx, (float) s.dy, (float) s.dz, s.outerCos, s.innerCos, s.falloff})));
         return out;
     }
 
@@ -426,11 +432,33 @@ public final class DynamicLightsCompat {
         List<DynamicLightField.Light> out = new ArrayList<>();
         for (DynamicSource s : sources) {
             if (!s.external || s.level <= 0f) continue;
-            float pruneCos = s.isSpot() ? (float) Math.cos(Math.min(Math.PI, Math.acos(Math.max(-1.0, Math.min(1.0, s.outerCos))) + Math.toRadians(20))) : -1f;
-            out.add(new DynamicLightField.Light(s.key, s.x, s.y, s.z, Math.min(15f, s.level), s.color.red4, s.color.green4, s.color.blue4, s.falloff,
-                    Math.max(1f, s.range), s.isSpot(), s.dx, s.dy, s.dz, s.outerCos, s.innerCos, pruneCos));
+            out.add(new DynamicLightField.Light(s.key, s.x, s.y, s.z, Math.min(15f, s.level), s.falloff, Math.max(1f, s.range), s.isSpot(), s.dx, s.dy, s.dz, s.outerCos));
         }
         return out;
+    }
+
+    /** Who says how bright an entity carrying a light is drawn at least (the provider's carrier glow); 0 for nothing. */
+    private static volatile java.util.function.ToIntFunction<Entity> entityGlow;
+
+    /**
+     * Sets who answers {@link #entityGlow}: the dynamic lighting mod, from its lights' carriers (a kart under its headlights is drawn
+     * at least that bright, with nothing round it lit).
+     *
+     * @since 2.10.0
+     */
+    public static void setEntityGlow(@Nullable java.util.function.ToIntFunction<Entity> glow) {
+        entityGlow = glow;
+    }
+
+    /** The block light (0..15) an entity is drawn with at least, from the lights it carries; 0 for none. Render thread. */
+    public static int entityGlow(Entity entity) {
+        java.util.function.ToIntFunction<Entity> g = entityGlow;
+        if (g == null) return 0;
+        try {
+            return Math.max(0, Math.min(15, g.applyAsInt(entity)));
+        } catch (RuntimeException e) {
+            return 0;
+        }
     }
 
     /**
@@ -688,8 +716,8 @@ public final class DynamicLightsCompat {
      * Allocation-free equivalent of {@link #maxWithDynamicLight}, taking and returning a packed 12-bit
      * {@code r << 8 | g << 4 | b}. Sits on the chunk-build hot path, so it must not allocate.
      */
-    /** The render thread's scratch for a field sample (the only thread that takes the field here). */
-    private static final int[] FIELD_SAMPLE = new int[3];
+    /** The render thread's scratch for a slab sample (the only thread that takes the slabs here). */
+    private static final float[] SLAB_SAMPLE = new float[3];
 
     public int maxWithDynamicLightPacked(int blockX, int blockY, int blockZ, int base) {
         DynamicSource[] sources = entitySources;
@@ -701,41 +729,33 @@ public final class DynamicLightsCompat {
         // thread's samples (entities, block entities, particles) always take them
         boolean onRenderThread = com.mojang.blaze3d.systems.RenderSystem.isOnRenderThread();
         boolean meshesTakeExternal = externalMeshLighting || onRenderThread;
-        // render-thread samples (entities, block entities, particles) read the propagated field the shaders sample (2.9.0), for
-        // the lights it holds; the rest keep the straight-line falloff
-        boolean fieldCovers = false;
-        if (onRenderThread && !externalMeshLighting && ShaderDynamicLights.transmission()) {
-            int[] f = FIELD_SAMPLE;
-            if (DynamicLightField.sample(blockX, blockY, blockZ, f)) {
-                fieldCovers = true;
-                r = Math.max(r, (f[0] * 15 + 127) / 255);
-                g = Math.max(g, (f[1] * 15 + 127) / 255);
-                b = Math.max(b, (f[2] * 15 + 127) / 255);
-            }
-        }
+        // render-thread samples (entities, block entities, particles) scale each light by its slab in the field the shaders sample
+        // (2.10.0: where its light may go through the blocks); a light without a slab shines through everything
+        boolean slabs = onRenderThread && !externalMeshLighting && ShaderDynamicLights.transmission() && DynamicLightField.active();
+        float[] vis = SLAB_SAMPLE;
         for (DynamicSource source : sources) {
             double dx = x - source.x, dy = y - source.y, dz = z - source.z;
             double distanceSquared = dx * dx + dy * dy + dz * dz;
             double level;
+            // the blocks of reach the light has left here: a detour that long through the blocks takes the rest
+            double remaining = 0.0;
             if (source.external) {
                 if (!meshesTakeExternal || source.propagatedFlag) continue;
-                if (fieldCovers && DynamicLightField.holds(source.key)) continue;
                 if (distanceSquared > (double) source.range * source.range) continue;
                 if (source.isSpot()) {
                     double d = Math.sqrt(distanceSquared);
+                    remaining = source.range - d;
                     if (d < 1.0e-6) level = source.level;
                     else {
                         double cos = (dx * source.dx + dy * source.dy + dz * source.dz) / d;
                         double cone = cos <= source.outerCos ? 0.0 : source.innerCos <= source.outerCos ? 1.0 : Math.min(1.0, (cos - source.outerCos) / (source.innerCos - source.outerCos));
-                        // the lamp itself and what carries it are lit all round (2.9.1)
-                        cone = Math.max(cone, Math.max(0.0, Math.min(1.0, 3.0 - d)));
                         if (cone <= 0.0) continue;
-                        level = source.level * (1.0 - d / source.range) * cone;
+                        level = source.level * (remaining / source.range) * cone;
                     }
                 } else if (source.falloff == 1) {
-                    level = source.level - Math.sqrt(distanceSquared);
+                    level = remaining = source.level - Math.sqrt(distanceSquared);
                 } else {
-                    level = source.level - (Math.abs(dx) + Math.abs(dy) + Math.abs(dz));
+                    level = remaining = source.level - (Math.abs(dx) + Math.abs(dy) + Math.abs(dz));
                 }
             } else {
                 if (distanceSquared > MAX_RADIUS_SQUARED) continue;
@@ -743,9 +763,15 @@ public final class DynamicLightsCompat {
             }
             if (level <= 0.0) continue;
             float scale = (float) (Math.min(15.0, level) / 15.0);
-            r = Math.max(r, Math.round(source.color.red4 * scale));
-            g = Math.max(g, Math.round(source.color.green4 * scale));
-            b = Math.max(b, Math.round(source.color.blue4 * scale));
+            float vr = 1f, vg = 1f, vb = 1f;
+            if (slabs && source.external && DynamicLightField.visibility(source.key, blockX, blockY, blockZ, remaining, vis)) {
+                vr = vis[0];
+                vg = vis[1];
+                vb = vis[2];
+            }
+            r = Math.max(r, Math.round(source.color.red4 * scale * vr));
+            g = Math.max(g, Math.round(source.color.green4 * scale * vg));
+            b = Math.max(b, Math.round(source.color.blue4 * scale * vb));
         }
         return r << 8 | g << 4 | b;
     }

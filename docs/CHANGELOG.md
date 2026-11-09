@@ -6,6 +6,24 @@ Planned
 - keep Valkyrien Skies compatibility on every version where VS exists
 - add Sable / Create Aeronautics compatibility alongside Valkyrien Skies where possible
 
+2026-11-09 (2.10.0)
+- The dynamic light field holds where each light's light may go, not how bright (`DynamicLightField`): per light a cube of cells round its
+  cell (a slab) with, per cell, the detour the way through the blocks takes over the straight way (0 in the open, unreachable behind a wall)
+  and the tint picked up through filters; the shaders and the CPU samples compute each light's own falloff at the exact point (2.8.0's
+  analytic light, round or diamond, a spot's cone, at the light's position for the frame) and scale it by the slab: 1 in the open, less by
+  the detour's share of the reach left at the point, 0 where the way is too long. In the open the light is exactly the smooth, round light
+  of 2.8.0 again, moving with its source every frame; a wall still stops it, a corner still wraps and fades, glass still tints. 2.9.x
+  stored summed light levels per cell and interpolated them, which drew a faceted light that stepped and flickered as it moved. Slabs are
+  rebuilt on a worker only when their light enters another cell, a spot turns more than 12 degrees or the blocks in their box change (hashed),
+  never for a level, colour or sub-block move; kept in three 3D textures by reach (up to 15, 24 and 48 blocks; 32, 8 and 4 slabs; units 12,
+  13 and 14, each a stack of slabs along z). `cl_dynSlab[]`, `cl_dynSlabTex0..2`, `cl_dynSlabSize`, `cl_dynSlabCount`, `cl_dynSlabs`; the two
+  summed field textures, their blend and the 64 flag in `cl_dynPos.w` are gone. The grid's straight way is the 26-neighbour path with nothing
+  in the way, so no slack is needed and the open is exactly open.
+- A spot light no longer lights two blocks round itself whatever the direction (2.9.1): it put a blob of light on the ground round a kart and
+  on a player holding a flashlight. What carries a light is lit through the carrier glow instead.
+- The carrier glow (`DynamicLightsCompat.setEntityGlow`, `entityGlow`): the dynamic lighting mod says how bright an entity carrying a light is
+  drawn at least (Camafy 0.1.85's `LightSource.glow`); `EntityRendererMixin` raises the entity's light to it, with nothing round it lit.
+
 2026-11-09 (2.9.1)
 - The field's levels are the light's own falloff by the straight distance (Manhattan for a diamond light, Euclidean for a round one or a spot)
   wherever the path through the blocks is no longer than that, and the path's length only where it is (round a corner): a round light is round

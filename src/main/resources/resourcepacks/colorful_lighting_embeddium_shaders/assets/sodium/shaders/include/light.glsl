@@ -3,73 +3,79 @@ uniform float u_ColoredLightingEnabled;
 #ifdef CL_DYNAMIC_LIGHTS
 uniform mat3 cl_dynInvView;
 
-// --- dynamic lights (2.8.0, the field since 2.9.0): the external providers' lights, camera-relative ---
+// --- dynamic lights (2.8.0; the slabs since 2.10.0): the external providers' lights, camera-relative ---
 // cl_dynPos: xyz the light relative to the camera, w its level (0..15) plus 32 when it falls off by straight distance (a
-// round light) rather than by Manhattan distance (vanilla's diamond), plus 64 when the field below holds the light.
-// cl_dynColor: rgb 0..1, w the reach in blocks. cl_dynDir: xyz a spot light's axis, w the cosine of half its full angle (1.0
-// for a point light). The inner, fully lit cone is 0.6 of the outer angle: its cosine is approximated from the outer's.
+// round light) rather than by Manhattan distance (vanilla's diamond). cl_dynColor: rgb 0..1, w the reach in blocks.
+// cl_dynDir: xyz a spot light's axis, w the cosine of half its full angle (1.0 for a point light). The inner, fully lit cone
+// is 0.6 of the outer angle: its cosine is approximated from the outer's.
 #define CL_DYN_MAX 64
 uniform int cl_dynCount;
 uniform vec4 cl_dynPos[CL_DYN_MAX];
 uniform vec4 cl_dynColor[CL_DYN_MAX];
 uniform vec4 cl_dynDir[CL_DYN_MAX];
 
-// The field (2.9.0): cl_dynField 1 samples cl_dynFieldTex, a cl_dynFieldSize-block cube round the camera (origin
-// cl_dynFieldOrigin, camera-relative) holding the lights propagated through the blocks the way Colorful Lighting's engine
-// propagates a lamp: a level lost per block along the path, stopped by opaque blocks, tinted by filters, round corners.
-// It is sampled half a block out along the face's normal (trilinear), as vanilla's smooth lighting reads the blocks in
-// front of a face. A light the field holds adds no straight-line term inside the field; outside it, and for lights it
-// doesn't hold, the straight-line falloff applies.
-uniform int cl_dynField;
-uniform sampler3D cl_dynFieldTex;
-// the tick before's field and how far this frame is toward the latest (2.9.1): a moving light slides between the two
-uniform sampler3D cl_dynFieldPrev;
-uniform float cl_dynFieldBlend;
-uniform vec3 cl_dynFieldOrigin;
-uniform float cl_dynFieldSize;
+// The slabs (2.10.0): per light a cube of cells round it holding where its light may go, in three 3D textures by reach (each
+// a stack of slabs along z): rgb the tint picked up through filter blocks on the way, a how much longer the way through the
+// blocks is than the straight way (the detour, as a share of the slab's half size; 1 where the light never gets). The light
+// itself is the analytic falloff below, at the exact point; the slab only scales it: 1 in the open, less by the detour's share
+// of the reach left at the point, 0 behind a wall. Sampled half a block out along the face's normal (trilinear), as vanilla's
+// smooth lighting reads the blocks in front of a face. cl_dynSlab: xyz the slab's corner relative to the camera, w the class
+// times 1000 plus the slot, or -1 for a light without one (nothing in its way then).
+uniform int cl_dynSlabs;
+uniform vec4 cl_dynSlab[CL_DYN_MAX];
+uniform sampler3D cl_dynSlabTex0;
+uniform sampler3D cl_dynSlabTex1;
+uniform sampler3D cl_dynSlabTex2;
+uniform vec3 cl_dynSlabSize;
+uniform vec3 cl_dynSlabCount;
+
+vec3 cl_dynVisibility(vec4 s, vec3 at, float remaining) {
+    int cls = int(s.w / 1000.0);
+    float slot = s.w - float(cls) * 1000.0;
+    float size = cls == 0 ? cl_dynSlabSize.x : cls == 1 ? cl_dynSlabSize.y : cl_dynSlabSize.z;
+    float count = cls == 0 ? cl_dynSlabCount.x : cls == 1 ? cl_dynSlabCount.y : cl_dynSlabCount.z;
+    vec3 local = clamp(at - s.xyz, vec3(0.5), vec3(size - 0.5));
+    vec3 tc = vec3(local.xy / size, (slot * size + local.z) / (size * count));
+    vec4 v = cls == 0 ? texture(cl_dynSlabTex0, tc) : cls == 1 ? texture(cl_dynSlabTex1, tc) : texture(cl_dynSlabTex2, tc);
+    float detour = v.a * (size - 1.0) * 0.5;
+    return v.rgb * clamp(1.0 - detour / max(remaining, 1.0e-3), 0.0, 1.0);
+}
 
 vec3 cl_dynamicLight(vec3 wrel, vec3 normal) {
     vec3 acc = vec3(0.0);
-    bool inField = false;
-    if (cl_dynField > 0) {
-        vec3 tc = (wrel + normal * 0.5 - cl_dynFieldOrigin) / cl_dynFieldSize;
-        if (all(greaterThanEqual(tc, vec3(0.0))) && all(lessThanEqual(tc, vec3(1.0)))) {
-            acc = cl_dynFieldBlend >= 1.0 ? texture(cl_dynFieldTex, tc).rgb : mix(texture(cl_dynFieldPrev, tc).rgb, texture(cl_dynFieldTex, tc).rgb, cl_dynFieldBlend);
-            inField = true;
-        }
-    }
+    vec3 at = wrel + normal * 0.5;
     for (int i = 0; i < cl_dynCount; i++) {
         vec4 p = cl_dynPos[i];
-        float w = p.w;
-        if (w >= 64.0) {
-            if (inField) continue;
-            w -= 64.0;
-        }
         vec3 d = wrel - p.xyz;
         vec4 c = cl_dynColor[i];
         float range = c.w;
         float dist2 = dot(d, d);
         if (dist2 > range * range) continue;
-        float falloff = floor(w / 32.0);
-        float level = w - falloff * 32.0;
+        float falloff = floor(p.w / 32.0);
+        float level = p.w - falloff * 32.0;
         vec4 dir = cl_dynDir[i];
-        float l;
+        // l: the level left here; remaining: the blocks of reach left here (a detour that long takes the rest)
+        float l, remaining;
         if (dir.w < 1.0) {
             float dist = sqrt(dist2);
             float cosA = dist > 1.0e-4 ? dot(d, dir.xyz) / dist : 1.0;
             float innerCos = 1.0 - (1.0 - dir.w) * 0.36;
             float cone = cosA <= dir.w ? 0.0 : innerCos <= dir.w ? 1.0 : clamp((cosA - dir.w) / (innerCos - dir.w), 0.0, 1.0);
-            // the lamp itself and what carries it are lit all round (2.9.1)
-            cone = max(cone, clamp(3.0 - dist, 0.0, 1.0));
             if (cone <= 0.0) continue;
-            l = level * (1.0 - dist / range) * cone;
+            remaining = range - dist;
+            l = level * (remaining / range) * cone;
         } else if (falloff > 0.5) {
-            l = level - sqrt(dist2);
+            remaining = level - sqrt(dist2);
+            l = remaining;
         } else {
-            l = level - (abs(d.x) + abs(d.y) + abs(d.z));
+            remaining = level - (abs(d.x) + abs(d.y) + abs(d.z));
+            l = remaining;
         }
         if (l <= 0.0) continue;
-        acc = max(acc, c.rgb * (min(l, 15.0) / 15.0));
+        vec3 light = c.rgb * (min(l, 15.0) / 15.0);
+        vec4 s = cl_dynSlab[i];
+        if (cl_dynSlabs > 0 && s.w >= 0.0) light *= cl_dynVisibility(s, at, remaining);
+        acc = max(acc, light);
     }
     return acc;
 }
@@ -133,7 +139,7 @@ vec4 _sample_lightmap_dyn(sampler2D lightMap, ivec2 uv, vec3 wrel, mat3 toWorld)
 
     vec3 dyn = vec3(0.0);
 #ifdef CL_DYNAMIC_LIGHTS
-    if (cl_dynCount > 0 || cl_dynField > 0) {
+    if (cl_dynCount > 0) {
         vec3 n = cl_facingNormal(nib);
         if (dot(n, n) > 0.5) n = normalize(toWorld * n);
         dyn = cl_dynamicLight(wrel, n) * 255.0;

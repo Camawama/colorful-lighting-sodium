@@ -60,6 +60,12 @@ public class EntityRendererMixin {
         if(LIT_ENTITIES.contains(entity.getType())) {
             color = ColorRGB8.fromRGB8(255, 255, 255);
         }
+        // an entity carrying a dynamic light that asks to be lit by it (a kart under its headlights) is drawn at least that bright (2.10.0)
+        int glow = net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.entityGlow(entity);
+        if (glow > 0) {
+            int g8 = glow * 17;
+            color = ColorRGB8.fromRGB8(Math.max(g8, color.red), Math.max(g8, color.green), Math.max(g8, color.blue));
+        }
 
         cir.setReturnValue(PackedLightData.packData(skyLight, color));
     }

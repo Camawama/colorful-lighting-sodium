@@ -15,12 +15,12 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * The shader path for dynamic lights (2.8.0): the external providers' lights drawn in the Embeddium terrain shaders
  * ({@code light.glsl}, {@code cl_dynamicLight}) and in Flywheel's ({@code colored_light.glsl}, {@code common.frag}), so a
- * light that moves rebuilds no mesh. Since 2.9.0 the light near the camera comes from the {@link DynamicLightField}, the
- * lights propagated through the blocks and sampled as a 3D texture; the arrays uploaded here carry every light nearest the
- * camera (at most {@link #maxLights}, within {@link #maxDistance}), camera-relative, for the straight-line falloff the
- * shaders use outside the field: position and level (the falloff folded into the level's 32s, 64 added when the field holds
- * the light), colour and range, direction and the cosine of the cone's half angle (1 for a point light), plus the inverse of
- * the camera's rotation so a vertex of a Valkyrien Skies ship, drawn in the ship's own frame, finds its place in the world.
+ * light that moves rebuilds no mesh. The arrays uploaded here carry every light nearest the camera (at most
+ * {@link #maxLights}, within {@link #maxDistance}), camera-relative, for the analytic falloff the shaders compute at each
+ * point: position and level (the falloff folded into the level's 32s), colour and range, direction and the cosine of the
+ * cone's half angle (1 for a point light), and since 2.10.0 each light's slab in the {@link DynamicLightField} (where its light
+ * may go through the blocks; the shaders scale the analytic light by it), plus the inverse of the camera's rotation so a vertex
+ * of a Valkyrien Skies ship, drawn in the ship's own frame, finds its place in the world.
  * Available where Embeddium's pipeline runs Colorful Lighting's shaders and no Oculus shader pack replaces them (under a pack
  * the lights go through the packed light the pack decodes instead). Uniform locations are cached per program handle; a
  * program without the uniforms (the define off, a pack's program) is skipped.
@@ -44,23 +44,25 @@ public final class ShaderDynamicLights {
         return transmission;
     }
 
-    /** Uniform locations of one program: count, pos[], color[], dir[], invView, field, fieldTex, fieldOrigin, fieldSize; -1 where missing. */
-    private record Locations(int count, int pos, int color, int dir, int invView, int field, int fieldTex, int fieldOrigin, int fieldSize, int fieldPrev, int fieldBlend) {
+    /** Uniform locations of one program: count, pos[], color[], dir[], invView, slabs, slab[], the three slab textures, their sizes and counts; -1 where missing. */
+    private record Locations(int count, int pos, int color, int dir, int invView, int slabs, int slab, int slabTex0, int slabTex1, int slabTex2, int slabSize, int slabCount) {
         boolean usable() {
             return count >= 0 && pos >= 0 && color >= 0 && dir >= 0;
         }
     }
 
     private static final Map<Integer, Locations> LOCATIONS = new ConcurrentHashMap<>();
-    private static final Locations NONE = new Locations(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
+    private static final Locations NONE = new Locations(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
 
     // the frame's light arrays, built once per frame (keyed by the frame's partial tick and level) and uploaded per pass
-    private static float[] pos = new float[MAX_LIGHTS * 4], color = new float[MAX_LIGHTS * 4], dir = new float[MAX_LIGHTS * 4];
+    private static float[] pos = new float[MAX_LIGHTS * 4], color = new float[MAX_LIGHTS * 4], dir = new float[MAX_LIGHTS * 4], slab = new float[MAX_LIGHTS * 4];
+    private static final float[] SLAB_SCRATCH = new float[4];
     private static final float[] invView = new float[9];
     // LWJGL takes direct buffers only (a heap buffer's address is garbage: an access violation that kills the JVM); one of each, reused
     private static final java.nio.FloatBuffer POS_BUF = org.lwjgl.BufferUtils.createFloatBuffer(MAX_LIGHTS * 4);
     private static final java.nio.FloatBuffer COLOR_BUF = org.lwjgl.BufferUtils.createFloatBuffer(MAX_LIGHTS * 4);
     private static final java.nio.FloatBuffer DIR_BUF = org.lwjgl.BufferUtils.createFloatBuffer(MAX_LIGHTS * 4);
+    private static final java.nio.FloatBuffer SLAB_BUF = org.lwjgl.BufferUtils.createFloatBuffer(MAX_LIGHTS * 4);
     private static final java.nio.FloatBuffer INV_VIEW_BUF = org.lwjgl.BufferUtils.createFloatBuffer(9);
     private static int count;
     private static float builtPartialTick = Float.NaN;
@@ -123,27 +125,28 @@ public final class ShaderDynamicLights {
         if (DynamicLightsCompat.externalMeshLighting()) return false;
         Camera camera = mc.gameRenderer.getMainCamera();
         Vec3 cam = camera.getPosition();
-        List<float[]> lights = DynamicLightsCompat.externalLightsForFrame(level, partialTick);
-        List<float[]> near = new ArrayList<>(lights.size());
+        List<DynamicLightsCompat.FrameLight> lights = DynamicLightsCompat.externalLightsForFrame(level, partialTick);
+        List<DynamicLightsCompat.FrameLight> near = new ArrayList<>(lights.size());
         double maxD2 = (double) maxDistance * maxDistance;
-        for (float[] l : lights) {
+        for (DynamicLightsCompat.FrameLight fl : lights) {
+            float[] l = fl.v();
             double dx = l[0] - cam.x, dy = l[1] - cam.y, dz = l[2] - cam.z;
             double d2 = dx * dx + dy * dy + dz * dz;
             double reach = l[7] + 1.0;
             if (d2 - reach * reach > maxD2) continue;
-            near.add(l);
+            near.add(fl);
         }
-        near.sort((a, b) -> Double.compare(dist2(a, cam), dist2(b, cam)));
+        near.sort((a, b) -> Double.compare(dist2(a.v(), cam), dist2(b.v(), cam)));
         int n = Math.min(maxLights, near.size());
         for (int i = 0; i < n; i++) {
-            float[] l = near.get(i);
+            DynamicLightsCompat.FrameLight fl = near.get(i);
+            float[] l = fl.v();
             int o = i * 4;
             pos[o] = (float) (l[0] - cam.x);
             pos[o + 1] = (float) (l[1] - cam.y);
             pos[o + 2] = (float) (l[2] - cam.z);
-            // the level, with the falloff (0 diamond, 1 round) folded in as 32s, and 64 when the field holds the light (the
-            // straight-line term is then only for points outside the field); a spot is always round
-            pos[o + 3] = Math.min(15f, l[3]) + (l[13] >= 0.5f ? 32f : 0f) + (l[14] >= 0.5f ? 64f : 0f);
+            // the level, with the falloff (0 diamond, 1 round) folded in as 32s; a spot is always round
+            pos[o + 3] = Math.min(15f, l[3]) + (l[13] >= 0.5f ? 32f : 0f);
             color[o] = l[4];
             color[o + 1] = l[5];
             color[o + 2] = l[6];
@@ -152,6 +155,12 @@ public final class ShaderDynamicLights {
             dir[o + 1] = l[9];
             dir[o + 2] = l[10];
             dir[o + 3] = l[11] < 1f ? l[11] : 1f;
+            // the light's slab (2.10.0): its corner relative to the camera and its class and slot, or -1 for none
+            DynamicLightField.slabUniform(fl.key(), cam, SLAB_SCRATCH);
+            slab[o] = SLAB_SCRATCH[0];
+            slab[o + 1] = SLAB_SCRATCH[1];
+            slab[o + 2] = SLAB_SCRATCH[2];
+            slab[o + 3] = SLAB_SCRATCH[3];
         }
         count = n;
         // eye space back to the world's axes: the inverse of the view rotation the game builds for the frame (pitch about X,
@@ -185,29 +194,26 @@ public final class ShaderDynamicLights {
         if (loc == null) {
             loc = new Locations(GL20C.glGetUniformLocation(programHandle, "cl_dynCount"), GL20C.glGetUniformLocation(programHandle, "cl_dynPos"),
                     GL20C.glGetUniformLocation(programHandle, "cl_dynColor"), GL20C.glGetUniformLocation(programHandle, "cl_dynDir"),
-                    GL20C.glGetUniformLocation(programHandle, "cl_dynInvView"), GL20C.glGetUniformLocation(programHandle, "cl_dynField"),
-                    GL20C.glGetUniformLocation(programHandle, "cl_dynFieldTex"), GL20C.glGetUniformLocation(programHandle, "cl_dynFieldOrigin"),
-                    GL20C.glGetUniformLocation(programHandle, "cl_dynFieldSize"), GL20C.glGetUniformLocation(programHandle, "cl_dynFieldPrev"),
-                    GL20C.glGetUniformLocation(programHandle, "cl_dynFieldBlend"));
+                    GL20C.glGetUniformLocation(programHandle, "cl_dynInvView"), GL20C.glGetUniformLocation(programHandle, "cl_dynSlabs"),
+                    GL20C.glGetUniformLocation(programHandle, "cl_dynSlab"), GL20C.glGetUniformLocation(programHandle, "cl_dynSlabTex0"),
+                    GL20C.glGetUniformLocation(programHandle, "cl_dynSlabTex1"), GL20C.glGetUniformLocation(programHandle, "cl_dynSlabTex2"),
+                    GL20C.glGetUniformLocation(programHandle, "cl_dynSlabSize"), GL20C.glGetUniformLocation(programHandle, "cl_dynSlabCount"));
             if (!loc.usable()) loc = NONE;
             LOCATIONS.put(programHandle, loc);
         }
         if (loc == NONE) return;
-        // the field first: its upload tells which lights it holds, which the arrays below flag
-        boolean fieldOn = transmission && !DynamicLightsCompat.externalMeshLighting() && DynamicLightField.bind();
+        // the slabs first (their upload decides which lights have one), then the arrays, which name each light's slab
+        boolean slabsOn = transmission && !DynamicLightsCompat.externalMeshLighting() && DynamicLightField.bind();
         boolean any = prepare();
-        if (loc.field >= 0) {
-            GL20C.glUniform1i(loc.field, fieldOn ? 1 : 0);
-            if (fieldOn) {
-                if (loc.fieldTex >= 0) GL20C.glUniform1i(loc.fieldTex, DynamicLightField.latestUnit());
-                // the tick before's field and how far this frame is toward the latest (2.9.1): a moving light slides between ticks
-                if (loc.fieldPrev >= 0) GL20C.glUniform1i(loc.fieldPrev, DynamicLightField.previousUnit());
-                if (loc.fieldBlend >= 0) GL20C.glUniform1f(loc.fieldBlend, DynamicLightField.blend(Minecraft.getInstance().level, Minecraft.getInstance().getFrameTime()));
-                if (loc.fieldOrigin >= 0) {
-                    float[] o = DynamicLightField.originRelative(Minecraft.getInstance().gameRenderer.getMainCamera().getPosition());
-                    GL20C.glUniform3f(loc.fieldOrigin, o[0], o[1], o[2]);
-                }
-                if (loc.fieldSize >= 0) GL20C.glUniform1f(loc.fieldSize, DynamicLightField.SIZE);
+        if (loc.slabs >= 0) {
+            GL20C.glUniform1i(loc.slabs, slabsOn ? 1 : 0);
+            if (slabsOn) {
+                if (loc.slabTex0 >= 0) GL20C.glUniform1i(loc.slabTex0, DynamicLightField.TEXTURE_UNITS[0]);
+                if (loc.slabTex1 >= 0) GL20C.glUniform1i(loc.slabTex1, DynamicLightField.TEXTURE_UNITS[1]);
+                if (loc.slabTex2 >= 0) GL20C.glUniform1i(loc.slabTex2, DynamicLightField.TEXTURE_UNITS[2]);
+                float[] sizes = DynamicLightField.slabSizes(), counts = DynamicLightField.slabCounts();
+                if (loc.slabSize >= 0) GL20C.glUniform3f(loc.slabSize, sizes[0], sizes[1], sizes[2]);
+                if (loc.slabCount >= 0) GL20C.glUniform3f(loc.slabCount, counts[0], counts[1], counts[2]);
             }
         }
         if (!any) {
@@ -224,6 +230,11 @@ public final class ShaderDynamicLights {
         DIR_BUF.clear();
         DIR_BUF.put(dir, 0, count * 4).flip();
         GL20C.glUniform4fv(loc.dir, DIR_BUF);
+        if (loc.slab >= 0) {
+            SLAB_BUF.clear();
+            SLAB_BUF.put(slab, 0, count * 4).flip();
+            GL20C.glUniform4fv(loc.slab, SLAB_BUF);
+        }
         if (withInvView && loc.invView >= 0) {
             INV_VIEW_BUF.clear();
             INV_VIEW_BUF.put(invView).flip();
