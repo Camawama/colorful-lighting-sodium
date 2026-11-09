@@ -6,6 +6,17 @@ Planned
 - keep Valkyrien Skies compatibility on every version where VS exists
 - add Sable / Create Aeronautics compatibility alongside Valkyrien Skies where possible
 
+2026-11-09 (2.9.1)
+- The field's levels are the light's own falloff by the straight distance (Manhattan for a diamond light, Euclidean for a round one or a spot)
+  wherever the path through the blocks is no longer than that, and the path's length only where it is (round a corner): a round light is round
+  again and the gradient is the analytic one, while a wall still stops it and a corner still wraps. The search is a shortest-path one over six
+  neighbours (diamond) or twenty-six (round, spots; a diagonal step needs its face neighbours open), carrying the filter transmittance along the
+  way. 2.9.0's grid-path levels made a round light octagonal and the gradient stepped.
+- Two field textures in turn (units 12 and 13): the shaders blend the tick before's with the latest by the frame's partial tick
+  (`cl_dynFieldPrev`, `cl_dynFieldBlend`), so a moving light slides instead of stepping twenty times a second.
+- A spot light lights everything within two blocks of itself whatever the direction, fading to its cone a block farther (the field, the straight-line shaders and the CPU samples):
+  a kart's own body under its headlights flickered between lit and unlit as the cells the lamps sat in changed with the sub-block position.
+
 2026-11-09 (2.9.0)
 - Dynamic light propagated through the blocks (`DynamicLightField`): the external providers' lights are spread cell by cell from each light the way
   the engine spreads a lamp's light (a level lost per block along the path, Manhattan for a diamond light, straight for a round one; stopped by opaque

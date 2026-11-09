@@ -45,14 +45,14 @@ public final class ShaderDynamicLights {
     }
 
     /** Uniform locations of one program: count, pos[], color[], dir[], invView, field, fieldTex, fieldOrigin, fieldSize; -1 where missing. */
-    private record Locations(int count, int pos, int color, int dir, int invView, int field, int fieldTex, int fieldOrigin, int fieldSize) {
+    private record Locations(int count, int pos, int color, int dir, int invView, int field, int fieldTex, int fieldOrigin, int fieldSize, int fieldPrev, int fieldBlend) {
         boolean usable() {
             return count >= 0 && pos >= 0 && color >= 0 && dir >= 0;
         }
     }
 
     private static final Map<Integer, Locations> LOCATIONS = new ConcurrentHashMap<>();
-    private static final Locations NONE = new Locations(-1, -1, -1, -1, -1, -1, -1, -1, -1);
+    private static final Locations NONE = new Locations(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
 
     // the frame's light arrays, built once per frame (keyed by the frame's partial tick and level) and uploaded per pass
     private static float[] pos = new float[MAX_LIGHTS * 4], color = new float[MAX_LIGHTS * 4], dir = new float[MAX_LIGHTS * 4];
@@ -187,7 +187,8 @@ public final class ShaderDynamicLights {
                     GL20C.glGetUniformLocation(programHandle, "cl_dynColor"), GL20C.glGetUniformLocation(programHandle, "cl_dynDir"),
                     GL20C.glGetUniformLocation(programHandle, "cl_dynInvView"), GL20C.glGetUniformLocation(programHandle, "cl_dynField"),
                     GL20C.glGetUniformLocation(programHandle, "cl_dynFieldTex"), GL20C.glGetUniformLocation(programHandle, "cl_dynFieldOrigin"),
-                    GL20C.glGetUniformLocation(programHandle, "cl_dynFieldSize"));
+                    GL20C.glGetUniformLocation(programHandle, "cl_dynFieldSize"), GL20C.glGetUniformLocation(programHandle, "cl_dynFieldPrev"),
+                    GL20C.glGetUniformLocation(programHandle, "cl_dynFieldBlend"));
             if (!loc.usable()) loc = NONE;
             LOCATIONS.put(programHandle, loc);
         }
@@ -198,7 +199,10 @@ public final class ShaderDynamicLights {
         if (loc.field >= 0) {
             GL20C.glUniform1i(loc.field, fieldOn ? 1 : 0);
             if (fieldOn) {
-                if (loc.fieldTex >= 0) GL20C.glUniform1i(loc.fieldTex, DynamicLightField.TEXTURE_UNIT);
+                if (loc.fieldTex >= 0) GL20C.glUniform1i(loc.fieldTex, DynamicLightField.latestUnit());
+                // the tick before's field and how far this frame is toward the latest (2.9.1): a moving light slides between ticks
+                if (loc.fieldPrev >= 0) GL20C.glUniform1i(loc.fieldPrev, DynamicLightField.previousUnit());
+                if (loc.fieldBlend >= 0) GL20C.glUniform1f(loc.fieldBlend, DynamicLightField.blend(Minecraft.getInstance().level, Minecraft.getInstance().getFrameTime()));
                 if (loc.fieldOrigin >= 0) {
                     float[] o = DynamicLightField.originRelative(Minecraft.getInstance().gameRenderer.getMainCamera().getPosition());
                     GL20C.glUniform3f(loc.fieldOrigin, o[0], o[1], o[2]);

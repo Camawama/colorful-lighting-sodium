@@ -22,6 +22,9 @@ uniform vec4 cl_dynDir[CL_DYN_MAX];
 // doesn't hold, the straight-line falloff applies.
 uniform int cl_dynField;
 uniform sampler3D cl_dynFieldTex;
+// the tick before's field and how far this frame is toward the latest (2.9.1): a moving light slides between the two
+uniform sampler3D cl_dynFieldPrev;
+uniform float cl_dynFieldBlend;
 uniform vec3 cl_dynFieldOrigin;
 uniform float cl_dynFieldSize;
 
@@ -31,7 +34,7 @@ vec3 cl_dynamicLight(vec3 wrel, vec3 normal) {
     if (cl_dynField > 0) {
         vec3 tc = (wrel + normal * 0.5 - cl_dynFieldOrigin) / cl_dynFieldSize;
         if (all(greaterThanEqual(tc, vec3(0.0))) && all(lessThanEqual(tc, vec3(1.0)))) {
-            acc = texture(cl_dynFieldTex, tc).rgb;
+            acc = cl_dynFieldBlend >= 1.0 ? texture(cl_dynFieldTex, tc).rgb : mix(texture(cl_dynFieldPrev, tc).rgb, texture(cl_dynFieldTex, tc).rgb, cl_dynFieldBlend);
             inField = true;
         }
     }
@@ -54,9 +57,11 @@ vec3 cl_dynamicLight(vec3 wrel, vec3 normal) {
         if (dir.w < 1.0) {
             float dist = sqrt(dist2);
             float cosA = dist > 1.0e-4 ? dot(d, dir.xyz) / dist : 1.0;
-            if (cosA <= dir.w) continue;
             float innerCos = 1.0 - (1.0 - dir.w) * 0.36;
-            float cone = innerCos <= dir.w ? 1.0 : clamp((cosA - dir.w) / (innerCos - dir.w), 0.0, 1.0);
+            float cone = cosA <= dir.w ? 0.0 : innerCos <= dir.w ? 1.0 : clamp((cosA - dir.w) / (innerCos - dir.w), 0.0, 1.0);
+            // the lamp itself and what carries it are lit all round (2.9.1)
+            cone = max(cone, clamp(3.0 - dist, 0.0, 1.0));
+            if (cone <= 0.0) continue;
             l = level * (1.0 - dist / range) * cone;
         } else if (falloff > 0.5) {
             l = level - sqrt(dist2);

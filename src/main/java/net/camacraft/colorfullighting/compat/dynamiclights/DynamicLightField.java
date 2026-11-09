@@ -24,41 +24,53 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * The dynamic lights propagated through the blocks (2.9.0): a {@link #SIZE}-block cube round the camera (the same cube as
  * {@link VoxelOcclusion}) holding, per block, the coloured light the dynamic lights give it, spread from each light cell by
- * cell the way the block engine spreads a lamp's light: a level lost per block along the path (per block of Manhattan
- * distance for a diamond light, of straight distance for a round one), stopped by opaque blocks, tinted per channel by
- * Colorful Lighting's filter blocks, going round corners because the path does. That is the look of Minecraft's own light,
- * where a straight line from the light to each point gave hard shadows with jagged edges and black behind every wall
- * (2026-11-09). A spot light is propagated the same and cut by its cone where it is written. The field is rebuilt on a
- * worker thread whenever a light moved, changed or the blocks were rebuilt under it (a light that stands still costs
- * nothing), and uploaded as an RGBA8 3D texture on unit {@link #TEXTURE_UNIT} (the part that changed) for the terrain and
- * Flywheel shaders, which sample it trilinearly half a block out along the face's normal, as vanilla's smooth lighting
- * samples the blocks in front of a face. The CPU samples (entities, block entities, particles) read the same array.
- * Lights whose cell is outside the cube are left to the shaders' straight-line falloff, as are points outside the cube.
+ * cell the way the block engine spreads a lamp's light: stopped by opaque blocks, tinted per channel by Colorful Lighting's
+ * filter blocks, going round corners because the path does. That is the look of Minecraft's own light, where a straight line
+ * from the light to each point gave hard shadows with jagged edges and black behind every wall (2026-11-09). Since 2.9.1 the
+ * level a cell gets is the light's own falloff by the straight distance (Manhattan for a diamond light, Euclidean for a round
+ * one or a spot) wherever the path through the blocks is no longer than that, and the path's length only where it is (round a
+ * corner), so a round light is round again and the gradient is the analytic one, while a wall still stops it. A spot light is
+ * cut by its cone where it is written, except within two blocks of itself, where it lights its own lamp. The field is rebuilt on
+ * a worker thread whenever a light moved, changed or the blocks were rebuilt under it (a light that stands still costs nothing),
+ * and uploaded as an RGBA8 3D texture (the part that changed) into one of two textures in turn; the shaders blend the tick
+ * before's with the latest by the frame's partial tick, so a moving light slides instead of stepping twenty times a second.
+ * Sampled trilinearly half a block out along the face's normal, as vanilla's smooth lighting samples the blocks in front of a
+ * face. The CPU samples (entities, block entities, particles) read the latest array. Lights whose cell is outside the cube are
+ * left to the shaders' straight-line falloff, as are points outside the cube.
  */
 public final class DynamicLightField {
     public static final int SIZE = VoxelOcclusion.SIZE;
-    public static final int TEXTURE_UNIT = 12;
+    /** The latest field's texture unit, and the tick before's. */
+    public static final int TEXTURE_UNIT = 12, TEXTURE_UNIT_PREVIOUS = 13;
     private static final int BYTES = SIZE * SIZE * SIZE * 4;
     /** At most this many lights (nearest the camera) go into the field. */
     private static final int MAX_LIGHTS = 64;
     /** A spot's propagation is pruned beyond its outer half angle plus this (degrees): it wraps a corner a little, never behind itself. */
     private static final double WRAP_MARGIN = Math.toRadians(20);
-    private static final float SQRT2 = (float) Math.sqrt(2.0);
+    /** Within this of a spot light every direction is lit in full, fading to the cone a block farther: the lamp itself and the kart it sits on. */
+    private static final double SPOT_NEAR = 2.0;
+    private static final float SQRT2 = (float) Math.sqrt(2.0), SQRT3 = (float) Math.sqrt(3.0);
+    /** How much longer than the straight distance a path may be before it counts (the grid's paths overshoot a little). */
+    private static final float ROUND_SLACK = 0.6f, DIAMOND_SLACK = 0.1f;
 
     /** One light as a build takes it: world position, level 0..15, colour 0..1, the falloff and reach, and the cone for a spot. */
     record Light(long key, double x, double y, double z, float level, float r, float g, float b, int falloff, float range,
                  boolean spot, double dx, double dy, double dz, float outerCos, float innerCos, float pruneCos) {}
 
-    /** A finished build: the field, its origin, the box to upload (half-open) or the whole, and the keys of the lights it holds. */
-    private record Build(byte[] field, int ox, int oy, int oz, int x0, int y0, int z0, int x1, int y1, int z1, boolean whole, Set<Long> keys) {}
+    /** A finished build: the field, its origin, the box with light in it (half-open), whether the origin moved, and the keys of the lights it holds. */
+    private record Build(byte[] field, int ox, int oy, int oz, int x0, int y0, int z0, int x1, int y1, int z1, boolean moved, Set<Long> keys, long tick) {}
 
     private static volatile boolean enabled;
-    private static int textureId = -1;
+    private static final int[] textureIds = {-1, -1};
+    /** The box each texture holds light in now (half-open), so stale light is cleared with its next upload. */
+    private static final int[][] litBox = new int[2][6];
+    /** Which texture holds the latest field, and whether the other holds the tick before's of the same origin. */
+    private static int latest = 0;
+    private static boolean previousValid;
+    private static long uploadedTick = Long.MIN_VALUE;
     private static ByteBuffer upload;
     private static int uploadedX = Integer.MIN_VALUE, uploadedY, uploadedZ;
     private static boolean uploadedAny;
-    /** The box the texture holds light in now (half-open), so stale light is cleared with the next upload. */
-    private static int litX0, litY0, litZ0, litX1, litY1, litZ1;
     private static final AtomicReference<Build> ready = new AtomicReference<>();
     private static CompletableFuture<Void> building;
     private static long lastHash = Long.MIN_VALUE;
@@ -66,13 +78,13 @@ public final class DynamicLightField {
     private static int lastOx = Integer.MIN_VALUE, lastOy, lastOz;
     private static ClientLevel builtFor;
     private static byte[] bufA, bufB;
-    /** What the shaders have: the array, its origin and the lights' keys; the CPU samples read the same. */
+    /** What the shaders have: the latest array, its origin and the lights' keys; the CPU samples read the same. */
     private static volatile byte[] current;
     private static volatile int currentX = Integer.MIN_VALUE, currentY, currentZ;
     private static volatile Set<Long> held = Collections.emptySet();
 
-    // the worker's scratch: a local grid per light (per-channel best levels, a visit stamp) and a binary heap
-    private static float[] bestR = new float[0], bestG = new float[0], bestB = new float[0];
+    // the worker's scratch: a local grid per light (the shortest path length, the transmittance along it, a visit stamp) and a binary heap
+    private static float[] bestPath = new float[0], transR = new float[0], transG = new float[0], transB = new float[0];
     private static int[] stamp = new int[0];
     private static int generation;
     private static int[] heapIdx = new int[1024];
@@ -89,6 +101,7 @@ public final class DynamicLightField {
             currentX = Integer.MIN_VALUE;
             held = Collections.emptySet();
             lastHash = Long.MIN_VALUE;
+            previousValid = false;
         }
     }
 
@@ -111,9 +124,29 @@ public final class DynamicLightField {
         return new float[]{(float) (uploadedX - camera.x), (float) (uploadedY - camera.y), (float) (uploadedZ - camera.z)};
     }
 
+    /** The texture unit of the latest field. */
+    public static int latestUnit() {
+        return latest == 0 ? TEXTURE_UNIT : TEXTURE_UNIT_PREVIOUS;
+    }
+
+    /** The texture unit of the tick before's field (the latest's when there is none to blend from). */
+    public static int previousUnit() {
+        if (!previousValid) return latestUnit();
+        return latest == 0 ? TEXTURE_UNIT_PREVIOUS : TEXTURE_UNIT;
+    }
+
     /**
-     * The CPU twin of the shaders' sample: the field's light at a block (r, g, b as 0..255 into {@code out}); false when the
-     * block is outside the field or there is none. Thread-safe.
+     * How far the frame is from the tick before's field toward the latest (0 to 1): the frame's partial tick while the latest
+     * arrived this tick, else 1 (the shaders then read the latest alone).
+     */
+    public static float blend(ClientLevel level, float partialTick) {
+        if (!previousValid || level == null || level.getGameTime() != uploadedTick) return 1f;
+        return Math.max(0f, Math.min(1f, partialTick));
+    }
+
+    /**
+     * The CPU twin of the shaders' sample: the latest field's light at a block (r, g, b as 0..255 into {@code out}); false when
+     * the block is outside the field or there is none. Thread-safe.
      */
     public static boolean sample(int blockX, int blockY, int blockZ, int[] out) {
         byte[] f = current;
@@ -136,6 +169,7 @@ public final class DynamicLightField {
             current = null;
             currentX = Integer.MIN_VALUE;
             held = Collections.emptySet();
+            previousValid = false;
         }
         byte[] blocks = VoxelOcclusion.current();
         if (blocks == null) return;
@@ -156,7 +190,7 @@ public final class DynamicLightField {
         long hash = 17;
         for (Light l : inside) {
             hash = hash * 31 + l.key;
-            hash = hash * 31 + Math.round(l.x * 8) + Math.round(l.y * 8) * 7919L + Math.round(l.z * 8) * 104729L;
+            hash = hash * 31 + Math.round(l.x * 16) + Math.round(l.y * 16) * 7919L + Math.round(l.z * 16) * 104729L;
             hash = hash * 31 + Math.round(l.level * 16);
             hash = hash * 31 + Float.floatToIntBits(l.r) + Float.floatToIntBits(l.g) * 31L + Float.floatToIntBits(l.b) * 961L;
             hash = hash * 31 + l.falloff + Float.floatToIntBits(l.range) * 3L;
@@ -171,10 +205,10 @@ public final class DynamicLightField {
         lastOy = oy;
         lastOz = oz;
         final List<Light> job = inside;
-        final boolean whole = moved;
+        final long tick = level.getGameTime();
         building = CompletableFuture.runAsync(() -> {
             try {
-                build(job, blocks, ox, oy, oz, whole);
+                build(job, blocks, ox, oy, oz, moved, tick);
             } catch (RuntimeException e) {
                 ColorfulLighting.LOGGER.warn("Building the dynamic light field failed; the lights fall back to straight lines this tick", e);
             }
@@ -188,7 +222,7 @@ public final class DynamicLightField {
 
     // ---- the worker ----
 
-    private static void build(List<Light> lights, byte[] blocks, int ox, int oy, int oz, boolean whole) {
+    private static void build(List<Light> lights, byte[] blocks, int ox, int oy, int oz, boolean moved, long tick) {
         byte[] field;
         if (bufA == null) bufA = new byte[BYTES];
         if (bufB == null) bufB = new byte[BYTES];
@@ -210,18 +244,25 @@ public final class DynamicLightField {
         }
         if (x1 > x0 && y1 > y0 && z1 > z0) dilate(blocks, field, x0, y0, z0, x1, y1, z1);
         else x0 = y0 = z0 = x1 = y1 = z1 = 0;
-        ready.set(new Build(field, ox, oy, oz, x0, y0, z0, x1, y1, z1, whole, keys));
+        ready.set(new Build(field, ox, oy, oz, x0, y0, z0, x1, y1, z1, moved, keys, tick));
     }
 
-    /** Spreads one light through the blocks into the field (per-channel max). */
+    /**
+     * Spreads one light through the blocks into the field (per-channel max). A shortest-path search over the cells from the
+     * light's cell (six neighbours for a diamond light, twenty-six for a round one or a spot), impassable through opaque cells,
+     * carrying the filter transmittance met along the way; a cell's level is the light's level less its falloff over the
+     * larger of the straight distance from the light and the path's length (less a little slack for the grid's overshoot), so
+     * the open is the analytic falloff and only a corner lengthens the way.
+     */
     private static void propagate(Light l, byte[] blocks, byte[] field, int ox, int oy, int oz) {
         int reach = (int) Math.ceil(l.range) + 1;
         int d = 2 * reach + 1;
         int cells = d * d * d;
-        if (bestR.length < cells) {
-            bestR = new float[cells];
-            bestG = new float[cells];
-            bestB = new float[cells];
+        if (bestPath.length < cells) {
+            bestPath = new float[cells];
+            transR = new float[cells];
+            transG = new float[cells];
+            transB = new float[cells];
             stamp = new int[cells];
         }
         generation++;
@@ -233,61 +274,47 @@ public final class DynamicLightField {
         int sx = (int) Math.floor(l.x), sy = (int) Math.floor(l.y), sz = (int) Math.floor(l.z);
         int bx = sx - reach, by = sy - reach, bz = sz - reach; // world origin of the local grid
         boolean round = l.falloff == 1 || l.spot;
-        // a level lost per block of path: a point light's reach is its level; a spot dims over its range
+        // a level lost per block of distance: a point light's reach is its level; a spot dims over its range
         float cost = l.spot ? l.level / Math.max(1f, l.range) : 1f;
-        // the cells round the source take their exact distance from the light, so the field slides with it
-        int ring = round ? 1 : 1;
-        for (int z = -ring; z <= ring; z++) {
-            for (int y = -ring; y <= ring; y++) {
-                for (int x = -ring; x <= ring; x++) {
-                    if (!round && Math.abs(x) + Math.abs(y) + Math.abs(z) > 1) continue;
-                    int wx = sx + x, wy = sy + y, wz = sz + z;
-                    int vx = wx - ox, vy = wy - oy, vz = wz - oz;
-                    if (vx < 0 || vy < 0 || vz < 0 || vx >= SIZE || vy >= SIZE || vz >= SIZE) continue;
-                    double ddx = wx + 0.5 - l.x, ddy = wy + 0.5 - l.y, ddz = wz + 0.5 - l.z;
-                    double dist = round ? Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz) : Math.abs(ddx) + Math.abs(ddy) + Math.abs(ddz);
-                    float v = l.level - cost * (float) dist;
-                    if (v <= 0) continue;
-                    float tr = 1f, tg = 1f, tb = 1f;
-                    if (x != 0 || y != 0 || z != 0) {
-                        int bi = ((vz * SIZE + vy) * SIZE + vx) * 4;
-                        tr = (blocks[bi] & 0xFF) / 255f;
-                        tg = (blocks[bi + 1] & 0xFF) / 255f;
-                        tb = (blocks[bi + 2] & 0xFF) / 255f;
-                        if (tr <= 0 && tg <= 0 && tb <= 0) continue;
-                    }
-                    int li = ((z + reach) * d + (y + reach)) * d + (x + reach);
-                    relax(li, v * tr, v * tg, v * tb);
-                }
-            }
-        }
+        float slack = round ? ROUND_SLACK : DIAMOND_SLACK;
+        int neighbours = round ? 26 : 6;
+        // the source cell: the path starts at the light itself
+        int si = (reach * d + reach) * d + reach;
+        relax(si, 0f, 1f, 1f, 1f);
         float colR = l.r / 15f * 255f, colG = l.g / 15f * 255f, colB = l.b / 15f * 255f;
         while (heapSize > 0) {
             int li = pop();
-            float cr = bestR[li], cg = bestG[li], cb = bestB[li];
+            float path = bestPath[li];
+            if (heapKey[heapSize] != -path) { /* a stale entry: the cell was reached shorter since */ }
             int lx = li % d, ly = (li / d) % d, lz = li / (d * d);
             int wx = bx + lx, wy = by + ly, wz = bz + lz;
             int vx = wx - ox, vy = wy - oy, vz = wz - oz;
-            // write the cell: the light's colour at the levels reached, a spot cut by its cone
-            float cone = 1f;
-            if (l.spot) {
-                double ddx = wx + 0.5 - l.x, ddy = wy + 0.5 - l.y, ddz = wz + 0.5 - l.z;
-                double len = Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz);
-                if (len > 1.0e-6) {
-                    double cosA = (ddx * l.dx + ddy * l.dy + ddz * l.dz) / len;
-                    if (cosA <= l.outerCos) cone = 0f;
-                    else cone = l.innerCos <= l.outerCos ? 1f : (float) Math.min(1.0, (cosA - l.outerCos) / (l.innerCos - l.outerCos));
+            // the straight distance from the light to the cell's centre, by the light's own measure
+            double ddx = wx + 0.5 - l.x, ddy = wy + 0.5 - l.y, ddz = wz + 0.5 - l.z;
+            double straight = round ? Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz) : Math.abs(ddx) + Math.abs(ddy) + Math.abs(ddz);
+            float value = l.level - cost * (float) Math.max(straight, path - slack);
+            if (value > 0f) {
+                float cone = 1f;
+                if (l.spot) {
+                    double len = Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz);
+                    if (len > 1.0e-6) {
+                        double cosA = (ddx * l.dx + ddy * l.dy + ddz * l.dz) / len;
+                        cone = cosA <= l.outerCos ? 0f : l.innerCos <= l.outerCos ? 1f : (float) Math.min(1.0, (cosA - l.outerCos) / (l.innerCos - l.outerCos));
+                        // the lamp itself and what carries it are lit all round
+                        cone = Math.max(cone, (float) Math.max(0.0, Math.min(1.0, SPOT_NEAR + 1.0 - len)));
+                    }
+                }
+                if (cone > 0f) {
+                    float v = Math.min(15f, value) / 15f * cone;
+                    int fi = ((vz * SIZE + vy) * SIZE + vx) * 4;
+                    int r = Math.round(colR * v * transR[li]), g = Math.round(colG * v * transG[li]), b = Math.round(colB * v * transB[li]);
+                    if (r > (field[fi] & 0xFF)) field[fi] = (byte) r;
+                    if (g > (field[fi + 1] & 0xFF)) field[fi + 1] = (byte) g;
+                    if (b > (field[fi + 2] & 0xFF)) field[fi + 2] = (byte) b;
                 }
             }
-            if (cone > 0f) {
-                int fi = ((vz * SIZE + vy) * SIZE + vx) * 4;
-                int r = Math.round(colR * Math.min(15f, cr) / 15f * cone), g = Math.round(colG * Math.min(15f, cg) / 15f * cone), b = Math.round(colB * Math.min(15f, cb) / 15f * cone);
-                if (r > (field[fi] & 0xFF)) field[fi] = (byte) r;
-                if (g > (field[fi + 1] & 0xFF)) field[fi + 1] = (byte) g;
-                if (b > (field[fi + 2] & 0xFF)) field[fi + 2] = (byte) b;
-            }
-            // the neighbours: the six faces, and for a round light the twelve edges too
-            int neighbours = round ? 18 : 6;
+            // no light left beyond here: the path can only grow
+            if (l.level - cost * (path - slack) <= 0f) continue;
             for (int n = 0; n < neighbours; n++) {
                 int nx = lx + NX[n], ny = ly + NY[n], nz = lz + NZ[n];
                 if (nx < 0 || ny < 0 || nz < 0 || nx >= d || ny >= d || nz >= d) continue;
@@ -296,35 +323,47 @@ public final class DynamicLightField {
                 int bi = ((nvz * SIZE + nvy) * SIZE + nvx) * 4;
                 int tr8 = blocks[bi] & 0xFF, tg8 = blocks[bi + 1] & 0xFF, tb8 = blocks[bi + 2] & 0xFF;
                 if (tr8 == 0 && tg8 == 0 && tb8 == 0) continue; // opaque
-                float step = cost * (n < 6 ? 1f : SQRT2);
-                float nr = (cr - step) * tr8 / 255f, ng = (cg - step) * tg8 / 255f, nb = (cb - step) * tb8 / 255f;
-                if (nr <= 0 && ng <= 0 && nb <= 0) continue;
+                // a diagonal step passes between its two or three face neighbours: both must be open, or light would cut a corner through a wall
+                if (n >= 6 && !diagonalOpen(blocks, vx, vy, vz, NX[n], NY[n], NZ[n])) continue;
+                float step = n < 6 ? 1f : n < 18 ? SQRT2 : SQRT3;
+                float npath = path + step;
                 if (l.spot) {
-                    double ddx = bx + nx + 0.5 - l.x, ddy = by + ny + 0.5 - l.y, ddz = bz + nz + 0.5 - l.z;
-                    double len = Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz);
-                    if (len > 1.0 && (ddx * l.dx + ddy * l.dy + ddz * l.dz) / len < l.pruneCos) continue;
+                    double ndx = bx + nx + 0.5 - l.x, ndy = by + ny + 0.5 - l.y, ndz = bz + nz + 0.5 - l.z;
+                    double len = Math.sqrt(ndx * ndx + ndy * ndy + ndz * ndz);
+                    if (len > SPOT_NEAR + 1.0 && (ndx * l.dx + ndy * l.dy + ndz * l.dz) / len < l.pruneCos) continue;
                 }
-                relax(((nz) * d + ny) * d + nx, nr, ng, nb);
+                relax((nz * d + ny) * d + nx, npath, transR[li] * tr8 / 255f, transG[li] * tg8 / 255f, transB[li] * tb8 / 255f);
             }
         }
     }
 
-    private static final int[] NX = {1, -1, 0, 0, 0, 0, 1, 1, -1, -1, 1, 1, -1, -1, 0, 0, 0, 0};
-    private static final int[] NY = {0, 0, 1, -1, 0, 0, 1, -1, 1, -1, 0, 0, 0, 0, 1, 1, -1, -1};
-    private static final int[] NZ = {0, 0, 0, 0, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1};
+    /** Whether a diagonal step from a cell is open: every face neighbour it slips between lets light through. */
+    private static boolean diagonalOpen(byte[] blocks, int vx, int vy, int vz, int sx, int sy, int sz) {
+        if (sx != 0 && !open(blocks, vx + sx, vy, vz)) return false;
+        if (sy != 0 && !open(blocks, vx, vy + sy, vz)) return false;
+        return sz == 0 || open(blocks, vx, vy, vz + sz);
+    }
 
-    /** Raises a cell's per-channel levels where the candidate is better, and queues it when any channel rose. */
-    private static void relax(int li, float r, float g, float b) {
+    private static boolean open(byte[] blocks, int x, int y, int z) {
+        if (x < 0 || y < 0 || z < 0 || x >= SIZE || y >= SIZE || z >= SIZE) return false;
+        int i = ((z * SIZE + y) * SIZE + x) * 4;
+        return blocks[i] != 0 || blocks[i + 1] != 0 || blocks[i + 2] != 0;
+    }
+
+    private static final int[] NX = {1, -1, 0, 0, 0, 0, 1, 1, -1, -1, 1, 1, -1, -1, 0, 0, 0, 0, 1, 1, 1, 1, -1, -1, -1, -1};
+    private static final int[] NY = {0, 0, 1, -1, 0, 0, 1, -1, 1, -1, 0, 0, 0, 0, 1, 1, -1, -1, 1, 1, -1, -1, 1, 1, -1, -1};
+    private static final int[] NZ = {0, 0, 0, 0, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1};
+
+    /** Records a shorter path to a cell (with the transmittance along it) and queues the cell. */
+    private static void relax(int li, float path, float tr, float tg, float tb) {
         boolean fresh = stamp[li] != generation;
-        if (fresh) {
-            stamp[li] = generation;
-            bestR[li] = bestG[li] = bestB[li] = 0f;
-        }
-        boolean rose = false;
-        if (r > bestR[li] + 1.0e-3f) { bestR[li] = r; rose = true; }
-        if (g > bestG[li] + 1.0e-3f) { bestG[li] = g; rose = true; }
-        if (b > bestB[li] + 1.0e-3f) { bestB[li] = b; rose = true; }
-        if (rose) push(li, Math.max(bestR[li], Math.max(bestG[li], bestB[li])));
+        if (fresh) stamp[li] = generation;
+        else if (path >= bestPath[li] - 1.0e-4f) return;
+        bestPath[li] = path;
+        transR[li] = tr;
+        transG[li] = tg;
+        transB[li] = tb;
+        push(li, -path);
     }
 
     private static void push(int idx, float key) {
@@ -344,8 +383,10 @@ public final class DynamicLightField {
         heapKey[i] = key;
     }
 
+    /** Pops the cell with the shortest path (the heap's keys are the negated path lengths, so the largest key is the shortest path). */
     private static int pop() {
         int top = heapIdx[0];
+        float topKey = heapKey[0];
         heapSize--;
         if (heapSize > 0) {
             int idx = heapIdx[heapSize];
@@ -363,6 +404,7 @@ public final class DynamicLightField {
             heapIdx[i] = idx;
             heapKey[i] = key;
         }
+        heapKey[heapSize] = topKey;
         return top;
     }
 
@@ -399,59 +441,78 @@ public final class DynamicLightField {
     // ---- the render thread ----
 
     /**
-     * Before a pass that samples the field: uploads a finished build (the box that changed) and binds the texture on its unit.
-     * True when a texture with light is bound. Render thread.
+     * Before a pass that samples the field: uploads a finished build (the box that changed) into the texture not holding the
+     * latest field, which then becomes the latest while the other is the tick before's, and binds both on their units. True
+     * when a texture with light is bound. Render thread.
      */
     public static boolean bind() {
         if (!enabled) return false;
         if (!RenderSystem.isOnRenderThread()) return uploadedAny;
         int previousUnit = GlStateManager._getActiveTexture();
-        if (textureId <= 0) {
-            textureId = GL11C.glGenTextures();
-            GlStateManager._activeTexture(GL13C.GL_TEXTURE0 + TEXTURE_UNIT);
-            GL11C.glBindTexture(GL12C.GL_TEXTURE_3D, textureId);
-            GL11C.glTexParameteri(GL12C.GL_TEXTURE_3D, GL11C.GL_TEXTURE_MIN_FILTER, GL11C.GL_LINEAR);
-            GL11C.glTexParameteri(GL12C.GL_TEXTURE_3D, GL11C.GL_TEXTURE_MAG_FILTER, GL11C.GL_LINEAR);
-            GL11C.glTexParameteri(GL12C.GL_TEXTURE_3D, GL11C.GL_TEXTURE_WRAP_S, GL12C.GL_CLAMP_TO_EDGE);
-            GL11C.glTexParameteri(GL12C.GL_TEXTURE_3D, GL11C.GL_TEXTURE_WRAP_T, GL12C.GL_CLAMP_TO_EDGE);
-            GL11C.glTexParameteri(GL12C.GL_TEXTURE_3D, GL12C.GL_TEXTURE_WRAP_R, GL12C.GL_CLAMP_TO_EDGE);
+        if (textureIds[0] <= 0) {
             upload = MemoryUtil.memAlloc(BYTES);
             ByteBuffer zero = MemoryUtil.memCalloc(BYTES);
             unpackState();
-            GL12C.glTexImage3D(GL12C.GL_TEXTURE_3D, 0, GL11C.GL_RGBA8, SIZE, SIZE, SIZE, 0, GL11C.GL_RGBA, GL11C.GL_UNSIGNED_BYTE, zero);
+            for (int t = 0; t < 2; t++) {
+                textureIds[t] = GL11C.glGenTextures();
+                GlStateManager._activeTexture(GL13C.GL_TEXTURE0 + (t == 0 ? TEXTURE_UNIT : TEXTURE_UNIT_PREVIOUS));
+                GL11C.glBindTexture(GL12C.GL_TEXTURE_3D, textureIds[t]);
+                GL11C.glTexParameteri(GL12C.GL_TEXTURE_3D, GL11C.GL_TEXTURE_MIN_FILTER, GL11C.GL_LINEAR);
+                GL11C.glTexParameteri(GL12C.GL_TEXTURE_3D, GL11C.GL_TEXTURE_MAG_FILTER, GL11C.GL_LINEAR);
+                GL11C.glTexParameteri(GL12C.GL_TEXTURE_3D, GL11C.GL_TEXTURE_WRAP_S, GL12C.GL_CLAMP_TO_EDGE);
+                GL11C.glTexParameteri(GL12C.GL_TEXTURE_3D, GL11C.GL_TEXTURE_WRAP_T, GL12C.GL_CLAMP_TO_EDGE);
+                GL11C.glTexParameteri(GL12C.GL_TEXTURE_3D, GL12C.GL_TEXTURE_WRAP_R, GL12C.GL_CLAMP_TO_EDGE);
+                GL12C.glTexImage3D(GL12C.GL_TEXTURE_3D, 0, GL11C.GL_RGBA8, SIZE, SIZE, SIZE, 0, GL11C.GL_RGBA, GL11C.GL_UNSIGNED_BYTE, zero);
+            }
             MemoryUtil.memFree(zero);
         }
         Build b = ready.getAndSet(null);
-        GlStateManager._activeTexture(GL13C.GL_TEXTURE0 + TEXTURE_UNIT);
-        GL11C.glBindTexture(GL12C.GL_TEXTURE_3D, textureId);
         if (b != null) {
             unpackState();
-            boolean whole = b.whole || !uploadedAny;
-            int x0 = b.x0, y0 = b.y0, z0 = b.z0, x1 = b.x1, y1 = b.y1, z1 = b.z1;
-            if (!whole && litX1 > litX0) {
-                // the box the texture still holds light in is cleared by uploading it again (the new field is zero there)
-                if (x1 > x0) {
-                    x0 = Math.min(x0, litX0); y0 = Math.min(y0, litY0); z0 = Math.min(z0, litZ0);
-                    x1 = Math.max(x1, litX1); y1 = Math.max(y1, litY1); z1 = Math.max(z1, litZ1);
-                } else {
-                    x0 = litX0; y0 = litY0; z0 = litZ0; x1 = litX1; y1 = litY1; z1 = litZ1;
-                }
-            }
-            upload.clear();
+            boolean whole = b.moved || !uploadedAny;
+            int target = whole ? 0 : 1 - latest;
             if (whole) {
-                upload.put(b.field).flip();
-                GL12C.glTexSubImage3D(GL12C.GL_TEXTURE_3D, 0, 0, 0, 0, SIZE, SIZE, SIZE, GL11C.GL_RGBA, GL11C.GL_UNSIGNED_BYTE, upload);
-            } else if (x1 > x0 && y1 > y0 && z1 > z0) {
-                int w = x1 - x0;
-                for (int z = z0; z < z1; z++) {
-                    for (int y = y0; y < y1; y++) {
-                        upload.put(b.field, ((z * SIZE + y) * SIZE + x0) * 4, w * 4);
+                // a new origin: both textures take the whole field (nothing of the old place is worth blending from)
+                for (int t = 0; t < 2; t++) {
+                    GlStateManager._activeTexture(GL13C.GL_TEXTURE0 + (t == 0 ? TEXTURE_UNIT : TEXTURE_UNIT_PREVIOUS));
+                    GL11C.glBindTexture(GL12C.GL_TEXTURE_3D, textureIds[t]);
+                    upload.clear();
+                    upload.put(b.field).flip();
+                    GL12C.glTexSubImage3D(GL12C.GL_TEXTURE_3D, 0, 0, 0, 0, SIZE, SIZE, SIZE, GL11C.GL_RGBA, GL11C.GL_UNSIGNED_BYTE, upload);
+                    litBox[t] = new int[]{b.x0, b.y0, b.z0, b.x1, b.y1, b.z1};
+                }
+                latest = 0;
+                previousValid = false;
+            } else {
+                GlStateManager._activeTexture(GL13C.GL_TEXTURE0 + (target == 0 ? TEXTURE_UNIT : TEXTURE_UNIT_PREVIOUS));
+                GL11C.glBindTexture(GL12C.GL_TEXTURE_3D, textureIds[target]);
+                // the box the target texture still holds light in (from two ticks ago) is cleared by uploading it again
+                int[] lit = litBox[target];
+                int x0 = b.x0, y0 = b.y0, z0 = b.z0, x1 = b.x1, y1 = b.y1, z1 = b.z1;
+                if (lit[3] > lit[0]) {
+                    if (x1 > x0) {
+                        x0 = Math.min(x0, lit[0]); y0 = Math.min(y0, lit[1]); z0 = Math.min(z0, lit[2]);
+                        x1 = Math.max(x1, lit[3]); y1 = Math.max(y1, lit[4]); z1 = Math.max(z1, lit[5]);
+                    } else {
+                        x0 = lit[0]; y0 = lit[1]; z0 = lit[2]; x1 = lit[3]; y1 = lit[4]; z1 = lit[5];
                     }
                 }
-                upload.flip();
-                GL12C.glTexSubImage3D(GL12C.GL_TEXTURE_3D, 0, x0, y0, z0, w, y1 - y0, z1 - z0, GL11C.GL_RGBA, GL11C.GL_UNSIGNED_BYTE, upload);
+                if (x1 > x0 && y1 > y0 && z1 > z0) {
+                    upload.clear();
+                    int w = x1 - x0;
+                    for (int z = z0; z < z1; z++) {
+                        for (int y = y0; y < y1; y++) {
+                            upload.put(b.field, ((z * SIZE + y) * SIZE + x0) * 4, w * 4);
+                        }
+                    }
+                    upload.flip();
+                    GL12C.glTexSubImage3D(GL12C.GL_TEXTURE_3D, 0, x0, y0, z0, w, y1 - y0, z1 - z0, GL11C.GL_RGBA, GL11C.GL_UNSIGNED_BYTE, upload);
+                }
+                litBox[target] = new int[]{b.x0, b.y0, b.z0, b.x1, b.y1, b.z1};
+                latest = target;
+                previousValid = true;
             }
-            litX0 = b.x0; litY0 = b.y0; litZ0 = b.z0; litX1 = b.x1; litY1 = b.y1; litZ1 = b.z1;
+            uploadedTick = b.tick + 1;
             uploadedX = b.ox;
             uploadedY = b.oy;
             uploadedZ = b.oz;
@@ -462,6 +523,11 @@ public final class DynamicLightField {
             currentZ = b.oz;
             held = b.keys;
         }
+        // both bound on their units for the pass
+        GlStateManager._activeTexture(GL13C.GL_TEXTURE0 + TEXTURE_UNIT);
+        GL11C.glBindTexture(GL12C.GL_TEXTURE_3D, textureIds[0]);
+        GlStateManager._activeTexture(GL13C.GL_TEXTURE0 + TEXTURE_UNIT_PREVIOUS);
+        GL11C.glBindTexture(GL12C.GL_TEXTURE_3D, textureIds[1]);
         GlStateManager._activeTexture(previousUnit);
         return uploadedAny;
     }
@@ -485,5 +551,6 @@ public final class DynamicLightField {
         ready.set(null);
         lastHash = Long.MIN_VALUE;
         builtFor = null;
+        previousValid = false;
     }
 }

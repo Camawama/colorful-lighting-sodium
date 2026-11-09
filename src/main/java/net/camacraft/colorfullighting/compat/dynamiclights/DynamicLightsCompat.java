@@ -726,8 +726,10 @@ public final class DynamicLightsCompat {
                     if (d < 1.0e-6) level = source.level;
                     else {
                         double cos = (dx * source.dx + dy * source.dy + dz * source.dz) / d;
-                        if (cos <= source.outerCos) continue;
-                        double cone = source.innerCos <= source.outerCos ? 1.0 : Math.min(1.0, (cos - source.outerCos) / (source.innerCos - source.outerCos));
+                        double cone = cos <= source.outerCos ? 0.0 : source.innerCos <= source.outerCos ? 1.0 : Math.min(1.0, (cos - source.outerCos) / (source.innerCos - source.outerCos));
+                        // the lamp itself and what carries it are lit all round (2.9.1)
+                        cone = Math.max(cone, Math.max(0.0, Math.min(1.0, 3.0 - d)));
+                        if (cone <= 0.0) continue;
                         level = source.level * (1.0 - d / source.range) * cone;
                     }
                 } else if (source.falloff == 1) {
