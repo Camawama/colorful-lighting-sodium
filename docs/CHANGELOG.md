@@ -6,6 +6,26 @@ Planned
 - keep Valkyrien Skies compatibility on every version where VS exists
 - add Sable / Create Aeronautics compatibility alongside Valkyrien Skies where possible
 
+2026-11-09 (2.10.2)
+- The log no longer holds "Could not open GLSL import colorful_lighting:shaders/include/colored_light.glsl" for the shaders the game loads
+  before its first resource reload. Those come from vanilla's own pack alone, where the include can't be found: the import failed with a
+  warning each and the functions were put in after the failure. The functions are now written into such a shader directly, and imported
+  as before once the game's resources hold the include (`Preprocessor.coloredLightImport`). Nothing drawn changes.
+- Sixteen slabs for lights that reach between 15 and 24 blocks, eight before (`DynamicLightField.WANT_SLOTS`): Lively Lighting 0.6.4 draws
+  up to sixteen merged lights, and one without a slab is drawn with nothing in its way.
+- The mesh path (the lightmap renderer and shader packs) shows a point light above level 15: the open cells within a block of its cell
+  per level above 15, three blocks at most, shine in full as well, round corners no further than a lamp's light goes
+  (`DynamicLightsCompat.spreadEmitter`). The engine's light has sixteen levels, so until now the light's own cell gave 15 however strong
+  the light was, and a merged light was no brighter there than one torch.
+- The Embeddium shader loader no longer uses the `ResourceLocation` constructor Forge marks for removal.
+
+2026-11-09 (2.10.1)
+- A point light handed in through the provider API may have a level above 15, up to 31 (`DynamicLightSink.point`): the light itself
+  stays at 15 for the blocks above it, a core of full light, and reaches that much farther, with the same falloff, slab and tint as
+  any other light. Lively Lighting 0.6.3 draws lights near each other as one such merged light. Until now the level was cut to 15 where
+  it was taken, on its way to the shaders and in the field, so such a light was an ordinary one of 15. The mesh path (the lightmap
+  renderer and shader packs) still takes a level of at most 15. Spot lights are unchanged.
+
 2026-11-09 (2.10.0)
 - The dynamic light field holds where each light's light may go, not how bright (`DynamicLightField`): per light a cube of cells round its
   cell (a slab) with, per cell, the detour the way through the blocks takes over the straight way (0 in the open, unreachable behind a wall)

@@ -4,7 +4,8 @@ package net.camacraft.colorfullighting.api.dynamic;
  * Where a {@link DynamicLightProvider} puts its lights. Positions are world coordinates (a light on a Valkyrien Skies
  * ship at its place in the world; Colorful Lighting mirrors it into the shipyard itself). {@code ownerKey} names the same
  * light across ticks, so Colorful Lighting can tell a light that moved from a new one and rebuild only what changed.
- * {@code level} is 0 to 15 (fractional while fading), {@code rgb} is {@code 0xRRGGBB} or -1 for white, {@code range} the
+ * {@code level} is 0 to 15 (fractional while fading; a point light's may go to 31 since 2.10.1: the light itself stays at
+ * 15 for the blocks above and reaches that much farther), {@code rgb} is {@code 0xRRGGBB} or -1 for white, {@code range} the
  * reach in blocks, {@code falloff} 0 for a level lost per block of Manhattan distance (vanilla's diamond) or 1 per block
  * of straight distance (a round light).
  *

@@ -47,7 +47,7 @@ public final class DynamicLightField {
     /** The slab classes: the light's cell plus this many cells each way; reaches up to 15, 24 and 48 blocks. */
     static final int[] HALF = {16, 25, 49};
     /** Slabs wanted per class (fewer when the GPU's 3D textures are too short for the stack). */
-    private static final int[] WANT_SLOTS = {32, 8, 4};
+    private static final int[] WANT_SLOTS = {32, 16, 4};
     public static final int[] TEXTURE_UNITS = {12, 13, 14};
     /** A spot's propagation is pruned beyond its outer half angle plus this (degrees): it wraps a corner a little, never behind itself. */
     private static final double WRAP_MARGIN = Math.toRadians(30);
@@ -55,7 +55,7 @@ public final class DynamicLightField {
     private static final double TURN_COS = Math.cos(Math.toRadians(12));
     private static final float SQRT2 = (float) Math.sqrt(2.0), SQRT3 = (float) Math.sqrt(3.0);
 
-    /** One light as the field takes it: world position, level 0..15, the falloff and reach, and the cone for a spot. */
+    /** One light as the field takes it: world position, level (0..15, a point light's to 31 since 2.10.1), the falloff and reach, and the cone for a spot. */
     record Light(long key, double x, double y, double z, float level, int falloff, float range, boolean spot, double dx, double dy, double dz, float outerCos) {
         int cellX() { return (int) Math.floor(x); }
         int cellY() { return (int) Math.floor(y); }

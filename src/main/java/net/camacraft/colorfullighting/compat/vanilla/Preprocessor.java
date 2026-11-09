@@ -9,6 +9,34 @@ import java.util.function.Function;
 
 public class Preprocessor extends GlslPreprocessor {
 	GlslPreprocessor par;
+
+	private static final net.minecraft.resources.ResourceLocation INCLUDE =
+			net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("colorful_lighting", "shaders/include/colored_light.glsl");
+	/** Marks where the colored light functions go while they can't be imported (see {@link #coloredLightImport}). */
+	private static final String INLINE_MARK = "//colorful_lighting:inline_colored_light";
+
+	/**
+	 * The line that brings the colored light functions into a shader: the import while the game's resources hold the include,
+	 * a mark that {@link #process} replaces with the functions themselves while they don't (2.10.2). The shaders the game
+	 * loads before its first resource reload come from vanilla's own pack alone: the import failed there with a
+	 * "Could not open GLSL import" line in the log for each, and the functions were put in after the failure.
+	 */
+	private static String coloredLightImport() {
+		return includeAvailable() ? "#moj_import <colorful_lighting:colored_light.glsl>\n" : INLINE_MARK + "\n";
+	}
+
+	private static boolean includeAvailable() {
+		try {
+			net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+			return mc == null || mc.getResourceManager().getResource(INCLUDE).isPresent();
+		} catch (RuntimeException e) {
+			return true; // the import's own failure still puts the functions in
+		}
+	}
+
+	private static String inlined() {
+		return "#line 0\n" + Resources.CL_VANILLA.replace("#version 150", "/*#version 150*/") + "\n";
+	}
 	
 	public Preprocessor(GlslPreprocessor par) {
 		this.par = par;
@@ -88,7 +116,7 @@ public class Preprocessor extends GlslPreprocessor {
 		for (String s : strArr) {
 			if (s.trim().equals("#moj_import <light.glsl>")) {
 				builder.append(s).append("\n");
-				builder.append("#moj_import <colorful_lighting:colored_light.glsl>\n");
+				builder.append(coloredLightImport());
 				includesLightGlsl = true;
 			} else {
 				String nWS = s.replace(" ", "");
@@ -138,11 +166,11 @@ public class Preprocessor extends GlslPreprocessor {
 			for (String s : strArr) {
 				if (!includesLightGlsl && s.trim().startsWith("#moj_import")) {
 					builder.append(s).append("\n");
-					builder.append("#moj_import <colorful_lighting:colored_light.glsl>\n");
+					builder.append(coloredLightImport());
 					includesLightGlsl = true;
 				} else if (!includesLightGlsl && s.trim().startsWith("uniform sampler2D Sampler2;")) {
 					builder.append(s).append("\n");
-					builder.append("#moj_import <colorful_lighting:colored_light.glsl>\n");
+					builder.append(coloredLightImport());
 					includesLightGlsl = true;
 				} else {
 					builder.append(s).append("\n");
@@ -154,7 +182,9 @@ public class Preprocessor extends GlslPreprocessor {
 		for (int i = 0; i < patched.size(); i++) {
 			String s = patched.get(i);
 			if (s.contains("#error colorful_lighting:shaders/include/colored_light.glsl")) {
-				patched.set(i, "#line 0\n" + Resources.CL_VANILLA.replace("#version 150", "/*#version 150*/") + "\n");
+				patched.set(i, inlined());
+			} else if (s.contains(INLINE_MARK)) {
+				patched.set(i, s.replace(INLINE_MARK, inlined()));
 			}
 		}
 		return patched;

@@ -26,6 +26,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * program without the uniforms (the define off, a pack's program) is skipped.
  */
 public final class ShaderDynamicLights {
+    /** The highest level a point light is taken at (2.10.1); below the 32 the falloff is folded in as. */
+    public static final float MAX_LEVEL = 31f;
     public static final int MAX_LIGHTS = 64;
     private static volatile boolean wired;
     private static volatile int maxLights = 16;
@@ -145,8 +147,9 @@ public final class ShaderDynamicLights {
             pos[o] = (float) (l[0] - cam.x);
             pos[o + 1] = (float) (l[1] - cam.y);
             pos[o + 2] = (float) (l[2] - cam.z);
-            // the level, with the falloff (0 diamond, 1 round) folded in as 32s; a spot is always round
-            pos[o + 3] = Math.min(15f, l[3]) + (l[13] >= 0.5f ? 32f : 0f);
+            // the level, with the falloff (0 diamond, 1 round) folded in as 32s; a spot is always round. A point light's level
+            // may exceed 15 (2.10.1): the shaders cap the light itself at 15, so the blocks above are a core of full light
+            pos[o + 3] = Math.min(MAX_LEVEL, l[3]) + (l[13] >= 0.5f ? 32f : 0f);
             color[o] = l[4];
             color[o + 1] = l[5];
             color[o + 2] = l[6];

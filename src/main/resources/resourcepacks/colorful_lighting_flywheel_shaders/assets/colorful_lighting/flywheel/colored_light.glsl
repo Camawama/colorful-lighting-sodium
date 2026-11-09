@@ -64,7 +64,7 @@ ColoredLightFloatData coloredLightData_integerToFloat(ColoredLightIntegerData da
 uniform float _cl_nightVibrancy;
 
 // --- dynamic lights (2.8.0; the slabs since 2.10.0): the external providers' lights, camera-relative ---
-// cl_dynPos: xyz the light relative to the camera, w its level (0..15) plus 32 when it falls off by straight distance (a
+// cl_dynPos: xyz the light relative to the camera, w its level (0..31, drawn as at most 15) plus 32 when it falls off by straight distance (a
 // round light) rather than by Manhattan distance (vanilla's diamond). cl_dynColor: rgb 0..1, w the reach in blocks.
 // cl_dynDir: xyz a spot light's axis, w the cosine of half its full angle (1.0 for a point light). The inner, fully lit cone
 // is 0.6 of the outer angle: its cosine is approximated from the outer's.

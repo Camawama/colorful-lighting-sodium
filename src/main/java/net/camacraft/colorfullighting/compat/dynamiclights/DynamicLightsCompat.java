@@ -271,7 +271,8 @@ public final class DynamicLightsCompat {
             @Override
             public void point(long ownerKey, double x, double y, double z, float lvl, int rgb, int falloff, float range) {
                 if (lvl <= 0f) return;
-                out.accept(new DynamicSource(x, y, z, Math.min(15, Math.max(1, Math.round(lvl))), colorOf(rgb), Math.min(15f, lvl), falloff == 1 ? 1 : 0,
+                // a level above 15 (2.10.1, a merged light): full light for the blocks above 15 and that much more reach
+                out.accept(new DynamicSource(x, y, z, Math.min(15, Math.max(1, Math.round(lvl))), colorOf(rgb), Math.min(ShaderDynamicLights.MAX_LEVEL, lvl), falloff == 1 ? 1 : 0,
                         Math.max(1f, range > 0 ? range : lvl), 0, 0, 0, 1f, 1f, true, ownerKey, false));
             }
 
@@ -432,7 +433,7 @@ public final class DynamicLightsCompat {
         List<DynamicLightField.Light> out = new ArrayList<>();
         for (DynamicSource s : sources) {
             if (!s.external || s.level <= 0f) continue;
-            out.add(new DynamicLightField.Light(s.key, s.x, s.y, s.z, Math.min(15f, s.level), s.falloff, Math.max(1f, s.range), s.isSpot(), s.dx, s.dy, s.dz, s.outerCos));
+            out.add(new DynamicLightField.Light(s.key, s.x, s.y, s.z, Math.min(ShaderDynamicLights.MAX_LEVEL, s.level), s.falloff, Math.max(1f, s.range), s.isSpot(), s.dx, s.dy, s.dz, s.outerCos));
         }
         return out;
     }
@@ -566,7 +567,10 @@ public final class DynamicLightsCompat {
                 if (source.isSpot() || source.level < 1f) continue;
                 float scale = Math.min(15f, source.level) / 15f;
                 ColorRGB4 at = ColorRGB4.fromRGB4(Math.round(source.color.red4 * scale), Math.round(source.color.green4 * scale), Math.round(source.color.blue4 * scale));
-                emitters.merge(BlockPos.asLong((int) Math.floor(source.x), (int) Math.floor(source.y), (int) Math.floor(source.z)), at, ColorRGB4::max);
+                int cellX = (int) Math.floor(source.x), cellY = (int) Math.floor(source.y), cellZ = (int) Math.floor(source.z);
+                emitters.merge(BlockPos.asLong(cellX, cellY, cellZ), at, ColorRGB4::max);
+                // a light above 15 (a merged light): the open cells a block away per level above 15 shine in full too
+                if (source.level >= 16f) spreadEmitter(level, emitters, cellX, cellY, cellZ, Math.min(MAX_EMITTER_SPREAD, (int) (source.level - 15f)), at);
             }
         }
         Map<Long, ColorRGB4> before = virtualEmitters;
@@ -617,6 +621,42 @@ public final class DynamicLightsCompat {
         }
         externalAnchors = anchors;
         scheduleRebuildsBudgeted(level, sectionsToRebuild);
+    }
+
+    /** The farthest a propagated light above 15 spreads its full light (blocks): each cell is a lamp the engine propagates. */
+    private static final int MAX_EMITTER_SPREAD = 3;
+
+    /**
+     * A propagated light above level 15 (2.10.2): the engine's light has sixteen levels, so the light's cell alone gave 15
+     * however strong the light was, and a merged light was no brighter on this path than a single torch. The cells within
+     * {@code depth} steps of the light's cell, reached through cells that neither stop nor tint light, become lamps of the
+     * full colour as well: full light out to as many blocks as the level is above 15, up to {@link #MAX_EMITTER_SPREAD},
+     * and round corners no further than a lamp's light goes.
+     */
+    private static void spreadEmitter(ClientLevel level, Map<Long, ColorRGB4> emitters, int x, int y, int z, int depth, ColorRGB4 color) {
+        if (depth <= 0) return;
+        BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        Set<Long> seen = new HashSet<>();
+        List<Long> ring = new ArrayList<>();
+        long start = BlockPos.asLong(x, y, z);
+        seen.add(start);
+        ring.add(start);
+        for (int step = 0; step < depth && !ring.isEmpty(); step++) {
+            List<Long> next = new ArrayList<>();
+            for (long cell : ring) {
+                for (net.minecraft.core.Direction direction : net.minecraft.core.Direction.values()) {
+                    long to = BlockPos.offset(cell, direction);
+                    if (!seen.add(to)) continue;
+                    cursor.set(to);
+                    net.minecraft.world.level.block.state.BlockState state = level.getBlockState(cursor);
+                    if (state.canOcclude() || state.getLightBlock(level, cursor) > 0
+                            || state.getBlock() instanceof net.minecraft.world.level.block.BeaconBeamBlock) continue;
+                    emitters.merge(to, color, ColorRGB4::max);
+                    next.add(to);
+                }
+            }
+            ring = next;
+        }
     }
 
     /**
