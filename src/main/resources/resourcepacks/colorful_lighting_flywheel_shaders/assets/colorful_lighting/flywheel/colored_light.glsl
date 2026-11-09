@@ -63,6 +63,48 @@ ColoredLightFloatData coloredLightData_integerToFloat(ColoredLightIntegerData da
 // GlProgramMixin; 0 when nothing sets it.
 uniform float _cl_nightVibrancy;
 
+// --- dynamic lights (2.8.0): the external providers' lights, per vertex, camera-relative ---
+// cl_dynPos: xyz the light relative to the camera, w its level (0..15) plus 32 when it falls off by straight distance
+// (a round light) rather than by Manhattan distance (vanilla's diamond). cl_dynColor: rgb 0..1, w the reach in blocks.
+// cl_dynDir: xyz a spot light's axis, w the cosine of half its full angle (1.0 for a point light). The inner, fully lit
+// cone is 0.6 of the outer angle: its cosine is approximated from the outer's.
+#define CL_DYN_MAX 64
+uniform int cl_dynCount;
+uniform vec4 cl_dynPos[CL_DYN_MAX];
+uniform vec4 cl_dynColor[CL_DYN_MAX];
+uniform vec4 cl_dynDir[CL_DYN_MAX];
+
+vec3 cl_dynamicLight(vec3 wrel) {
+    vec3 acc = vec3(0.0);
+    for (int i = 0; i < cl_dynCount; i++) {
+        vec4 p = cl_dynPos[i];
+        vec3 d = wrel - p.xyz;
+        vec4 c = cl_dynColor[i];
+        float range = c.w;
+        float dist2 = dot(d, d);
+        if (dist2 > range * range) continue;
+        float falloff = floor(p.w / 32.0);
+        float level = p.w - falloff * 32.0;
+        vec4 dir = cl_dynDir[i];
+        float l;
+        if (dir.w < 1.0) {
+            float dist = sqrt(dist2);
+            float cosA = dist > 1.0e-4 ? dot(d, dir.xyz) / dist : 1.0;
+            if (cosA <= dir.w) continue;
+            float innerCos = 1.0 - (1.0 - dir.w) * 0.36;
+            float cone = innerCos <= dir.w ? 1.0 : clamp((cosA - dir.w) / (innerCos - dir.w), 0.0, 1.0);
+            l = level * (1.0 - dist / range) * cone;
+        } else if (falloff > 0.5) {
+            l = level - sqrt(dist2);
+        } else {
+            l = level - (abs(d.x) + abs(d.y) + abs(d.z));
+        }
+        if (l <= 0.0) continue;
+        acc = max(acc, c.rgb * (min(l, 15.0) / 15.0));
+    }
+    return acc;
+}
+
 // The in-world composite of sky and colored block light: the same as cl_blendLight (the chunk shaders), the vanilla core
 // shaders' sample_lightmap_colored and the Distant Horizons LODs. The block light is washed toward grey under bright sky
 // and under moonlight, then scaled by max(0.1, 1 - sky) * 0.9 + 0.1. Before 2.7.6 this read sky + block * max(0.1, 1 - sky),

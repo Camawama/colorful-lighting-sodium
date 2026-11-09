@@ -35,5 +35,7 @@ public abstract class DefaultChunkRendererMixin {
 	    if (shader instanceof ChunkShaderInterfaceExtension extension) {
 		    SodiumShaderCompat.setupShader(extension);
 	    }
+	    // the dynamic lights of this frame (2.8.0), to this pass's program
+	    net.camacraft.colorfullighting.compat.dynamiclights.ShaderDynamicLights.uploadTerrain(activeProgram.handle());
     }
 }

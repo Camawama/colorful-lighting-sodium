@@ -26,6 +26,8 @@ public class ChunkShaderInterfaceMixin implements ChunkShaderInterfaceExtension 
     private void onInit(ShaderBindingContext context, ChunkShaderOptions options, CallbackInfo ci) {
         this.shaderBindingContext = context;
         this.tryBindUniforms(context);
+        // programs were rebuilt: the dynamic light uniform locations cached per program are stale
+        net.camacraft.colorfullighting.compat.dynamiclights.ShaderDynamicLights.forgetPrograms();
     }
 
     @Override

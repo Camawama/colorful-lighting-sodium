@@ -126,6 +126,19 @@ void _flw_main() {
 
         // START colorful lighting
         ColoredLightFloatData data = v_lightColor.data;
+        // dynamic lights (2.8.0): the providers' lights at this fragment, camera-relative as the world's terrain gets them;
+        // a fragment without coloured data takes its own block light as grey and goes through the composite too
+        if (cl_dynCount > 0) {
+            vec3 dyn = cl_dynamicLight(flw_vertexPos.xyz - flw_cameraPos.xyz);
+            if (max(max(dyn.r, dyn.g), dyn.b) > 0.0) {
+                if (data.alpha <= 0.0) {
+                    data.lightColor = vec3(clamp(flw_fragLight.x * (16.0 / 15.0), 0.0, 1.0));
+                    data.skyLight = clamp(flw_fragLight.y * (16.0 / 15.0), 0.0, 1.0);
+                    data.alpha = 1.0;
+                }
+                data.lightColor = max(data.lightColor, dyn);
+            }
+        }
         if(data.alpha > 0.0) {
             // Sky light is flywheel's own for this fragment (the instance's light, or the per-fragment
             // light of an embedded visual such as a Create contraption); only the block light is

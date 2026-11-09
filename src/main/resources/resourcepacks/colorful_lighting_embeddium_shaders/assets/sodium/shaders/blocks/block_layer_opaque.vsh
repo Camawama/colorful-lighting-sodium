@@ -48,7 +48,14 @@ void main() {
 
     gl_Position = u_ProjectionMatrix * u_ModelViewMatrix * vec4(position, 1.0);
 
+#if defined(COLORFUL_LIGHTING_MOD_PRESENT) && defined(CL_DYNAMIC_LIGHTS)
+    // the vertex relative to the camera along the world's axes: through eye space, so a Valkyrien Skies ship drawn in its
+    // own frame lands where it is in the world
+    vec3 cl_wrel = cl_dynInvView * (u_ModelViewMatrix * vec4(position, 1.0)).xyz;
+    v_Color = _vert_color * _sample_lightmap_dyn(u_LightTex, _vert_tex_light_coord, cl_wrel);
+#else
     v_Color = _vert_color * _sample_lightmap(u_LightTex, _vert_tex_light_coord);
+#endif
     v_TexCoord = _vert_tex_diffuse_coord;
 
     v_MaterialMipBias = _material_mip_bias(_material_params);

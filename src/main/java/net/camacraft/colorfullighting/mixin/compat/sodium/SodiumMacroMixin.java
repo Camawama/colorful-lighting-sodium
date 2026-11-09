@@ -25,5 +25,7 @@ public class SodiumMacroMixin {
 		if (!ColoredLightEngine.isEnabled()) return;
 		
 		instance.add("COLORFUL_LIGHTING_MOD_PRESENT");
+		// dynamic lights drawn in the terrain shaders (2.8.0), compiled in once a provider is registered
+		if (net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.hasExternalProviders()) instance.add("CL_DYNAMIC_LIGHTS");
 	}
 }

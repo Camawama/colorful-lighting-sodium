@@ -131,10 +131,111 @@ public final class DynamicLightsCompat {
      */
     private static volatile Set<Block> dynamicLightBlocks = Collections.emptySet();
 
-    private record DynamicSource(double x, double y, double z, int luminance, ColorRGB4 color) {}
+    /**
+     * A dynamic light. {@code falloff}: 2 is the LambDynamicLights curve of SodiumDynamicLights' sources (fixed 7.75 radius),
+     * 0 a level lost per block of Manhattan distance, 1 per block of straight distance (external providers, 2.8.0);
+     * {@code range} the reach for 0 and 1; a spot has {@code outerCos} below 1 (the cosine of half its full angle),
+     * {@code innerCos} where it is fully lit, and a direction. {@code level} may be fractional while a light fades.
+     */
+    private record DynamicSource(double x, double y, double z, int luminance, ColorRGB4 color, float level, int falloff, float range,
+                                 double dx, double dy, double dz, float outerCos, float innerCos, boolean external, long key) {
+        DynamicSource(double x, double y, double z, int luminance, ColorRGB4 color) {
+            this(x, y, z, luminance, color, luminance, 2, (float) MAX_RADIUS, 0, 0, 0, 1f, 1f, false, 0L);
+        }
+
+        boolean isSpot() {
+            return outerCos < 1f;
+        }
+    }
     private static final DynamicSource[] NO_SOURCES = new DynamicSource[0];
     // written on this level's tick, read from chunk-build worker threads
     private volatile DynamicSource[] entitySources = NO_SOURCES;
+
+    // ---- external providers (2.8.0): other mods' dynamic lights, Lively Lighting's client module first ----
+    private static final java.util.concurrent.CopyOnWriteArrayList<net.camacraft.colorfullighting.api.dynamic.DynamicLightProvider> EXTERNAL = new java.util.concurrent.CopyOnWriteArrayList<>();
+    /** Whether external lights are baked into chunk meshes (with rebuilds), or left to the terrain shaders. */
+    private static volatile boolean externalMeshLighting = true;
+    /** Last remesh anchor per external light (its owner key), so terrain updates as it moves. Client thread only. */
+    private Map<Long, DynamicSource> externalAnchors = new HashMap<>();
+    /** How far (blocks) an external light near a ship is mirrored into the ship's shipyard so the ship's meshes take it. */
+    private static final double EXTERNAL_SHIP_MIRROR_RANGE = 16.0;
+    /** Sections remeshed for external lights per tick, nearest the camera first; the rest wait (a lit ship's lamps cross a block every tick). */
+    private static volatile int externalRebuildBudget = 48;
+    /** Sections that waited: remeshed on later ticks under the budget. Client thread only. */
+    private Set<Long> externalPending = new HashSet<>();
+
+    /** The remesh budget per tick for external lights (Lively Lighting's client.lightmap_rebuilds_per_tick). */
+    public static void setExternalRebuildBudget(int sectionsPerTick) {
+        externalRebuildBudget = Math.max(1, sectionsPerTick);
+    }
+
+    /** Registers a provider of dynamic lights; asked every tick of every client level, and every frame by the shader path. */
+    public static void registerExternalProvider(net.camacraft.colorfullighting.api.dynamic.DynamicLightProvider provider) {
+        if (provider != null && !EXTERNAL.contains(provider)) EXTERNAL.add(provider);
+    }
+
+    public static boolean hasExternalProviders() {
+        return !EXTERNAL.isEmpty();
+    }
+
+    /** Whether external lights are applied to chunk meshes (true) or only to entities, block entities and particles (false). */
+    public static void setExternalMeshLighting(boolean meshes) {
+        externalMeshLighting = meshes;
+    }
+
+    public static boolean externalMeshLighting() {
+        return externalMeshLighting;
+    }
+
+    /** Whether the terrain shaders can draw dynamic lights now: Embeddium's pipeline with our shaders, no shader pack. */
+    public static boolean shaderDynamicLightsAvailable() {
+        return net.camacraft.colorfullighting.compat.dynamiclights.ShaderDynamicLights.available();
+    }
+
+    /** Collects every external provider's lights at a moment of the frame (1 = the tick's positions). */
+    static void collectExternal(ClientLevel level, float partialTick, java.util.function.Consumer<DynamicSource> out) {
+        if (EXTERNAL.isEmpty()) return;
+        net.camacraft.colorfullighting.api.dynamic.DynamicLightSink sink = new net.camacraft.colorfullighting.api.dynamic.DynamicLightSink() {
+            @Override
+            public void point(long ownerKey, double x, double y, double z, float lvl, int rgb, int falloff, float range) {
+                if (lvl <= 0f) return;
+                out.accept(new DynamicSource(x, y, z, Math.min(15, Math.max(1, Math.round(lvl))), colorOf(rgb), Math.min(15f, lvl), falloff == 1 ? 1 : 0,
+                        Math.max(1f, range > 0 ? range : lvl), 0, 0, 0, 1f, 1f, true, ownerKey));
+            }
+
+            @Override
+            public void spot(long ownerKey, double x, double y, double z, double dirX, double dirY, double dirZ, float outerDegrees, float innerDegrees,
+                             float lvl, int rgb, float range) {
+                if (lvl <= 0f) return;
+                double len = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
+                if (len < 1.0e-6) return;
+                float outer = (float) Math.cos(Math.toRadians(Math.max(1f, outerDegrees) * 0.5));
+                float inner = (float) Math.cos(Math.toRadians(Math.max(0.5f, Math.min(innerDegrees, outerDegrees)) * 0.5));
+                out.accept(new DynamicSource(x, y, z, Math.min(15, Math.max(1, Math.round(lvl))), colorOf(rgb), Math.min(15f, lvl), 1,
+                        Math.max(1f, range > 0 ? range : 32f), dirX / len, dirY / len, dirZ / len, outer, Math.max(outer, inner), true, ownerKey));
+            }
+        };
+        for (net.camacraft.colorfullighting.api.dynamic.DynamicLightProvider provider : EXTERNAL) {
+            try {
+                provider.collect(level, partialTick, sink);
+            } catch (RuntimeException e) {
+                ColorfulLighting.LOGGER.warn("A dynamic light provider failed; its lights are skipped this tick", e);
+            }
+        }
+    }
+
+    private static ColorRGB4 colorOf(int rgb) {
+        if (rgb < 0) return Config.defaultColor;
+        return ColorRGB4.fromRGB8((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+    }
+
+    /** The external lights at a moment of the frame, for the shader path: positions, colours, shapes. */
+    public static List<float[]> externalLightsForFrame(ClientLevel level, float partialTick) {
+        List<float[]> out = new ArrayList<>();
+        collectExternal(level, partialTick, s -> out.add(new float[]{(float) s.x, (float) s.y, (float) s.z, s.level, s.color.red4 / 15f, s.color.green4 / 15f,
+                s.color.blue4 / 15f, s.range, (float) s.dx, (float) s.dy, (float) s.dz, s.outerCos, s.innerCos, s.falloff}));
+        return out;
+    }
 
     private record ColorSource(double x, double y, double z, ColorRGB4 color) {}
     private static final ColorSource[] NO_COLOR_SOURCES = new ColorSource[0];
@@ -216,7 +317,7 @@ public final class DynamicLightsCompat {
 
         recheckShipMirrorHues(engine, level);
 
-        if (sdlHook == null && !trackEntities && !trackBlockColors) return;
+        if (sdlHook == null && !trackEntities && !trackBlockColors && EXTERNAL.isEmpty()) return;
 
         entityNbtCache.clear();
 
@@ -239,6 +340,7 @@ public final class DynamicLightsCompat {
         } else if (colors != null) {
             collectBlockColors(level, colors);
         }
+        if (!EXTERNAL.isEmpty()) collectExternalSources(level, sources);
         entitySources = sources.isEmpty() ? NO_SOURCES : sources.toArray(NO_SOURCES);
         blockColorSources = (colors == null || colors.isEmpty()) ? NO_COLOR_SOURCES : colors.toArray(NO_COLOR_SOURCES);
     }
@@ -325,6 +427,85 @@ public final class DynamicLightsCompat {
         }
     }
 
+    /**
+     * The external providers' lights this tick (2.8.0): each at its world position and, near a Valkyrien Skies ship, mirrored
+     * into that ship's shipyard so the ship's meshes take it (a lamp on a ship lighting the ship itself, a torch held beside
+     * one lighting its hull); a light that appeared, moved more than half a block, changed level or vanished remeshes the
+     * sections round it, unless the terrain shaders draw external lights (then meshes are left alone).
+     */
+    private void collectExternalSources(ClientLevel level, List<DynamicSource> sources) {
+        Map<Long, DynamicSource> anchors = new HashMap<>();
+        Set<Long> sectionsToRebuild = null;
+        boolean meshes = externalMeshLighting;
+        LevelAttachments attachments = (LevelAttachments) level;
+        boolean mirrors = VsCompat.hasShipMirrors(attachments);
+        List<DynamicSource> collected = new ArrayList<>();
+        collectExternal(level, 1.0f, collected::add);
+        for (DynamicSource source : collected) {
+            sources.add(source);
+            if (mirrors) {
+                double[] world = VsCompat.shipyardToWorld(attachments, source.x, source.y, source.z);
+                if (world == null) {
+                    VsCompat.forEachShipyardMirror(attachments, source.x, source.y, source.z, Math.max(EXTERNAL_SHIP_MIRROR_RANGE, source.range), (mx, my, mz) ->
+                            sources.add(new DynamicSource(mx, my, mz, source.luminance, source.color, source.level, source.falloff, source.range,
+                                    source.dx, source.dy, source.dz, source.outerCos, source.innerCos, true, source.key)));
+                }
+            }
+            if (!meshes) continue;
+            long key = source.key;
+            DynamicSource anchor = externalAnchors.remove(key);
+            DynamicSource kept = source;
+            if (anchor == null) {
+                sectionsToRebuild = addSectionsAround(sectionsToRebuild, source);
+            } else if (anchor.luminance != source.luminance || !anchor.color.equals(source.color) || movedFar(anchor, source)) {
+                sectionsToRebuild = addSectionsAround(sectionsToRebuild, anchor);
+                sectionsToRebuild = addSectionsAround(sectionsToRebuild, source);
+            } else {
+                kept = anchor;
+            }
+            anchors.put(key, kept);
+        }
+        if (meshes) {
+            for (DynamicSource gone : externalAnchors.values()) sectionsToRebuild = addSectionsAround(sectionsToRebuild, gone);
+        } else if (!externalAnchors.isEmpty()) {
+            // the shaders took over: the meshes that still carry baked lights are rebuilt once without them
+            for (DynamicSource gone : externalAnchors.values()) sectionsToRebuild = addSectionsAround(sectionsToRebuild, gone);
+        }
+        externalAnchors = anchors;
+        scheduleRebuildsBudgeted(level, sectionsToRebuild);
+    }
+
+    /**
+     * Remeshes under the per-tick budget, nearest the camera first; what doesn't fit waits for the next ticks. Without the
+     * budget 32 lamps on spinning ships asked for a thousand sections a tick and the client stalled (2026-11-09).
+     */
+    private void scheduleRebuildsBudgeted(ClientLevel level, @Nullable Set<Long> sections) {
+        Set<Long> all = externalPending;
+        if (sections != null) all.addAll(sections);
+        if (all.isEmpty()) return;
+        int budget = externalRebuildBudget;
+        if (all.size() <= budget) {
+            externalPending = new HashSet<>();
+            scheduleRebuilds(level, all);
+            return;
+        }
+        net.minecraft.world.phys.Vec3 cam = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
+        List<Long> sorted = new ArrayList<>(all);
+        sorted.sort((a, b) -> Double.compare(sectionDistance(a, cam), sectionDistance(b, cam)));
+        Set<Long> now = new HashSet<>(sorted.subList(0, budget));
+        Set<Long> later = new HashSet<>(sorted.subList(budget, sorted.size()));
+        // what waits too long is dropped: the light has moved on and its sections will be asked for again if it matters
+        if (later.size() > budget * 40) later = new HashSet<>(sorted.subList(budget, budget * 41));
+        externalPending = later;
+        scheduleRebuilds(level, now);
+    }
+
+    private static double sectionDistance(long key, net.minecraft.world.phys.Vec3 cam) {
+        SectionPos p = SectionPos.of(key);
+        double dx = p.minBlockX() + 8 - cam.x, dy = p.minBlockY() + 8 - cam.y, dz = p.minBlockZ() + 8 - cam.z;
+        return dx * dx + dy * dy + dz * dz;
+    }
+
     private static boolean movedFar(DynamicSource anchor, DynamicSource now) {
         double dx = now.x - anchor.x, dy = now.y - anchor.y, dz = now.z - anchor.z;
         return dx * dx + dy * dy + dz * dz > REBUILD_MOVE_THRESHOLD_SQUARED;
@@ -332,12 +513,13 @@ public final class DynamicLightsCompat {
 
     private static Set<Long> addSectionsAround(Set<Long> sections, DynamicSource source) {
         if (sections == null) sections = new HashSet<>();
-        int minX = SectionPos.blockToSectionCoord((int) Math.floor(source.x - REBUILD_RANGE));
-        int maxX = SectionPos.blockToSectionCoord((int) Math.floor(source.x + REBUILD_RANGE));
-        int minY = SectionPos.blockToSectionCoord((int) Math.floor(source.y - REBUILD_RANGE));
-        int maxY = SectionPos.blockToSectionCoord((int) Math.floor(source.y + REBUILD_RANGE));
-        int minZ = SectionPos.blockToSectionCoord((int) Math.floor(source.z - REBUILD_RANGE));
-        int maxZ = SectionPos.blockToSectionCoord((int) Math.floor(source.z + REBUILD_RANGE));
+        int reach = source.external ? (int) Math.ceil(Math.min(source.isSpot() ? source.range : Math.min(source.range, source.level), 48f)) : REBUILD_RANGE;
+        int minX = SectionPos.blockToSectionCoord((int) Math.floor(source.x - reach));
+        int maxX = SectionPos.blockToSectionCoord((int) Math.floor(source.x + reach));
+        int minY = SectionPos.blockToSectionCoord((int) Math.floor(source.y - reach));
+        int maxY = SectionPos.blockToSectionCoord((int) Math.floor(source.y + reach));
+        int minZ = SectionPos.blockToSectionCoord((int) Math.floor(source.z - reach));
+        int maxZ = SectionPos.blockToSectionCoord((int) Math.floor(source.z + reach));
         for (int x = minX; x <= maxX; x++)
             for (int y = minY; y <= maxY; y++)
                 for (int z = minZ; z <= maxZ; z++)
@@ -357,12 +539,20 @@ public final class DynamicLightsCompat {
         int minSectionY = level.getMinSectionY();
         int maxSectionY = level.getMaxSectionY();
 
+        var flywheel = ((LevelAttachments) clientLevel).colorfullighting$getFlywheelCompat();
         for (long key : sections) {
             SectionPos pos = SectionPos.of(key);
             if (pos.y() < minSectionY || pos.y() > maxSectionY) continue;
             level.setSectionDirty(pos.x(), pos.y(), pos.z());
             if (sodiumFastPath && renderer instanceof SodiumWorldRendererAccessor sodiumRenderer) {
                 sodiumRenderer.scheduleRebuild(pos.x(), pos.y(), pos.z(), false);
+            }
+            // Flywheel's coloured light buffer for the section is collected again too (block entities and contraptions there)
+            if (flywheel != null) {
+                try {
+                    flywheel.onLightUpdate(pos.x(), pos.y(), pos.z(), key, clientLevel);
+                } catch (RuntimeException ignored) {
+                }
             }
         }
     }
@@ -388,15 +578,37 @@ public final class DynamicLightsCompat {
 
         double x = blockX + 0.5, y = blockY + 0.5, z = blockZ + 0.5;
         int r = (base >>> 8) & 0x0F, g = (base >>> 4) & 0x0F, b = base & 0x0F;
+        // external lights reach meshes only while they are baked (the shader path draws them otherwise); the render
+        // thread's samples (entities, block entities, particles) always take them
+        boolean meshesTakeExternal = externalMeshLighting || com.mojang.blaze3d.systems.RenderSystem.isOnRenderThread();
         for (DynamicSource source : sources) {
             double dx = x - source.x, dy = y - source.y, dz = z - source.z;
             double distanceSquared = dx * dx + dy * dy + dz * dz;
-            if (distanceSquared > MAX_RADIUS_SQUARED) continue;
-
-            double level = (1.0 - Math.sqrt(distanceSquared) / MAX_RADIUS) * source.luminance;
+            double level;
+            if (source.external) {
+                if (!meshesTakeExternal) continue;
+                if (distanceSquared > (double) source.range * source.range) continue;
+                if (source.isSpot()) {
+                    double d = Math.sqrt(distanceSquared);
+                    if (d < 1.0e-6) level = source.level;
+                    else {
+                        double cos = (dx * source.dx + dy * source.dy + dz * source.dz) / d;
+                        if (cos <= source.outerCos) continue;
+                        double cone = source.innerCos <= source.outerCos ? 1.0 : Math.min(1.0, (cos - source.outerCos) / (source.innerCos - source.outerCos));
+                        level = source.level * (1.0 - d / source.range) * cone;
+                    }
+                } else if (source.falloff == 1) {
+                    level = source.level - Math.sqrt(distanceSquared);
+                } else {
+                    level = source.level - (Math.abs(dx) + Math.abs(dy) + Math.abs(dz));
+                }
+            } else {
+                if (distanceSquared > MAX_RADIUS_SQUARED) continue;
+                level = (1.0 - Math.sqrt(distanceSquared) / MAX_RADIUS) * source.luminance;
+            }
             if (level <= 0.0) continue;
 
-            float scale = (float) (level / 15.0);
+            float scale = (float) (Math.min(15.0, level) / 15.0);
             r = Math.max(r, Math.round(source.color.red4 * scale));
             g = Math.max(g, Math.round(source.color.green4 * scale));
             b = Math.max(b, Math.round(source.color.blue4 * scale));

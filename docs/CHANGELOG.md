@@ -6,6 +6,20 @@ Planned
 - keep Valkyrien Skies compatibility on every version where VS exists
 - add Sable / Create Aeronautics compatibility alongside Valkyrien Skies where possible
 
+2026-11-09 (2.8.0)
+- Dynamic light provider API (`api.dynamic.DynamicLightProvider`, `DynamicLightSink`; `DynamicLightsCompat.registerExternalProvider`):
+  another mod hands over its dynamic lights every tick (and every frame for the shader path) as point lights or spot cones with a
+  level, colour, reach and falloff (vanilla's diamond or round). They are mixed into every light sample (entities, block entities,
+  particles, chunk meshes with rebuilds round a light that moved), mirrored into the shipyards of Valkyrien Skies ships nearby so
+  ship meshes take them, and Flywheel's coloured light buffer is recollected for the sections they touch. Lively Lighting 0.5.0's
+  client module is the first provider.
+- The shader path for those lights: `cl_dynamicLight` in the Embeddium terrain vertex shaders (`light.glsl`, through eye space
+  and the inverse view rotation so a ship's vertices find their world place) and per fragment in Flywheel's `common.frag`, fed by
+  three vec4 arrays uploaded per pass (`ShaderDynamicLights`; at most 64 lights, nearest the camera). When a provider asks for it
+  (`setExternalMeshLighting(false)`) meshes stop baking the lights and the shaders draw them: a moving light rebuilds nothing. Off
+  under an Oculus shader pack (the pack's programs replace the terrain shaders): the lights then go through the packed light the
+  pack decodes, as before. The `CL_DYNAMIC_LIGHTS` define is compiled in once a provider is registered.
+
 2026-11-08 (2.7.6)
 - Fixed double chests drawn by Vanillin (Flywheel's visuals for vanilla's block entities) about a third darker than vanilla's renderer draws them, by day and under a torch alike (reported with Flywheel's indirect backend, the same under instancing; right with the backend off). A single chest was never affected.
   - Cause: Vanillin's chest visual combines a double chest's two lights the way vanilla's BrightnessCombiner does, through LightTexture.block, sky and pack, a round trip (rule 2 of CLPackedLight) that drops the sky nibble of a colored value: the chest's instance held f8809990 where the world said f88f9999, so it was lit by its block light alone. Vanilla's own combiner was already covered by BrightnessCombinerMixin.

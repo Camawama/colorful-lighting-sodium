@@ -45,6 +45,8 @@ public class GlProgramMixin {
         if (colorfullighting$vibrancyLocation >= 0) {
             GL20C.glUniform1f(colorfullighting$vibrancyLocation, FlywheelCompat.nightVibrancy());
         }
+        // the dynamic lights of this frame (2.8.0), to programs that carry colored_light.glsl
+        net.camacraft.colorfullighting.compat.dynamiclights.ShaderDynamicLights.uploadFlywheel(((GlProgram) (Object) this).handle());
     }
 
     @Inject(method = "bind", at = @At("TAIL"))

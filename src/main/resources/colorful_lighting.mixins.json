@@ -14,6 +14,7 @@
     "LevelMixin",
     "render.LiquidBlockRendererMixin",
     "render.LevelRendererMixin",
+    "render.LevelRendererFrameMixin",
     "render.AmbientOcclusionFaceMixin",
     "render.EntityRendererMixin",
     "render.BrightnessCombinerMixin",
