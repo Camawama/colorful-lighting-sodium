@@ -138,13 +138,18 @@ public final class DynamicLightsCompat {
      * {@code innerCos} where it is fully lit, and a direction. {@code level} may be fractional while a light fades.
      */
     private record DynamicSource(double x, double y, double z, int luminance, ColorRGB4 color, float level, int falloff, float range,
-                                 double dx, double dy, double dz, float outerCos, float innerCos, boolean external, long key) {
+                                 double dx, double dy, double dz, float outerCos, float innerCos, boolean external, long key, boolean propagatedFlag) {
         DynamicSource(double x, double y, double z, int luminance, ColorRGB4 color) {
-            this(x, y, z, luminance, color, luminance, 2, (float) MAX_RADIUS, 0, 0, 0, 1f, 1f, false, 0L);
+            this(x, y, z, luminance, color, luminance, 2, (float) MAX_RADIUS, 0, 0, 0, 1f, 1f, false, 0L, false);
         }
 
         boolean isSpot() {
             return outerCos < 1f;
+        }
+
+        /** The same light, marked as propagated by the engine (left out of the straight-line path). */
+        DynamicSource propagated() {
+            return new DynamicSource(x, y, z, luminance, color, level, falloff, range, dx, dy, dz, outerCos, innerCos, external, key, true);
         }
     }
     private static final DynamicSource[] NO_SOURCES = new DynamicSource[0];
@@ -163,6 +168,45 @@ public final class DynamicLightsCompat {
     private static volatile int externalRebuildBudget = 48;
     /** Sections that waited: remeshed on later ticks under the budget. Client thread only. */
     private Set<Long> externalPending = new HashSet<>();
+    /**
+     * Whether external point lights are propagated by the engine as virtual emitters while meshes bake them (2.8.1): a light's
+     * cell counts as a lamp of its colour, its light spreads through air and stops at walls like a block's, and is baked into
+     * meshes, sampled for entities and read by shader packs as any block light. Spot lights stay on the straight-line path.
+     */
+    private static volatile boolean externalPropagation = true;
+    /** The virtual emitters in force: cell -> colour at level, read by the engine's emission lookups on any thread. */
+    private volatile Map<Long, ColorRGB4> virtualEmitters = Collections.emptyMap();
+
+    public static void setExternalPropagation(boolean value) {
+        externalPropagation = value;
+    }
+
+    public static boolean externalPropagation() {
+        return externalPropagation;
+    }
+
+    /** The virtual emitter at a cell of this level, or null: the engine's emission lookups ask. */
+    @Nullable
+    public ColorRGB4 virtualEmitterAt(BlockPos pos) {
+        Map<Long, ColorRGB4> m = virtualEmitters;
+        return m.isEmpty() ? null : m.get(pos.asLong());
+    }
+
+    /** The virtual emitters of a level in a chunk, for the engine's source discovery. */
+    public void forEachVirtualEmitterIn(net.minecraft.world.level.ChunkPos chunk, java.util.function.Consumer<BlockPos> out) {
+        Map<Long, ColorRGB4> m = virtualEmitters;
+        if (m.isEmpty()) return;
+        for (long key : m.keySet()) {
+            BlockPos p = BlockPos.of(key);
+            if ((p.getX() >> 4) == chunk.x && (p.getZ() >> 4) == chunk.z) out.accept(p);
+        }
+    }
+
+    @Nullable
+    public static DynamicLightsCompat of(LevelAccessor level) {
+        net.minecraft.world.level.Level mc = level.getLevel();
+        return mc instanceof LevelAttachments a ? a.colorfullighting$getDynamicLights() : null;
+    }
 
     /** The remesh budget per tick for external lights (Lively Lighting's client.lightmap_rebuilds_per_tick). */
     public static void setExternalRebuildBudget(int sectionsPerTick) {
@@ -200,7 +244,7 @@ public final class DynamicLightsCompat {
             public void point(long ownerKey, double x, double y, double z, float lvl, int rgb, int falloff, float range) {
                 if (lvl <= 0f) return;
                 out.accept(new DynamicSource(x, y, z, Math.min(15, Math.max(1, Math.round(lvl))), colorOf(rgb), Math.min(15f, lvl), falloff == 1 ? 1 : 0,
-                        Math.max(1f, range > 0 ? range : lvl), 0, 0, 0, 1f, 1f, true, ownerKey));
+                        Math.max(1f, range > 0 ? range : lvl), 0, 0, 0, 1f, 1f, true, ownerKey, false));
             }
 
             @Override
@@ -212,7 +256,7 @@ public final class DynamicLightsCompat {
                 float outer = (float) Math.cos(Math.toRadians(Math.max(1f, outerDegrees) * 0.5));
                 float inner = (float) Math.cos(Math.toRadians(Math.max(0.5f, Math.min(innerDegrees, outerDegrees)) * 0.5));
                 out.accept(new DynamicSource(x, y, z, Math.min(15, Math.max(1, Math.round(lvl))), colorOf(rgb), Math.min(15f, lvl), 1,
-                        Math.max(1f, range > 0 ? range : 32f), dirX / len, dirY / len, dirZ / len, outer, Math.max(outer, inner), true, ownerKey));
+                        Math.max(1f, range > 0 ? range : 32f), dirX / len, dirY / len, dirZ / len, outer, Math.max(outer, inner), true, ownerKey, false));
             }
         };
         for (net.camacraft.colorfullighting.api.dynamic.DynamicLightProvider provider : EXTERNAL) {
@@ -317,6 +361,7 @@ public final class DynamicLightsCompat {
 
         recheckShipMirrorHues(engine, level);
 
+        if (ShaderDynamicLights.transmission()) VoxelOcclusion.tick(level);
         if (sdlHook == null && !trackEntities && !trackBlockColors && EXTERNAL.isEmpty()) return;
 
         entityNbtCache.clear();
@@ -441,17 +486,45 @@ public final class DynamicLightsCompat {
         boolean mirrors = VsCompat.hasShipMirrors(attachments);
         List<DynamicSource> collected = new ArrayList<>();
         collectExternal(level, 1.0f, collected::add);
-        for (DynamicSource source : collected) {
+        // virtual emitters: while meshes bake, point lights become lamps the engine propagates (occluded, coloured); the
+        // cells that changed since last tick are told to the engine as block light changes
+        boolean propagate = meshes && externalPropagation;
+        Map<Long, ColorRGB4> emitters = propagate ? new HashMap<>() : Collections.<Long, ColorRGB4>emptyMap();
+        if (propagate) {
+            for (DynamicSource source : collected) {
+                if (source.isSpot() || source.level < 1f) continue;
+                float scale = Math.min(15f, source.level) / 15f;
+                ColorRGB4 at = ColorRGB4.fromRGB4(Math.round(source.color.red4 * scale), Math.round(source.color.green4 * scale), Math.round(source.color.blue4 * scale));
+                emitters.merge(BlockPos.asLong((int) Math.floor(source.x), (int) Math.floor(source.y), (int) Math.floor(source.z)), at, ColorRGB4::max);
+            }
+        }
+        Map<Long, ColorRGB4> before = virtualEmitters;
+        if (!before.isEmpty() || !emitters.isEmpty()) {
+            virtualEmitters = emitters;
+            ColoredLightEngine engine = ((LevelAttachments) level).colorfullighting$getEngine();
+            if (engine != null) {
+                for (Map.Entry<Long, ColorRGB4> e : before.entrySet()) {
+                    ColorRGB4 now = emitters.get(e.getKey());
+                    if (now == null || !now.equals(e.getValue())) engine.onBlockLightPropertiesChanged(BlockPos.of(e.getKey()));
+                }
+                for (Map.Entry<Long, ColorRGB4> e : emitters.entrySet()) {
+                    if (!e.getValue().equals(before.get(e.getKey()))) engine.onBlockLightPropertiesChanged(BlockPos.of(e.getKey()));
+                }
+            }
+        }
+        for (DynamicSource collectedSource : collected) {
+            // a propagated point light is in the storage: the straight-line path must not add it again (through walls)
+            final DynamicSource source = propagate && !collectedSource.isSpot() && collectedSource.level >= 1f ? collectedSource.propagated() : collectedSource;
             sources.add(source);
             if (mirrors) {
                 double[] world = VsCompat.shipyardToWorld(attachments, source.x, source.y, source.z);
                 if (world == null) {
                     VsCompat.forEachShipyardMirror(attachments, source.x, source.y, source.z, Math.max(EXTERNAL_SHIP_MIRROR_RANGE, source.range), (mx, my, mz) ->
                             sources.add(new DynamicSource(mx, my, mz, source.luminance, source.color, source.level, source.falloff, source.range,
-                                    source.dx, source.dy, source.dz, source.outerCos, source.innerCos, true, source.key)));
+                                    source.dx, source.dy, source.dz, source.outerCos, source.innerCos, true, source.key, source.propagatedFlag)));
                 }
             }
-            if (!meshes) continue;
+            if (!meshes || source.propagatedFlag) continue; // the engine remeshes what a propagated light changes
             long key = source.key;
             DynamicSource anchor = externalAnchors.remove(key);
             DynamicSource kept = source;
@@ -580,13 +653,17 @@ public final class DynamicLightsCompat {
         int r = (base >>> 8) & 0x0F, g = (base >>> 4) & 0x0F, b = base & 0x0F;
         // external lights reach meshes only while they are baked (the shader path draws them otherwise); the render
         // thread's samples (entities, block entities, particles) always take them
-        boolean meshesTakeExternal = externalMeshLighting || com.mojang.blaze3d.systems.RenderSystem.isOnRenderThread();
+        boolean onRenderThread = com.mojang.blaze3d.systems.RenderSystem.isOnRenderThread();
+        boolean meshesTakeExternal = externalMeshLighting || onRenderThread;
+        // render-thread samples (entities, block entities, particles) pass through the same volume the shaders march
+        boolean transmit = onRenderThread && ShaderDynamicLights.transmission();
+        double[] through = transmit ? new double[3] : null;
         for (DynamicSource source : sources) {
             double dx = x - source.x, dy = y - source.y, dz = z - source.z;
             double distanceSquared = dx * dx + dy * dy + dz * dz;
             double level;
             if (source.external) {
-                if (!meshesTakeExternal) continue;
+                if (!meshesTakeExternal || source.propagatedFlag) continue;
                 if (distanceSquared > (double) source.range * source.range) continue;
                 if (source.isSpot()) {
                     double d = Math.sqrt(distanceSquared);
@@ -607,8 +684,15 @@ public final class DynamicLightsCompat {
                 level = (1.0 - Math.sqrt(distanceSquared) / MAX_RADIUS) * source.luminance;
             }
             if (level <= 0.0) continue;
-
             float scale = (float) (Math.min(15.0, level) / 15.0);
+            if (transmit && source.external) {
+                VoxelOcclusion.transmit(x, y, z, source.x, source.y, source.z, through);
+                if (through[0] + through[1] + through[2] <= 0.0) continue;
+                r = Math.max(r, Math.round(source.color.red4 * scale * (float) through[0]));
+                g = Math.max(g, Math.round(source.color.green4 * scale * (float) through[1]));
+                b = Math.max(b, Math.round(source.color.blue4 * scale * (float) through[2]));
+                continue;
+            }
             r = Math.max(r, Math.round(source.color.red4 * scale));
             g = Math.max(g, Math.round(source.color.green4 * scale));
             b = Math.max(b, Math.round(source.color.blue4 * scale));

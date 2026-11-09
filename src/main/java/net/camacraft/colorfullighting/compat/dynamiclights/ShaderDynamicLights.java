@@ -29,15 +29,27 @@ public final class ShaderDynamicLights {
     private static volatile int maxLights = 16;
     private static volatile float maxDistance = 64f;
 
-    /** Uniform locations of one program: count, pos[], color[], dir[], invView; -1 where missing. */
-    private record Locations(int count, int pos, int color, int dir, int invView) {
+    private static volatile boolean transmission;
+
+    /** Light through blocks for the lights (the provider's client.transmission): walls stop it, stained glass tints it. */
+    public static void setTransmission(boolean value) {
+        transmission = value;
+        VoxelOcclusion.setEnabled(value);
+    }
+
+    public static boolean transmission() {
+        return transmission;
+    }
+
+    /** Uniform locations of one program: count, pos[], color[], dir[], invView, transmission, occ, occOrigin; -1 where missing. */
+    private record Locations(int count, int pos, int color, int dir, int invView, int shadow, int occ, int occOrigin) {
         boolean usable() {
             return count >= 0 && pos >= 0 && color >= 0 && dir >= 0;
         }
     }
 
     private static final Map<Integer, Locations> LOCATIONS = new ConcurrentHashMap<>();
-    private static final Locations NONE = new Locations(-1, -1, -1, -1, -1);
+    private static final Locations NONE = new Locations(-1, -1, -1, -1, -1, -1, -1, -1);
 
     // the frame's light arrays, built once per frame (keyed by the frame's partial tick and level) and uploaded per pass
     private static float[] pos = new float[MAX_LIGHTS * 4], color = new float[MAX_LIGHTS * 4], dir = new float[MAX_LIGHTS * 4];
@@ -165,7 +177,8 @@ public final class ShaderDynamicLights {
         if (loc == null) {
             loc = new Locations(GL20C.glGetUniformLocation(programHandle, "cl_dynCount"), GL20C.glGetUniformLocation(programHandle, "cl_dynPos"),
                     GL20C.glGetUniformLocation(programHandle, "cl_dynColor"), GL20C.glGetUniformLocation(programHandle, "cl_dynDir"),
-                    GL20C.glGetUniformLocation(programHandle, "cl_dynInvView"));
+                    GL20C.glGetUniformLocation(programHandle, "cl_dynInvView"), GL20C.glGetUniformLocation(programHandle, "cl_dynTransmission"),
+                    GL20C.glGetUniformLocation(programHandle, "cl_dynOcc"), GL20C.glGetUniformLocation(programHandle, "cl_dynOccOrigin"));
             if (!loc.usable()) loc = NONE;
             LOCATIONS.put(programHandle, loc);
         }
@@ -189,6 +202,18 @@ public final class ShaderDynamicLights {
             INV_VIEW_BUF.clear();
             INV_VIEW_BUF.put(invView).flip();
             GL20C.glUniformMatrix3fv(loc.invView, false, INV_VIEW_BUF);
+        }
+        // transmission: the volume bound on its unit, the sampler and origin set; off when no volume is ready
+        if (loc.shadow >= 0) {
+            boolean on = transmission && VoxelOcclusion.bind();
+            GL20C.glUniform1i(loc.shadow, on ? 1 : 0);
+            if (on) {
+                if (loc.occ >= 0) GL20C.glUniform1i(loc.occ, VoxelOcclusion.TEXTURE_UNIT);
+                if (loc.occOrigin >= 0) {
+                    float[] o = VoxelOcclusion.originRelative(Minecraft.getInstance().gameRenderer.getMainCamera().getPosition());
+                    GL20C.glUniform3f(loc.occOrigin, o[0], o[1], o[2]);
+                }
+            }
         }
     }
 

@@ -6,6 +6,19 @@ Planned
 - keep Valkyrien Skies compatibility on every version where VS exists
 - add Sable / Create Aeronautics compatibility alongside Valkyrien Skies where possible
 
+2026-11-09 (2.8.1)
+- Transmission for the shader path's dynamic lights (`VoxelOcclusion`, `cl_dynTransmit`): a 64-block cube round the camera of what each block lets
+  through per channel (air 1, an opaque block 0, a filter block its filter colour), rebuilt on a worker every half second or when the camera
+  leaves its middle, uploaded as an RGBA 3D texture on unit 12; the terrain and Flywheel shaders march from the lit point toward each light through
+  it, one sample a block, multiplying the light by what they cross: a wall stops it, stained glass tints it (the first and last 0.6 blocks skipped:
+  the lit face, the lamp's own block). The same volume filters the render-thread samples (entities, block entities, particles) on the CPU. On
+  when a provider asks (`ShaderDynamicLights.setTransmission`; Lively Lighting's `client.transmission`).
+- External point lights propagated by the engine (`setExternalPropagation`, on by default): while meshes bake dynamic light, a point light's cell is a
+  virtual emitter of its colour at its level that the emission lookups and the chunk source discovery see, so its light spreads through air and stops
+  at walls like a block's, is baked into meshes, sampled for entities and read by shader packs as block light; cells that change tell the engine as
+  block light changes, and the straight-line path leaves those lights out. Spot lights stay on the straight-line path.
+- `DynamicLightsCompat.of(LevelAccessor)` for the engine's lookups.
+
 2026-11-09 (2.8.0)
 - Dynamic light provider API (`api.dynamic.DynamicLightProvider`, `DynamicLightSink`; `DynamicLightsCompat.registerExternalProvider`):
   another mod hands over its dynamic lights every tick (and every frame for the shader path) as point lights or spot cones with a

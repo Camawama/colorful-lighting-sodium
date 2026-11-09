@@ -118,6 +118,12 @@ public class Config {
 
     public static ColorRGB4 getColorEmission(@NotNull LevelAccessor level, BlockPos pos) { return getColorEmission(level, pos, level.getBlockState(pos)); }
     public static ColorRGB4 getColorEmission(@NotNull LevelAccessor level, BlockPos pos, @NotNull BlockStateAccessor blockState) {
+        // a dynamic light propagated by the engine (2.8.1): its cell is a lamp of its colour at its level
+        DynamicLightsCompat virtual = DynamicLightsCompat.of(level);
+        if (virtual != null) {
+            ColorRGB4 emitter = virtual.virtualEmitterAt(pos);
+            if (emitter != null) return emitter;
+        }
         float lightEmission = blockState.getLightEmission(level, pos)/15.0f;
         Block block = blockState.getBlock();
 
@@ -319,6 +325,11 @@ public class Config {
         return blockState == null ? defaultValue : getEmissionBrightness(level, pos, blockState);
     }
     public static int getEmissionBrightness(@NotNull LevelAccessor level, BlockPos pos, @NotNull BlockStateAccessor blockState) {
+        DynamicLightsCompat virtual = DynamicLightsCompat.of(level);
+        if (virtual != null) {
+            ColorRGB4 emitter = virtual.virtualEmitterAt(pos);
+            if (emitter != null) return Math.max(emitter.red4, Math.max(emitter.green4, emitter.blue4));
+        }
         VariantList<ColorEmitter> config = colorEmitters.get(blockState.getBlock());
         if(config != null) {
             ColorEmitter emitter = config.resolve(blockState, nbtFor(level, config, pos));

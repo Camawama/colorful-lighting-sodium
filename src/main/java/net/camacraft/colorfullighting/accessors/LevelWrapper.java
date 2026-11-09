@@ -94,6 +94,9 @@ public class LevelWrapper implements LevelAccessor, LevelAttachments {
 
     @Override
     public void findLightSources(ChunkPos chunkPos, Consumer<BlockPos> consumer) {
+        // dynamic lights the engine propagates as virtual emitters (2.8.1)
+        net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat dynamic = ((LevelAttachments) level).colorfullighting$getDynamicLights();
+        if (dynamic != null) dynamic.forEachVirtualEmitterIn(chunkPos, consumer);
         ChunkAccess chunk = level.getChunk(chunkPos.x, chunkPos.z);
         chunk.findBlocks(
                 (blockState, blockPos) -> // individual block filter

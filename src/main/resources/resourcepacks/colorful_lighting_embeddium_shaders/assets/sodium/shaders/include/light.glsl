@@ -14,6 +14,34 @@ uniform vec4 cl_dynPos[CL_DYN_MAX];
 uniform vec4 cl_dynColor[CL_DYN_MAX];
 uniform vec4 cl_dynDir[CL_DYN_MAX];
 
+// Transmission (2.8.1): cl_dynTransmission 1 samples cl_dynOcc, a 64-block cube round the camera (origin cl_dynOccOrigin,
+// camera-relative) holding what each block lets through, per channel: air 1, an opaque block 0, stained glass its filter
+// colour. The march from the point lit toward the light multiplies the light by every block it crosses (one sample a block),
+// so a wall stops the light and glass tints it, as Colorful Lighting's engine does for block light. The first and last 0.6
+// blocks are skipped (the lit block's own face, the lamp's own block).
+uniform int cl_dynTransmission;
+uniform sampler3D cl_dynOcc;
+uniform vec3 cl_dynOccOrigin;
+
+vec3 cl_dynTransmit(vec3 from, vec3 to) {
+    vec3 seg = to - from;
+    float len = length(seg);
+    if (len < 1.5) return vec3(1.0);
+    vec3 dir = seg / len;
+    float start = 0.6, end = len - 0.6;
+    int steps = int(clamp(ceil(end - start), 1.0, 32.0));
+    vec3 through = vec3(1.0);
+    for (int s = 0; s < steps; s++) {
+        float t = start + (end - start) * (float(s) + 0.5) / float(steps);
+        vec3 w = from + dir * t;
+        vec3 tc = (w - cl_dynOccOrigin) / 64.0;
+        if (any(lessThan(tc, vec3(0.0))) || any(greaterThan(tc, vec3(1.0)))) continue;
+        through *= texture(cl_dynOcc, tc).rgb;
+        if (max(max(through.r, through.g), through.b) <= 0.01) return vec3(0.0);
+    }
+    return through;
+}
+
 vec3 cl_dynamicLight(vec3 wrel) {
     vec3 acc = vec3(0.0);
     for (int i = 0; i < cl_dynCount; i++) {
@@ -40,7 +68,12 @@ vec3 cl_dynamicLight(vec3 wrel) {
             l = level - (abs(d.x) + abs(d.y) + abs(d.z));
         }
         if (l <= 0.0) continue;
-        acc = max(acc, c.rgb * (min(l, 15.0) / 15.0));
+        vec3 lit = c.rgb * (min(l, 15.0) / 15.0);
+        if (cl_dynTransmission > 0) {
+            lit *= cl_dynTransmit(wrel, p.xyz);
+            if (max(max(lit.r, lit.g), lit.b) <= 0.0) continue;
+        }
+        acc = max(acc, lit);
     }
     return acc;
 }
