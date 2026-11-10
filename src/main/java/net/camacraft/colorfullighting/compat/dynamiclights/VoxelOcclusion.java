@@ -19,7 +19,8 @@ import java.util.concurrent.CompletableFuture;
 /**
  * What each block round the camera lets through (2.8.1, reworked 2.9.0): a {@link #SIZE}-block cube in world space, its
  * origin on a 16-block grid 48 blocks before the camera, holding per block and per channel the share of light that passes
- * (air 255, an opaque full cube 0, a Colorful Lighting filter block its filter colour; three bytes a block and a spare). It is
+ * (air 255, an opaque full cube 0, a Colorful Lighting filter block its filter colour; three bytes a block, and a fourth for
+ * the share of the cell a moving structure's filter block takes up: {@link BlockWriter#cover}, 2.10.5). It is
  * the ground the {@link DynamicLightField} propagates the dynamic lights over, as the block engine propagates lamps over the
  * world's blocks, so a wall stops a held torch and stained glass tints it. The blocks of moving structures that are not in
  * the world's cells (Valkyrien Skies ships live in the shipyard) are added by an external {@link BlockFiller}, registered by
@@ -30,8 +31,15 @@ import java.util.concurrent.CompletableFuture;
 public final class VoxelOcclusion {
     public static final int SIZE = 96;
     private static final int REBUILD_TICKS = 10;
-    /** Four bytes a block: what it lets through, per channel (red, green, blue), and a spare. */
+    /**
+     * Four bytes a block: what it lets through, per channel (red, green, blue), and how much of the cell is taken up where a
+     * structure's block covers only a part of it (1 to 252 of 255; 0: the whole cell is what the three bytes say).
+     */
     private static final int BYTES = SIZE * SIZE * SIZE * 4;
+    /** Switch: {@code -Dcolorfullighting.partialCells=false} writes a covered cell whole from half a cell on, as 2.10.4. */
+    private static final boolean PARTIAL_CELLS = !"false".equalsIgnoreCase(System.getProperty("colorfullighting.partialCells", "true"));
+    /** Shares that add up to this much of 255 are the whole cell. */
+    private static final int WHOLE = 253;
     private static final int GRID = 16, BEFORE = 3;
 
     /**
@@ -50,6 +58,21 @@ public final class VoxelOcclusion {
     /** Where a {@link BlockFiller} puts a block: its world cell, its state and the position its state is read at (for filters' NBT). */
     public interface BlockWriter {
         void set(int worldX, int worldY, int worldZ, BlockState state, BlockPos statePos);
+
+        /**
+         * A block that takes up only a share of a world cell (0 to 1 of its volume): a ship's stained glass standing a part
+         * of a block off the grid. The cell lets through what the share leaves (all of the light past the block, the filter's
+         * colour through it), the shares of several blocks in one cell add up, and the propagation takes the cells one block
+         * crosses along a light's way as one block. So the colour behind a moving structure's glass moves with it instead of
+         * a block at a time. Meant for blocks that tint light; a block that stops it goes to {@link #set}.
+         *
+         * @return whether the state takes any light away; false for a clear one, which needs no further cells
+         * @since 2.10.5
+         */
+        default boolean cover(int worldX, int worldY, int worldZ, BlockState state, BlockPos statePos, float share) {
+            if (share >= 0.5f) set(worldX, worldY, worldZ, state, statePos);
+            return true;
+        }
     }
 
     private static volatile boolean enabled;
@@ -250,16 +273,57 @@ public final class VoxelOcclusion {
         }
         if (filler != null) {
             try {
-                filler.fill(level, ox, oy, oz, SIZE, (wx, wy, wz, state, statePos) -> {
-                    int x = wx - ox, y = wy - oy, z = wz - oz;
-                    if (x < 0 || y < 0 || z < 0 || x >= SIZE || y >= SIZE || z >= SIZE || state.isAir()) return;
-                    int i = ((z * SIZE + y) * SIZE + x) * 4;
-                    int r = data[i] & 0xFF, g = data[i + 1] & 0xFF, b = data[i + 2] & 0xFF;
-                    write(data, i, level, accessor, statePos, state);
-                    // a structure's block only takes away: the world's own cell keeps what is darker
-                    data[i] = (byte) Math.min(r, data[i] & 0xFF);
-                    data[i + 1] = (byte) Math.min(g, data[i + 1] & 0xFF);
-                    data[i + 2] = (byte) Math.min(b, data[i + 2] & 0xFF);
+                filler.fill(level, ox, oy, oz, SIZE, new BlockWriter() {
+                    private final byte[] one = new byte[4];
+
+                    @Override
+                    public void set(int wx, int wy, int wz, BlockState state, BlockPos statePos) {
+                        int x = wx - ox, y = wy - oy, z = wz - oz;
+                        if (x < 0 || y < 0 || z < 0 || x >= SIZE || y >= SIZE || z >= SIZE || state.isAir()) return;
+                        int i = ((z * SIZE + y) * SIZE + x) * 4;
+                        int r = data[i] & 0xFF, g = data[i + 1] & 0xFF, b = data[i + 2] & 0xFF;
+                        write(data, i, level, accessor, statePos, state);
+                        // a structure's block only takes away: the world's own cell keeps what is darker
+                        data[i] = (byte) Math.min(r, data[i] & 0xFF);
+                        data[i + 1] = (byte) Math.min(g, data[i + 1] & 0xFF);
+                        data[i + 2] = (byte) Math.min(b, data[i + 2] & 0xFF);
+                        data[i + 3] = 0;
+                    }
+
+                    @Override
+                    public boolean cover(int wx, int wy, int wz, BlockState state, BlockPos statePos, float share) {
+                        if (state.isAir()) return false;
+                        if (!PARTIAL_CELLS) {
+                            if (share >= 0.5f) set(wx, wy, wz, state, statePos);
+                            return true;
+                        }
+                        write(one, 0, level, accessor, statePos, state);
+                        int tr = one[0] & 0xFF, tg = one[1] & 0xFF, tb = one[2] & 0xFF;
+                        if (tr == 255 && tg == 255 && tb == 255) return false;
+                        int x = wx - ox, y = wy - oy, z = wz - oz;
+                        if (x < 0 || y < 0 || z < 0 || x >= SIZE || y >= SIZE || z >= SIZE) return true;
+                        int c = Math.round(Math.max(0f, Math.min(1f, share)) * 255f);
+                        if (c == 0) return true;
+                        if (c >= WHOLE) c = 255;
+                        int i = ((z * SIZE + y) * SIZE + x) * 4;
+                        int r = data[i] & 0xFF, g = data[i + 1] & 0xFF, b = data[i + 2] & 0xFF, had = data[i + 3] & 0xFF;
+                        // what the share takes of each channel
+                        int ar = ((255 - tr) * c + 127) / 255, ag = ((255 - tg) * c + 127) / 255, ab = ((255 - tb) * c + 127) / 255;
+                        if (had == 0 && (r != 255 || g != 255 || b != 255)) {
+                            // a whole block is in the cell (the world's, or a structure's): the darker of it and the share
+                            data[i] = (byte) Math.min(r, 255 - ar);
+                            data[i + 1] = (byte) Math.min(g, 255 - ag);
+                            data[i + 2] = (byte) Math.min(b, 255 - ab);
+                            return true;
+                        }
+                        // clear, or partly covered already: the shares add up
+                        data[i] = (byte) Math.max(0, r - ar);
+                        data[i + 1] = (byte) Math.max(0, g - ag);
+                        data[i + 2] = (byte) Math.max(0, b - ab);
+                        int sum = had + c;
+                        data[i + 3] = (byte) (sum >= WHOLE ? 0 : sum);
+                        return true;
+                    }
                 });
             } catch (RuntimeException e) {
                 net.camacraft.colorfullighting.ColorfulLighting.LOGGER.warn("The external block filler failed; the volume holds the world's blocks only this time", e);

@@ -161,6 +161,8 @@ public final class DynamicLightField {
 
     // the worker's scratch: a local grid per slab (the shortest path length, the transmittance along it, a visit stamp) and a binary heap
     private static float[] bestPath = new float[0], transR = new float[0], transG = new float[0], transB = new float[0];
+    /** Per cell: how much of a block the partly covered cells before it on the light's way add up to (0 after any other cell). */
+    private static float[] runCover = new float[0];
     private static int[] stamp = new int[0], done = new int[0];
     private static int generation;
     private static int[] heapIdx = new int[1024];
@@ -532,6 +534,7 @@ public final class DynamicLightField {
                         int i = ((vz * SIZE + vy) * SIZE + vx) * 4;
                         v = (blocks[i] & 0xFF) << 16 | (blocks[i + 1] & 0xFF) << 8 | (blocks[i + 2] & 0xFF);
                         if (v != 0 && v != 0xFFFFFF) filter = true;
+                        v |= (blocks[i + 3] & 0xFF) << 24; // how much of the cell a structure's block takes up
                     }
                     h = h * 31 + v;
                 }
@@ -554,6 +557,11 @@ public final class DynamicLightField {
      * tints of the cells the straight line to the light came through (the up to four cells one step back along the line's longest
      * axis, weighted by where the line crosses them), so the colour behind stained glass moves with the light inside its cell; the
      * path's own tint, which changes only when the light enters another cell, remains for cells no straight line reaches.
+     *
+     * <p>Since 2.10.5 a cell may be partly covered by a moving structure's filter block ({@link VoxelOcclusion.BlockWriter#cover}).
+     * One such cell lets through what its share leaves. Partly covered cells one after another on the light's way are one block
+     * crossed in parts (a wall of glass half a block off the grid lies in two layers of cells): their shares add up to at most
+     * one whole block ({@link #partial}), where the product of the cells would let a quarter of the stopped colours through.
      */
     private static void propagate(Light l, int half, byte[] blocks, int ox, int oy, int oz, byte[] out, boolean tinted) {
         int d = 2 * half + 1;
@@ -564,6 +572,7 @@ public final class DynamicLightField {
             transR = new float[cells];
             transG = new float[cells];
             transB = new float[cells];
+            runCover = new float[cells];
             stamp = new int[cells];
             done = new int[cells];
         }
@@ -585,7 +594,7 @@ public final class DynamicLightField {
         // the light's exact place among the slab's cells (a cell's centre is its index and a half)
         double px = l.x - bx, py = l.y - by, pz = l.z - bz;
         int si = (half * d + half) * d + half;
-        relax(si, 0f, 1f, 1f, 1f);
+        relax(si, 0f, 1f, 1f, 1f, 0f);
         while (heapSize > 0) {
             int li = pop();
             float path = bestPath[li];
@@ -596,17 +605,26 @@ public final class DynamicLightField {
             int vx = bx + lx - ox, vy = by + ly - oy, vz = bz + lz - oz;
             double wx = lx + 0.5 - px, wy = ly + 0.5 - py, wz = lz + 0.5 - pz;
             if (subCell && li != si && blendBack(lx, ly, lz, d, wx, wy, wz, blocks, vx, vy, vz)) {
-                float or = 1f, og = 1f, ob = 1f;
+                float or = 1f, og = 1f, ob = 1f, run = 0f;
                 if (vx >= 0 && vy >= 0 && vz >= 0 && vx < SIZE && vy < SIZE && vz < SIZE) {
                     int bi = ((vz * SIZE + vy) * SIZE + vx) * 4;
-                    or = (blocks[bi] & 0xFF) / 255f;
-                    og = (blocks[bi + 1] & 0xFF) / 255f;
-                    ob = (blocks[bi + 2] & 0xFF) / 255f;
+                    int share = blocks[bi + 3] & 0xFF;
+                    if (share == 0) {
+                        or = (blocks[bi] & 0xFF) / 255f;
+                        og = (blocks[bi + 1] & 0xFF) / 255f;
+                        ob = (blocks[bi + 2] & 0xFF) / 255f;
+                    } else {
+                        run = partial(blocks, bi, share, blend[3]);
+                        or = factor[0];
+                        og = factor[1];
+                        ob = factor[2];
+                    }
                 }
                 // what spreads on from here carries it too
                 transR[li] = or * blend[0];
                 transG[li] = og * blend[1];
                 transB[li] = ob * blend[2];
+                runCover[li] = run;
             }
             done[li] = generation;
             int oi = li * 4;
@@ -630,13 +648,14 @@ public final class DynamicLightField {
                 int nx = lx + NX[n], ny = ly + NY[n], nz = lz + NZ[n];
                 if (nx < 0 || ny < 0 || nz < 0 || nx >= d || ny >= d || nz >= d) continue;
                 int nvx = vx + NX[n], nvy = vy + NY[n], nvz = vz + NZ[n];
-                int tr8 = 255, tg8 = 255, tb8 = 255;
+                int tr8 = 255, tg8 = 255, tb8 = 255, share = 0, bi = -1;
                 if (nvx >= 0 && nvy >= 0 && nvz >= 0 && nvx < SIZE && nvy < SIZE && nvz < SIZE) {
-                    int bi = ((nvz * SIZE + nvy) * SIZE + nvx) * 4;
+                    bi = ((nvz * SIZE + nvy) * SIZE + nvx) * 4;
                     tr8 = blocks[bi] & 0xFF;
                     tg8 = blocks[bi + 1] & 0xFF;
                     tb8 = blocks[bi + 2] & 0xFF;
                     if (tr8 == 0 && tg8 == 0 && tb8 == 0) continue; // opaque
+                    share = blocks[bi + 3] & 0xFF;
                 }
                 // a diagonal step passes between its two or three face neighbours: both must be open, or light would cut a corner through a wall
                 if (n >= 6 && !diagonalOpen(blocks, vx, vy, vz, NX[n], NY[n], NZ[n])) continue;
@@ -646,12 +665,36 @@ public final class DynamicLightField {
                     if (len > 1.5 && (ndx * l.dx + ndy * l.dy + ndz * l.dz) / len < pruneCos) continue;
                 }
                 float step = n < 6 ? 1f : n < 18 ? SQRT2 : SQRT3;
-                relax((nz * d + ny) * d + nx, path + step, transR[li] * tr8 / 255f, transG[li] * tg8 / 255f, transB[li] * tb8 / 255f);
+                if (share == 0) {
+                    relax((nz * d + ny) * d + nx, path + step, transR[li] * tr8 / 255f, transG[li] * tg8 / 255f, transB[li] * tb8 / 255f, 0f);
+                } else {
+                    float run = partial(blocks, bi, share, runCover[li]);
+                    relax((nz * d + ny) * d + nx, path + step, transR[li] * factor[0], transG[li] * factor[1], transB[li] * factor[2], run);
+                }
             }
         }
     }
 
-    private static final float[] blend = new float[3];
+    /** {@link #blendBack}'s answer: the tint per channel, and how much of a block the partly covered cells before add up to. */
+    private static final float[] blend = new float[4];
+    private static final float[] factor = new float[3];
+
+    /**
+     * What a partly covered cell lets through, per channel in {@link #factor}, after {@code run} of a block was crossed in the
+     * partly covered cells just before it on the light's way; returns the run with this cell. The cell holds what its share
+     * leaves of each channel, so what a whole block of it takes is that over the share; the cells of a run take together what
+     * their shares add up to, at most one whole block.
+     */
+    private static float partial(byte[] blocks, int bi, int share, float run) {
+        float c = share / 255f;
+        float before = Math.min(1f, run), after = Math.min(1f, run + c);
+        for (int ch = 0; ch < 3; ch++) {
+            float whole = Math.min(1f, (255 - (blocks[bi + ch] & 0xFF)) / 255f / c);
+            float left = 1f - before * whole;
+            factor[ch] = left <= 1.0e-3f ? 1f : Math.max(0f, 1f - after * whole) / left;
+        }
+        return after;
+    }
 
     /**
      * The tint arriving at a cell along the straight line from the light: the cells one step back along the line's longest axis,
@@ -665,7 +708,7 @@ public final class DynamicLightField {
         // the longest axis has the share 1, so only the cells a step back along it count
         double fx = ax / m, fy = ay / m, fz = az / m;
         int sx = wx > 0 ? -1 : 1, sy = wy > 0 ? -1 : 1, sz = wz > 0 ? -1 : 1;
-        float r = 0f, g = 0f, b = 0f, sum = 0f;
+        float r = 0f, g = 0f, b = 0f, run = 0f, sum = 0f;
         for (int k = 1; k < 8; k++) {
             double w = ((k & 1) != 0 ? fx : 1.0 - fx) * ((k & 2) != 0 ? fy : 1.0 - fy) * ((k & 4) != 0 ? fz : 1.0 - fz);
             if (w < 1.0e-3) continue;
@@ -679,12 +722,14 @@ public final class DynamicLightField {
             r += transR[ni] * wf;
             g += transG[ni] * wf;
             b += transB[ni] * wf;
+            run += runCover[ni] * wf;
             sum += wf;
         }
         if (sum < 0.2f) return false;
         blend[0] = r / sum;
         blend[1] = g / sum;
         blend[2] = b / sum;
+        blend[3] = run / sum;
         return true;
     }
 
@@ -717,7 +762,7 @@ public final class DynamicLightField {
     private static final int[] NZ = {0, 0, 0, 0, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1};
 
     /** Records a shorter path to a cell (with the transmittance along it) and queues the cell. */
-    private static void relax(int li, float path, float tr, float tg, float tb) {
+    private static void relax(int li, float path, float tr, float tg, float tb, float run) {
         boolean fresh = stamp[li] != generation;
         if (fresh) stamp[li] = generation;
         else if (path >= bestPath[li] - 1.0e-4f) return;
@@ -725,6 +770,7 @@ public final class DynamicLightField {
         transR[li] = tr;
         transG[li] = tg;
         transB[li] = tb;
+        runCover[li] = run;
         push(li, -path);
     }
 

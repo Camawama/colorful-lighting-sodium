@@ -6,6 +6,16 @@ Planned
 - keep Valkyrien Skies compatibility on every version where VS exists
 - add Sable / Create Aeronautics compatibility alongside Valkyrien Skies where possible
 
+2026-11-10 (2.10.5)
+- A moving structure's filter block takes the share of each cell it covers (`VoxelOcclusion.BlockWriter.cover`, the fourth
+  byte of a cell of the block volume). A ship's stained glass was written to whole cells, so the colour behind it moved a
+  block at a time however slowly the ship went. A partly covered cell lets through what its share leaves, the shares of
+  several blocks in one cell add up, and the propagation takes partly covered cells one after another on a light's way as
+  one block crossed in parts: a wall of glass half a block off the grid lies in two layers of cells, and the product of
+  the two would let a quarter of the stopped colours through. `-Dcolorfullighting.partialCells=false` writes such a block
+  whole from half a cell on, as before. Blocks that stop light are whole cells as they were. Lively Lighting 0.6.7 gives
+  its ships' glass this way.
+
 2026-11-10 (2.10.4)
 - A provider sets how often a moving light's slab follows it (`DynamicLightField.setUpdateInterval`, 1 to 10 ticks;
   `-Dcolorfullighting.slabUpdateTicks` is where it starts; 1, as before, is every tick the light moved). A slab's first build
