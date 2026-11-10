@@ -58,6 +58,8 @@ public final class DynamicLightField {
     public static final int[] TEXTURE_UNITS = {FIRST_TEXTURE_UNIT, FIRST_TEXTURE_UNIT + 1, FIRST_TEXTURE_UNIT + 2};
     /** A spot's propagation is pruned beyond its outer half angle plus this (degrees): it wraps a corner a little, never behind itself. */
     private static final double WRAP_MARGIN = Math.toRadians(30);
+    /** The longest {@link #setUpdateInterval}: beyond half a second a walking light's shadows trail it by more than two blocks. */
+    public static final int MAX_UPDATE_INTERVAL = 10;
     /** A spot's slab is rebuilt when its direction has turned more than this (the cosine of 12 degrees) from the one it was built with. */
     private static final double TURN_COS = Math.cos(Math.toRadians(12));
     private static final float SQRT2 = (float) Math.sqrt(2.0), SQRT3 = (float) Math.sqrt(3.0);
@@ -69,6 +71,11 @@ public final class DynamicLightField {
     private static final boolean EXACT_PRUNE = !"false".equalsIgnoreCase(System.getProperty("colorfullighting.slabExactPrune", "true"));
     /** A light that moved this far within its cell has its slab's tint worked out again (blocks). */
     private static final double NUDGE = 0.2;
+    /**
+     * The fewest ticks between two rebuilds of one moving light's slab (2.10.4, {@link #setUpdateInterval}; 1: as often as the
+     * light moves). {@code -Dcolorfullighting.slabUpdateTicks} is where it starts.
+     */
+    private static volatile int updateInterval = Math.max(1, Math.min(MAX_UPDATE_INTERVAL, Integer.getInteger("colorfullighting.slabUpdateTicks", 1)));
     /** A spot's cells this near its position are always spread from, and so are cells this near its widened cone (cells). */
     private static final double NEAR_KEEP = 2.5, SKIRT = 1.75;
 
@@ -144,7 +151,7 @@ public final class DynamicLightField {
     /** Client ticks counted here (the game time stands still while the world is frozen). */
     private static long ticks;
     // what the builds cost, per class: full builds, their nanoseconds and the longest, checks that found nothing, the wait from asked to begun and the longest
-    private static final long[][] stats = new long[3][6];
+    private static final long[][] stats = new long[3][8];
     private static boolean hashTinted;
     /** The latest slab data by key, for the CPU samples; the worker's output, swapped in on the render thread. */
     private static final Map<Long, byte[]> dataByKey = new ConcurrentHashMap<>();
@@ -165,6 +172,21 @@ public final class DynamicLightField {
     public static void setEnabled(boolean value) {
         enabled = value;
         if (!value) forgetAll();
+    }
+
+    /**
+     * The fewest ticks between two rebuilds of one moving light's slab, 1 to {@link #MAX_UPDATE_INTERVAL} (2.10.4). At 1 a slab
+     * follows its light every tick it enters another cell, turns or, behind a filter block, moves a fifth of a block. At more,
+     * where the light may go (its shadows and the tint behind glass) follows it that many ticks apart, and the light itself, its
+     * place and falloff, still moves every frame. A light's first slab, a change of its kind and a change of the blocks are
+     * never held back.
+     */
+    public static void setUpdateInterval(int ticks) {
+        updateInterval = Math.max(1, Math.min(MAX_UPDATE_INTERVAL, ticks));
+    }
+
+    public static int updateInterval() {
+        return updateInterval;
     }
 
     public static boolean enabled() {
@@ -306,14 +328,16 @@ public final class DynamicLightField {
             }
             s.latest = l;
             if (!workerIdle || s.building) continue;
-            boolean moved = s.cellX != l.cellX() || s.cellY != l.cellY() || s.cellZ != l.cellZ();
+            // a slab that has data follows its light at most every updateInterval ticks (2.10.4); its first build never waits
+            boolean due = s.cellX == Integer.MIN_VALUE || ticks - s.builtTick >= updateInterval;
+            boolean moved = due && (s.cellX != l.cellX() || s.cellY != l.cellY() || s.cellZ != l.cellZ());
             boolean kind = s.round != l.round() || s.spot != l.spot;
-            boolean turned = l.spot && s.spot && (s.dx * l.dx + s.dy * l.dy + s.dz * l.dz) < TURN_COS;
+            boolean turned = due && l.spot && s.spot && (s.dx * l.dx + s.dy * l.dy + s.dz * l.dz) < TURN_COS;
             boolean blocksChanged = s.blocksId != blocksId;
             // a light that moved within its cell with a filter block in its box: the tint behind the block follows it (2.10.3), as
             // often as its slab's builds allow (a tick for a small slab, four for the largest)
             boolean nudged = false;
-            if (SUB_CELL && s.tinted && !moved && !kind && !turned) {
+            if (SUB_CELL && due && s.tinted && !moved && !kind && !turned) {
                 double mx = l.x - s.builtX, my = l.y - s.builtY, mz = l.z - s.builtZ;
                 nudged = mx * mx + my * my + mz * mz > NUDGE * NUDGE && ticks - s.builtTick >= Math.max(1, Math.min(4, (int) Math.ceil(s.buildMs / 15f)));
             }
@@ -365,18 +389,34 @@ public final class DynamicLightField {
         }
     }
 
-    /** For tests: per slab class, full builds, their mean and longest milliseconds, checks that found nothing, the mean and longest wait before a build began. */
+    /**
+     * For tests: per slab class, full builds, their mean and longest milliseconds, checks that found nothing, the mean and longest
+     * wait before a build began, and the uploads to the texture with their mean milliseconds on the render thread.
+     */
     public static String stats() {
         StringBuilder sb = new StringBuilder();
         synchronized (stats) {
             for (int c = 0; c < 3; c++) {
                 long[] s = stats[c];
                 long jobs = s[0] + s[3];
-                sb.append(String.format(java.util.Locale.ROOT, "%sclass %d: %d builds, %.2f ms mean, %.2f ms longest, %d checks, wait %.2f ms mean, %.2f ms longest", c == 0 ? "" : "; ",
-                        c, s[0], s[0] == 0 ? 0.0 : s[1] / 1.0e6 / s[0], s[2] / 1.0e6, s[3], jobs == 0 ? 0.0 : s[4] / 1.0e6 / jobs, s[5] / 1.0e6));
+                sb.append(String.format(java.util.Locale.ROOT, "%sclass %d: %d builds, %.2f ms mean, %.2f ms longest, %d checks, wait %.2f ms mean, %.2f ms longest, %d uploads, %.3f ms mean", c == 0 ? "" : "; ",
+                        c, s[0], s[0] == 0 ? 0.0 : s[1] / 1.0e6 / s[0], s[2] / 1.0e6, s[3], jobs == 0 ? 0.0 : s[4] / 1.0e6 / jobs, s[5] / 1.0e6,
+                        s[6], s[6] == 0 ? 0.0 : s[7] / 1.0e6 / s[6]));
             }
         }
         return sb.toString();
+    }
+
+    /**
+     * For tests: per slab class {builds, their nanoseconds, the longest, checks that found nothing, the nanoseconds waited before
+     * builds and checks began, the longest wait, uploads, their nanoseconds on the render thread}.
+     */
+    public static long[][] statsRaw() {
+        long[][] out = new long[3][];
+        synchronized (stats) {
+            for (int c = 0; c < 3; c++) out[c] = stats[c].clone();
+        }
+        return out;
     }
 
     public static void resetStats() {
@@ -846,10 +886,16 @@ public final class DynamicLightField {
             int side = 2 * HALF[s.cls] + 1;
             GlStateManager._activeTexture(GL13C.GL_TEXTURE0 + TEXTURE_UNITS[s.cls]);
             GL11C.glBindTexture(GL12C.GL_TEXTURE_3D, textureIds[s.cls]);
+            long uploadStart = System.nanoTime();
             upload.clear();
             upload.put(r.data, 0, side * side * side * 4).flip();
             GL12C.glTexSubImage3D(GL12C.GL_TEXTURE_3D, 0, 0, 0, s.slot * side, side, side, side, GL11C.GL_RGBA, GL11C.GL_UNSIGNED_BYTE, upload);
             s.uploaded = true;
+            long uploadTook = System.nanoTime() - uploadStart;
+            synchronized (stats) {
+                stats[s.cls][6]++;
+                stats[s.cls][7] += uploadTook;
+            }
         }
         for (int c = 0; c < 3; c++) {
             if (slots[c] == 0) continue;

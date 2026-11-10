@@ -6,6 +6,15 @@ Planned
 - keep Valkyrien Skies compatibility on every version where VS exists
 - add Sable / Create Aeronautics compatibility alongside Valkyrien Skies where possible
 
+2026-11-10 (2.10.4)
+- A provider sets how often a moving light's slab follows it (`DynamicLightField.setUpdateInterval`, 1 to 10 ticks;
+  `-Dcolorfullighting.slabUpdateTicks` is where it starts; 1, as before, is every tick the light moved). A slab's first build
+  never waits, and a change of the blocks round a light is taken at once. With 64 lights moving, the slab thread took 95% of a
+  core at 1, 34% at 4 and 15% at 10. Lively Lighting 0.6.6 sets it from `client.light_path_update_ticks`.
+- The slabs' work is counted per class for a stress test (`DynamicLightField.statsRaw`, `resetStats`, `lightsHeld`): builds,
+  their time and the longest, checks that found nothing to do, a job's wait for the worker, and the uploads with their time on
+  the render thread.
+
 2026-11-10 (2.10.3)
 - Particles take the drawn dynamic lights on whichever thread asks. With AsyncParticles a particle's light is read on its tick
   workers, where the dynamic lights were left out: the particles of a block broken in a red dynamic light began at the vanilla
