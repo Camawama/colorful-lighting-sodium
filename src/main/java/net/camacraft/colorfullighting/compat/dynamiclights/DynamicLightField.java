@@ -143,9 +143,19 @@ public final class DynamicLightField {
     private static final ConcurrentLinkedQueue<Result> results = new ConcurrentLinkedQueue<>();
     private static CompletableFuture<Void> building;
     private static ClientLevel builtFor;
+    /**
+     * Since 2.10.6 a job's urgency and its slab's size are a head start in the queue, not a rank: a less urgent job is passed
+     * by at most {@link #URGENCY_HEAD_START} jobs asked for after it per step of urgency, a larger slab by at most
+     * {@link #SIZE_HEAD_START} per class. Ranked, the largest slabs were never rebuilt while the worker was full of smaller
+     * ones (100 point lights and 100 beams walking at once: not one build of the largest class in ten seconds, so a long
+     * beam's paths stayed where the beam had been). {@code -Dcolorfullighting.slabQueueAging=false} ranks them as before.
+     */
+    private static final boolean QUEUE_AGING = !"false".equalsIgnoreCase(System.getProperty("colorfullighting.slabQueueAging"));
+    private static final long URGENCY_HEAD_START = 32L, SIZE_HEAD_START = 8L;
     /** The mod's own slab worker (2.10.3): the most urgent and the smallest slab first, never behind another mod's work on the common pool. */
-    private static final java.util.concurrent.PriorityBlockingQueue<Job> queue = new java.util.concurrent.PriorityBlockingQueue<>(64,
-            java.util.Comparator.<Job>comparingInt(j -> j.priority).thenComparingInt(j -> j.slab.cls).thenComparingLong(j -> j.sequence));
+    private static final java.util.concurrent.PriorityBlockingQueue<Job> queue = new java.util.concurrent.PriorityBlockingQueue<>(64, QUEUE_AGING
+            ? java.util.Comparator.<Job>comparingLong(j -> j.sequence + j.priority * URGENCY_HEAD_START + j.slab.cls * SIZE_HEAD_START).thenComparingLong(j -> j.sequence)
+            : java.util.Comparator.<Job>comparingInt(j -> j.priority).thenComparingInt(j -> j.slab.cls).thenComparingLong(j -> j.sequence));
     private static Thread worker;
     private static long sequence;
     /** Client ticks counted here (the game time stands still while the world is frozen). */

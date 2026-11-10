@@ -70,12 +70,11 @@ vec3 cl_dynamicLightRange(vec3 wrel, vec3 normal, int from, int to) {
             if (cone <= 0.0) continue;
             remaining = range - dist;
             l = level * (remaining / range) * cone;
-        } else if (falloff > 0.5) {
-            remaining = level - sqrt(dist2);
-            l = remaining;
         } else {
-            remaining = level - (abs(d.x) + abs(d.y) + abs(d.z));
-            l = remaining;
+            // a point light's direction is unused: its x is the blocks a level lasts when that isn't 1 (2.10.6)
+            float stretch = dir.x > 0.0 ? dir.x : 1.0;
+            remaining = level * stretch - (falloff > 0.5 ? sqrt(dist2) : abs(d.x) + abs(d.y) + abs(d.z));
+            l = remaining / stretch;
         }
         if (l <= 0.0) continue;
         vec3 light = c.rgb * (min(l, 15.0) / 15.0);

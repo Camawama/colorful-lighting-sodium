@@ -6,6 +6,23 @@ Planned
 - keep Valkyrien Skies compatibility on every version where VS exists
 - add Sable / Create Aeronautics compatibility alongside Valkyrien Skies where possible
 
+2026-11-10 (2.10.6)
+- A provider's point light can lose a level over more or less than a block (`DynamicLightSink.point` with `blocksPerLevel`,
+  a default method that falls back to the plain `point`): as bright at its source, reaching `level * blocksPerLevel` blocks.
+  The terrain and Flywheel shaders, the entities' exact light and the lightmap path all take it (it travels in a point
+  light's unused direction), and the slabs measure what is left of the light in blocks as before. A point light's copy in
+  a ship's own space is divided by the ship's scale, so it lasts the same blocks of the world there. Lively Lighting 0.6.8
+  gives the lamps of a scaled Valkyrien Skies ship this way. `-Dcolorfullighting.pointStretch=false` takes every point
+  light at a level per block, as before. Where the lights are propagated through the light engine instead (no shader
+  path), a stretched light keeps a level per block.
+- The slab worker's queue gives urgency and size a head start instead of a rank. The queue was ordered by urgency, then by
+  slab class, the smallest first, so while the worker was full of small slabs the largest were never rebuilt: with 100
+  point lights and 100 beams walking at once (32 + 16 + 4 slabs held) the class of the long beams had no build in ten
+  seconds and their paths stayed where the beams had been. A job is now passed by at most 32 jobs asked for after it per
+  step of urgency and 8 per slab class. The same scene: 2194, 957 and 177 builds in ten seconds for the three classes, each
+  waiting 116 to 134 ms on average, the frame rate as before (515 frames a second against 616 to 663 with no light).
+  `-Dcolorfullighting.slabQueueAging=false` ranks the queue as before.
+
 2026-11-10 (2.10.5)
 - A moving structure's filter block takes the share of each cell it covers (`VoxelOcclusion.BlockWriter.cover`, the fourth
   byte of a cell of the block volume). A ship's stained glass was written to whole cells, so the colour behind it moved a

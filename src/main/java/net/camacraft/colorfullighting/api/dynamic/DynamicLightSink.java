@@ -15,6 +15,19 @@ public interface DynamicLightSink {
     void point(long ownerKey, double x, double y, double z, float level, int rgb, int falloff, float range);
 
     /**
+     * A point light that loses a level every {@code blocksPerLevel} blocks instead of every block: as bright at its source
+     * as {@code level} says and reaching {@code level * blocksPerLevel} blocks (a lamp on a ship drawn at twice its size
+     * passes 2, at half its size 0.5). {@code range} is then that reach, or less to cut the light short. 1 is the plain
+     * {@link #point(long, double, double, double, float, int, int, float)}, which a sink that doesn't know better falls
+     * back to.
+     *
+     * @since 2.10.6
+     */
+    default void point(long ownerKey, double x, double y, double z, float level, int rgb, int falloff, float range, float blocksPerLevel) {
+        point(ownerKey, x, y, z, level, rgb, falloff, range);
+    }
+
+    /**
      * A cone: {@code dir} its axis (unit), {@code outerDegrees} the full angle where it ends, {@code innerDegrees} the
      * full angle that is fully lit; the light dims along the beam over {@code range}.
      */

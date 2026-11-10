@@ -136,6 +136,8 @@ public final class DynamicLightsCompat {
      * 0 a level lost per block of Manhattan distance, 1 per block of straight distance (external providers, 2.8.0);
      * {@code range} the reach for 0 and 1; a spot has {@code outerCos} below 1 (the cosine of half its full angle),
      * {@code innerCos} where it is fully lit, and a direction. {@code level} may be fractional while a light fades.
+     * A point light has no direction: its {@code dx} holds the blocks it takes to lose a level when that isn't 1
+     * ({@link #stretch()}, 2.10.6), which goes to the shaders in the direction's place as it is.
      */
     record DynamicSource(double x, double y, double z, int luminance, ColorRGB4 color, float level, int falloff, float range,
                                  double dx, double dy, double dz, float outerCos, float innerCos, boolean external, long key, boolean propagatedFlag) {
@@ -145,6 +147,11 @@ public final class DynamicLightsCompat {
 
         boolean isSpot() {
             return outerCos < 1f;
+        }
+
+        /** The blocks a point light takes to lose a level: 1 unless its provider said otherwise (a lamp on a scaled ship). */
+        double stretch() {
+            return outerCos >= 1f && dx > 0.0 ? dx : 1.0;
         }
 
         /** The same light, marked as propagated by the engine (left out of the straight-line path). */
@@ -213,6 +220,12 @@ public final class DynamicLightsCompat {
         return facingInMeshes && face != null ? (8 | face.get3DDataValue()) << 28 : 0;
     }
 
+    /**
+     * A point light may lose a level over more or less than a block (2.10.6, {@code DynamicLightSink.point} with
+     * {@code blocksPerLevel}); {@code -Dcolorfullighting.pointStretch=false} takes every point light at a level per block.
+     */
+    private static final boolean POINT_STRETCH = !"false".equalsIgnoreCase(System.getProperty("colorfullighting.pointStretch"));
+    private static final float MIN_STRETCH = 1f / 32f, MAX_STRETCH = 32f;
     private static final boolean MESH_FACING_ALLOWED = !"false".equalsIgnoreCase(System.getProperty("colorfullighting.meshFacing"));
 
     public static void setExternalPropagation(boolean value) {
@@ -280,10 +293,18 @@ public final class DynamicLightsCompat {
         net.camacraft.colorfullighting.api.dynamic.DynamicLightSink sink = new net.camacraft.colorfullighting.api.dynamic.DynamicLightSink() {
             @Override
             public void point(long ownerKey, double x, double y, double z, float lvl, int rgb, int falloff, float range) {
+                point(ownerKey, x, y, z, lvl, rgb, falloff, range, 1f);
+            }
+
+            @Override
+            public void point(long ownerKey, double x, double y, double z, float lvl, int rgb, int falloff, float range, float blocksPerLevel) {
                 if (lvl <= 0f) return;
+                // the blocks a level lasts (2.10.6, a lamp on a scaled ship); 1 is stored as no stretch at all
+                float stretch = POINT_STRETCH && blocksPerLevel > 0f && !Float.isInfinite(blocksPerLevel) ? Math.max(MIN_STRETCH, Math.min(MAX_STRETCH, blocksPerLevel)) : 1f;
+                if (Math.abs(stretch - 1f) < 1.0e-3f) stretch = 1f;
                 // a level above 15 (2.10.1, a merged light): full light for the blocks above 15 and that much more reach
                 out.accept(new DynamicSource(x, y, z, Math.min(15, Math.max(1, Math.round(lvl))), colorOf(rgb), Math.min(ShaderDynamicLights.MAX_LEVEL, lvl), falloff == 1 ? 1 : 0,
-                        Math.max(1f, range > 0 ? range : lvl), 0, 0, 0, 1f, 1f, true, ownerKey, false));
+                        Math.max(1f, range > 0 ? range : lvl * stretch), stretch == 1f ? 0 : stretch, 0, 0, 1f, 1f, true, ownerKey, false));
             }
 
             @Override
@@ -696,10 +717,10 @@ public final class DynamicLightsCompat {
             double cone = cos <= s.outerCos ? 0.0 : s.innerCos <= s.outerCos ? 1.0 : Math.min(1.0, (cos - s.outerCos) / (s.innerCos - s.outerCos));
             if (cone <= 0.0) return;
             level = s.level * (remaining / s.range) * cone;
-        } else if (s.falloff == 1) {
-            level = remaining = s.level - Math.sqrt(d2);
         } else {
-            level = remaining = s.level - (Math.abs(dx) + Math.abs(dy) + Math.abs(dz));
+            double stretch = s.stretch();
+            remaining = s.level * stretch - (s.falloff == 1 ? Math.sqrt(d2) : Math.abs(dx) + Math.abs(dy) + Math.abs(dz));
+            level = remaining / stretch;
         }
         if (level <= 0.0) return;
         float scale = (float) (Math.min(15.0, level) / 15.0) * 17f;
@@ -847,9 +868,15 @@ public final class DynamicLightsCompat {
             if (mirrors) {
                 double[] world = VsCompat.shipyardToWorld(attachments, source.x, source.y, source.z);
                 if (world == null) {
-                    VsCompat.forEachShipyardMirror(attachments, source.x, source.y, source.z, Math.max(EXTERNAL_SHIP_MIRROR_RANGE, source.range), (mx, my, mz) ->
-                            sources.add(new DynamicSource(mx, my, mz, source.luminance, source.color, source.level, source.falloff, source.range,
-                                    source.dx, source.dy, source.dz, source.outerCos, source.innerCos, true, source.key, source.propagatedFlag)));
+                    // a ship's own space is the world's divided by its scale: a point light's copy there lasts as many of the
+                    // ship's blocks as it lasts blocks of the world (2.10.6; a lamp on its own scaled ship comes out at a level a block)
+                    VsCompat.forEachScaledShipyardMirror(attachments, source.x, source.y, source.z, Math.max(EXTERNAL_SHIP_MIRROR_RANGE, source.range), (mx, my, mz, shipScale) -> {
+                        boolean scaled = POINT_STRETCH && !source.isSpot() && shipScale > 0.0 && Math.abs(shipScale - 1.0) > 1.0e-3;
+                        double stretch = scaled ? Math.max(MIN_STRETCH, Math.min(MAX_STRETCH, source.stretch() / shipScale)) : source.stretch();
+                        sources.add(new DynamicSource(mx, my, mz, source.luminance, source.color, source.level, source.falloff,
+                                scaled ? (float) Math.max(1.0, source.range / shipScale) : source.range,
+                                scaled ? (Math.abs(stretch - 1.0) < 1.0e-3 ? 0 : stretch) : source.dx, source.dy, source.dz, source.outerCos, source.innerCos, true, source.key, source.propagatedFlag));
+                    });
                 }
             }
             if (!meshes || source.propagatedFlag) continue; // the engine remeshes what a propagated light changes
@@ -950,7 +977,7 @@ public final class DynamicLightsCompat {
 
     private static Set<Long> addSectionsAround(Set<Long> sections, DynamicSource source) {
         if (sections == null) sections = new HashSet<>();
-        int reach = source.external ? (int) Math.ceil(Math.min(source.isSpot() ? source.range : Math.min(source.range, source.level), 48f)) : REBUILD_RANGE;
+        int reach = source.external ? (int) Math.ceil(Math.min(source.isSpot() ? source.range : Math.min(source.range, (float) (source.level * source.stretch())), 48f)) : REBUILD_RANGE;
         int minX = SectionPos.blockToSectionCoord((int) Math.floor(source.x - reach));
         int maxX = SectionPos.blockToSectionCoord((int) Math.floor(source.x + reach));
         int minY = SectionPos.blockToSectionCoord((int) Math.floor(source.y - reach));
@@ -1051,10 +1078,10 @@ public final class DynamicLightsCompat {
                         if (cone <= 0.0) continue;
                         level = source.level * (remaining / source.range) * cone;
                     }
-                } else if (source.falloff == 1) {
-                    level = remaining = source.level - Math.sqrt(distanceSquared);
                 } else {
-                    level = remaining = source.level - (Math.abs(dx) + Math.abs(dy) + Math.abs(dz));
+                    double stretch = source.stretch();
+                    remaining = source.level * stretch - (source.falloff == 1 ? Math.sqrt(distanceSquared) : Math.abs(dx) + Math.abs(dy) + Math.abs(dz));
+                    level = remaining / stretch;
                 }
             } else {
                 if (distanceSquared > MAX_RADIUS_SQUARED) continue;

@@ -173,6 +173,22 @@ public final class VsCompat {
             consumer.accept(mirrored[0], mirrored[1], mirrored[2]);
         }
     }
+
+    /** Receives one mirrored position and the scale of the ship it is on (blocks of the world per block of the ship). */
+    @FunctionalInterface
+    public interface ScaledPositionConsumer {
+        void accept(double x, double y, double z, double shipScale);
+    }
+
+    /** {@link #forEachShipyardMirror(double, double, double, double, PositionConsumer)} with each ship's scale. */
+    public void forEachScaledShipyardMirror(double x, double y, double z, double inflate, ScaledPositionConsumer consumer) {
+        for (ShipMirror ship : mirrors) {
+            if (!ship.worldContains(x, y, z, inflate)) continue;
+            double[] mirrored = ShipMirror.apply(ship.worldToShip(), x, y, z);
+            double[] m = ship.shipToWorld();
+            consumer.accept(mirrored[0], mirrored[1], mirrored[2], Math.sqrt(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]));
+        }
+    }
 	
 	public static boolean isKnownEmptyShipChunk(LevelAttachments level, int x, int z) {
 		VsCompat compat = level.colorfullighting$getVSCompat();
@@ -202,5 +218,11 @@ public final class VsCompat {
 		VsCompat compat = level.colorfullighting$getVSCompat();
 		if (compat == null) return;
 		compat.forEachShipyardMirror(x, y, z, inflate, consumer);
+	}
+
+	public static void forEachScaledShipyardMirror(LevelAttachments level, double x, double y, double z, double inflate, ScaledPositionConsumer consumer) {
+		VsCompat compat = level.colorfullighting$getVSCompat();
+		if (compat == null) return;
+		compat.forEachScaledShipyardMirror(x, y, z, inflate, consumer);
 	}
 }
