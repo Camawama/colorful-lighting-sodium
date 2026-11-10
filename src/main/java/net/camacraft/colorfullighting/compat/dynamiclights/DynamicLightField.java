@@ -48,12 +48,29 @@ public final class DynamicLightField {
     static final int[] HALF = {16, 25, 49};
     /** Slabs wanted per class (fewer when the GPU's 3D textures are too short for the stack). */
     private static final int[] WANT_SLOTS = {32, 16, 4};
-    public static final int[] TEXTURE_UNITS = {12, 13, 14};
+    /**
+     * The first of the three texture units the slabs are bound at: 24 since 2.10.3, {@code -Dcolorfullighting.slabTextureUnit}
+     * for another. They were 12 to 14, and Chunks Fade In keeps its sky texture at 13: two samplers of different kinds on one
+     * unit in one program, which a driver may refuse to draw with. It drew while the slabs were read by the vertices alone and
+     * drew no terrain at all once the fragments read them too ({@link ShaderDynamicLights} names such a clash in the log).
+     */
+    public static final int FIRST_TEXTURE_UNIT = Math.max(8, Math.min(45, Integer.getInteger("colorfullighting.slabTextureUnit", 24)));
+    public static final int[] TEXTURE_UNITS = {FIRST_TEXTURE_UNIT, FIRST_TEXTURE_UNIT + 1, FIRST_TEXTURE_UNIT + 2};
     /** A spot's propagation is pruned beyond its outer half angle plus this (degrees): it wraps a corner a little, never behind itself. */
     private static final double WRAP_MARGIN = Math.toRadians(30);
     /** A spot's slab is rebuilt when its direction has turned more than this (the cosine of 12 degrees) from the one it was built with. */
     private static final double TURN_COS = Math.cos(Math.toRadians(12));
     private static final float SQRT2 = (float) Math.sqrt(2.0), SQRT3 = (float) Math.sqrt(3.0);
+    /** Switch: {@code -Dcolorfullighting.slabWorker=common} builds slabs in one batch at a time on the common pool, as 2.10.2. */
+    private static final boolean OWN_WORKER = !"common".equalsIgnoreCase(System.getProperty("colorfullighting.slabWorker", "own"));
+    /** Switch: {@code -Dcolorfullighting.slabSubCell=false} tints a slab from its light's cell alone, rebuilt only on a new cell, as 2.10.2. */
+    private static final boolean SUB_CELL = !"false".equalsIgnoreCase(System.getProperty("colorfullighting.slabSubCell", "true"));
+    /** Switch: {@code -Dcolorfullighting.slabExactPrune=false} prunes a spot's slab from its cell's centre, as 2.10.2. */
+    private static final boolean EXACT_PRUNE = !"false".equalsIgnoreCase(System.getProperty("colorfullighting.slabExactPrune", "true"));
+    /** A light that moved this far within its cell has its slab's tint worked out again (blocks). */
+    private static final double NUDGE = 0.2;
+    /** A spot's cells this near its position are always spread from, and so are cells this near its widened cone (cells). */
+    private static final double NEAR_KEEP = 2.5, SKIRT = 1.75;
 
     /** One light as the field takes it: world position, level (0..15, a point light's to 31 since 2.10.1), the falloff and reach, and the cone for a spot. */
     record Light(long key, double x, double y, double z, float level, int falloff, float range, boolean spot, double dx, double dy, double dz, float outerCos) {
@@ -76,6 +93,15 @@ public final class DynamicLightField {
         boolean uploaded;
         boolean building;
         long lastSeen;
+        /** The light as it was last gathered; a build takes it as it is when the build starts. */
+        volatile Light latest;
+        /** Its light is gone while a build of it waits: the build is skipped. */
+        volatile boolean dropped;
+        /** Where exactly the light was for the uploaded data, whether a filter block lies in its box, when it was built and how long that took. */
+        double builtX, builtY, builtZ;
+        boolean tinted;
+        long builtTick;
+        float buildMs;
 
         Slab(long key, int cls, int slot) {
             this.key = key;
@@ -88,11 +114,17 @@ public final class DynamicLightField {
         int originZ() { return cellZ - HALF[cls]; }
     }
 
-    /** A rebuild to do: the slab, the light as it is, the blocks to read. */
-    private record Job(Slab slab, Light light, byte[] blocks, int ox, int oy, int oz, int blocksId, boolean checkOnly) {}
+    /**
+     * A rebuild to do: the slab, the light as it was when asked for, how urgent (0 a light in another cell or turned, 1 a light that
+     * moved within its cell, 2 a check of the blocks alone), its place in the queue and when it was asked for.
+     */
+    private record Job(Slab slab, Light light, boolean checkOnly, int priority, long sequence, long asked) {}
 
-    /** A finished rebuild: the slab's new data (null when the check found the blocks unchanged), the hash of the blocks in its box. */
-    private record Result(Job job, byte[] data, long regionHash) {}
+    /**
+     * A finished rebuild: the light it was built for, the slab's new data (null when the check found the blocks unchanged), the hash
+     * of the blocks in its box and their build's number, whether a filter block lies in the box, the milliseconds it took.
+     */
+    private record Result(Job job, Light light, byte[] data, long regionHash, int blocksId, boolean tinted, float ms) {}
 
     private static volatile boolean enabled;
     private static final int[] textureIds = {-1, -1, -1};
@@ -104,6 +136,16 @@ public final class DynamicLightField {
     private static final ConcurrentLinkedQueue<Result> results = new ConcurrentLinkedQueue<>();
     private static CompletableFuture<Void> building;
     private static ClientLevel builtFor;
+    /** The mod's own slab worker (2.10.3): the most urgent and the smallest slab first, never behind another mod's work on the common pool. */
+    private static final java.util.concurrent.PriorityBlockingQueue<Job> queue = new java.util.concurrent.PriorityBlockingQueue<>(64,
+            java.util.Comparator.<Job>comparingInt(j -> j.priority).thenComparingInt(j -> j.slab.cls).thenComparingLong(j -> j.sequence));
+    private static Thread worker;
+    private static long sequence;
+    /** Client ticks counted here (the game time stands still while the world is frozen). */
+    private static long ticks;
+    // what the builds cost, per class: full builds, their nanoseconds and the longest, checks that found nothing, the wait from asked to begun and the longest
+    private static final long[][] stats = new long[3][6];
+    private static boolean hashTinted;
     /** The latest slab data by key, for the CPU samples; the worker's output, swapped in on the render thread. */
     private static final Map<Long, byte[]> dataByKey = new ConcurrentHashMap<>();
     private static final ArrayDeque<byte[]>[] pool = new ArrayDeque[]{new ArrayDeque<>(), new ArrayDeque<>(), new ArrayDeque<>()};
@@ -112,7 +154,7 @@ public final class DynamicLightField {
 
     // the worker's scratch: a local grid per slab (the shortest path length, the transmittance along it, a visit stamp) and a binary heap
     private static float[] bestPath = new float[0], transR = new float[0], transG = new float[0], transB = new float[0];
-    private static int[] stamp = new int[0];
+    private static int[] stamp = new int[0], done = new int[0];
     private static int generation;
     private static int[] heapIdx = new int[1024];
     private static float[] heapKey = new float[1024];
@@ -236,12 +278,18 @@ public final class DynamicLightField {
             Light l = wanted.get(e.getKey());
             if (l != null && classOf(l) == s.cls) {
                 s.lastSeen = now;
+                s.dropped = false;
                 continue;
             }
-            if (s.building) continue; // freed once its build is back
+            if (s.building) {
+                s.dropped = true; // freed once its build is back
+                continue;
+            }
             free(s);
         }
-        boolean workerIdle = building == null || building.isDone();
+        ticks++;
+        boolean ownWorker = OWN_WORKER;
+        boolean workerIdle = ownWorker || building == null || building.isDone();
         List<Job> jobs = new ArrayList<>();
         for (int i = 0; i < chosen.size(); i++) {
             Light l = chosen.get(i);
@@ -256,32 +304,85 @@ public final class DynamicLightField {
                 bySlot[cls][slot] = s;
                 byKey.put(l.key, s);
             }
+            s.latest = l;
             if (!workerIdle || s.building) continue;
             boolean moved = s.cellX != l.cellX() || s.cellY != l.cellY() || s.cellZ != l.cellZ();
             boolean kind = s.round != l.round() || s.spot != l.spot;
             boolean turned = l.spot && s.spot && (s.dx * l.dx + s.dy * l.dy + s.dz * l.dz) < TURN_COS;
             boolean blocksChanged = s.blocksId != blocksId;
-            if (!moved && !kind && !turned && !blocksChanged) continue;
+            // a light that moved within its cell with a filter block in its box: the tint behind the block follows it (2.10.3), as
+            // often as its slab's builds allow (a tick for a small slab, four for the largest)
+            boolean nudged = false;
+            if (SUB_CELL && s.tinted && !moved && !kind && !turned) {
+                double mx = l.x - s.builtX, my = l.y - s.builtY, mz = l.z - s.builtZ;
+                nudged = mx * mx + my * my + mz * mz > NUDGE * NUDGE && ticks - s.builtTick >= Math.max(1, Math.min(4, (int) Math.ceil(s.buildMs / 15f)));
+            }
+            if (!moved && !kind && !turned && !blocksChanged && !nudged) continue;
             // the blocks were rebuilt under a slab that otherwise stands: the worker hashes its box and rebuilds only on a change
-            boolean checkOnly = !moved && !kind && !turned && s.cellX != Integer.MIN_VALUE;
+            boolean checkOnly = !moved && !kind && !turned && !nudged && s.cellX != Integer.MIN_VALUE;
             s.building = true;
-            jobs.add(new Job(s, l, blocks, ox, oy, oz, blocksId, checkOnly));
+            jobs.add(new Job(s, l, checkOnly, checkOnly ? 2 : nudged ? 1 : 0, sequence++, System.nanoTime()));
         }
         Set<Long> keys = new HashSet<>();
         for (Slab s : byKey.values()) if (s.uploaded) keys.add(s.key);
         held = keys;
         lightsHeld = keys.size();
         if (jobs.isEmpty()) return;
-        building = CompletableFuture.runAsync(() -> {
-            for (Job job : jobs) {
-                try {
-                    results.add(build(job));
-                } catch (RuntimeException e) {
-                    ColorfulLighting.LOGGER.warn("Building a dynamic light's slab failed; the light shines through everything this tick", e);
-                    results.add(new Result(job, null, job.slab.regionHash));
-                }
+        if (ownWorker) {
+            queue.addAll(jobs);
+            if (worker == null || !worker.isAlive()) {
+                worker = new Thread(DynamicLightField::work, "Colorful Lighting slabs");
+                worker.setDaemon(true);
+                worker.setPriority(Thread.NORM_PRIORITY - 1);
+                worker.start();
             }
+            return;
+        }
+        building = CompletableFuture.runAsync(() -> {
+            for (Job job : jobs) results.add(run(job));
         });
+    }
+
+    private static void work() {
+        while (true) {
+            Job job;
+            try {
+                job = queue.take();
+            } catch (InterruptedException e) {
+                return;
+            }
+            results.add(run(job));
+        }
+    }
+
+    private static Result run(Job job) {
+        try {
+            return build(job);
+        } catch (RuntimeException | Error e) {
+            ColorfulLighting.LOGGER.warn("Building a dynamic light's slab failed; the light shines through everything this tick", e);
+            // with the blocks' number of now, so the slab waits for a change instead of failing every tick
+            return new Result(job, job.light, null, job.slab.regionHash, VoxelOcclusion.buildId(), job.slab.tinted, 0f);
+        }
+    }
+
+    /** For tests: per slab class, full builds, their mean and longest milliseconds, checks that found nothing, the mean and longest wait before a build began. */
+    public static String stats() {
+        StringBuilder sb = new StringBuilder();
+        synchronized (stats) {
+            for (int c = 0; c < 3; c++) {
+                long[] s = stats[c];
+                long jobs = s[0] + s[3];
+                sb.append(String.format(java.util.Locale.ROOT, "%sclass %d: %d builds, %.2f ms mean, %.2f ms longest, %d checks, wait %.2f ms mean, %.2f ms longest", c == 0 ? "" : "; ",
+                        c, s[0], s[0] == 0 ? 0.0 : s[1] / 1.0e6 / s[0], s[2] / 1.0e6, s[3], jobs == 0 ? 0.0 : s[4] / 1.0e6 / jobs, s[5] / 1.0e6));
+            }
+        }
+        return sb.toString();
+    }
+
+    public static void resetStats() {
+        synchronized (stats) {
+            for (long[] s : stats) Arrays.fill(s, 0L);
+        }
     }
 
     /** The slab class a light's reach wants (0 to 2); a reach beyond the largest is cut to it. */
@@ -329,19 +430,56 @@ public final class DynamicLightField {
     // ---- the worker ----
 
     private static Result build(Job job) {
-        Light l = job.light;
-        int half = HALF[job.slab.cls];
-        long hash = regionHash(job.blocks, job.ox, job.oy, job.oz, l.cellX() - half, l.cellY() - half, l.cellZ() - half, 2 * half + 1);
-        if (job.checkOnly && hash == job.slab.regionHash) return new Result(job, null, hash);
-        byte[] out = take(job.slab.cls);
-        propagate(l, half, job.blocks, job.ox, job.oy, job.oz, out);
-        dilate(job.blocks, job.ox, job.oy, job.oz, l.cellX() - half, l.cellY() - half, l.cellZ() - half, 2 * half + 1, out);
-        return new Result(job, out, hash);
+        long start = System.nanoTime();
+        Slab slab = job.slab;
+        // the light as it is now, not as it was when the build was asked for
+        Light l = slab.latest;
+        if (l == null || classOf(l) != slab.cls) l = job.light;
+        // a check alone stands only while the light is where the check was asked for
+        boolean checkOnly = job.checkOnly && l.cellX() == job.light.cellX() && l.cellY() == job.light.cellY() && l.cellZ() == job.light.cellZ()
+                && l.round() == job.light.round() && l.spot == job.light.spot;
+        int cls = slab.cls, half = HALF[cls];
+        // nothing changes on the slab: whatever asked for the build is asked again should the light come back
+        if (slab.dropped) return new Result(job, l, null, slab.regionHash, slab.blocksId, slab.tinted, 0f);
+        VoxelOcclusion.Snapshot snap = VoxelOcclusion.pinLatest();
+        try {
+            if (snap == null) return new Result(job, l, null, slab.regionHash, slab.blocksId, slab.tinted, 0f);
+            byte[] blocks = snap.data();
+            int ox = snap.x(), oy = snap.y(), oz = snap.z();
+            long hash = regionHash(blocks, ox, oy, oz, l.cellX() - half, l.cellY() - half, l.cellZ() - half, 2 * half + 1);
+            boolean tinted = hashTinted;
+            if (checkOnly && hash == slab.regionHash) {
+                synchronized (stats) {
+                    stats[cls][3]++;
+                    stats[cls][4] += start - job.asked;
+                    stats[cls][5] = Math.max(stats[cls][5], start - job.asked);
+                }
+                return new Result(job, l, null, hash, snap.id(), tinted, 0f);
+            }
+            byte[] out = take(cls);
+            propagate(l, half, blocks, ox, oy, oz, out, tinted);
+            dilate(blocks, ox, oy, oz, l.cellX() - half, l.cellY() - half, l.cellZ() - half, 2 * half + 1, out);
+            long took = System.nanoTime() - start;
+            synchronized (stats) {
+                stats[cls][0]++;
+                stats[cls][1] += took;
+                stats[cls][2] = Math.max(stats[cls][2], took);
+                stats[cls][4] += start - job.asked;
+                stats[cls][5] = Math.max(stats[cls][5], start - job.asked);
+            }
+            return new Result(job, l, out, hash, snap.id(), tinted, took / 1.0e6f);
+        } finally {
+            VoxelOcclusion.unpin();
+        }
     }
 
-    /** A hash of what the volume holds in a slab's box (cells outside the volume count as air), so unchanged blocks rebuild nothing. */
+    /**
+     * A hash of what the volume holds in a slab's box (cells outside the volume count as air), so unchanged blocks rebuild nothing.
+     * Leaves in {@link #hashTinted} whether a filter block (neither clear nor opaque) lies in the box.
+     */
     private static long regionHash(byte[] blocks, int ox, int oy, int oz, int bx, int by, int bz, int side) {
         long h = 17;
+        boolean filter = false;
         for (int z = 0; z < side; z++) {
             int vz = bz + z - oz;
             for (int y = 0; y < side; y++) {
@@ -353,11 +491,13 @@ public final class DynamicLightField {
                     else {
                         int i = ((vz * SIZE + vy) * SIZE + vx) * 4;
                         v = (blocks[i] & 0xFF) << 16 | (blocks[i + 1] & 0xFF) << 8 | (blocks[i + 2] & 0xFF);
+                        if (v != 0 && v != 0xFFFFFF) filter = true;
                     }
                     h = h * 31 + v;
                 }
             }
         }
+        hashTinted = filter;
         return h;
     }
 
@@ -366,8 +506,16 @@ public final class DynamicLightField {
      * twenty-six for a round one or a spot), impassable through opaque cells, carrying the filter transmittance met along the way,
      * out to the slab's edge. Each cell reached records the way's length over the straight grid way to it (the detour, as a share of
      * the slab's half size in the alpha byte) and the transmittance (the colour bytes); a cell never reached keeps the full detour.
+     *
+     * <p>Since 2.10.3 two things are measured from the light's exact place instead of its cell's centre. A spot's cells outside its
+     * widened cone are written but not spread from, with a skirt of cells round the cone: pruned from the centre, up to 0.87 blocks
+     * from where the drawn cone starts, the unwritten cells reached into the lit patch of a flashlight held near the ground and
+     * showed as a jagged edge. And with a filter block in the box ({@code tinted}) a cell's tint is its own transmittance times the
+     * tints of the cells the straight line to the light came through (the up to four cells one step back along the line's longest
+     * axis, weighted by where the line crosses them), so the colour behind stained glass moves with the light inside its cell; the
+     * path's own tint, which changes only when the light enters another cell, remains for cells no straight line reaches.
      */
-    private static void propagate(Light l, int half, byte[] blocks, int ox, int oy, int oz, byte[] out) {
+    private static void propagate(Light l, int half, byte[] blocks, int ox, int oy, int oz, byte[] out, boolean tinted) {
         int d = 2 * half + 1;
         int cells = d * d * d;
         Arrays.fill(out, (byte) 0xFF);
@@ -377,10 +525,12 @@ public final class DynamicLightField {
             transG = new float[cells];
             transB = new float[cells];
             stamp = new int[cells];
+            done = new int[cells];
         }
         generation++;
         if (generation == Integer.MAX_VALUE) {
             Arrays.fill(stamp, 0);
+            Arrays.fill(done, 0);
             generation = 1;
         }
         heapSize = 0;
@@ -388,7 +538,12 @@ public final class DynamicLightField {
         int bx = sx - half, by = sy - half, bz = sz - half; // world origin of the slab
         boolean round = l.round();
         int neighbours = round ? 26 : 6;
-        double pruneCos = l.spot ? Math.cos(Math.min(Math.PI, Math.acos(Math.max(-1.0, Math.min(1.0, l.outerCos))) + WRAP_MARGIN)) : -2.0;
+        double pruneAngle = l.spot ? Math.min(Math.PI, Math.acos(Math.max(-1.0, Math.min(1.0, l.outerCos))) + WRAP_MARGIN) : Math.PI;
+        double pruneCos = l.spot ? Math.cos(pruneAngle) : -2.0;
+        boolean exactPrune = l.spot && EXACT_PRUNE;
+        boolean subCell = tinted && SUB_CELL;
+        // the light's exact place among the slab's cells (a cell's centre is its index and a half)
+        double px = l.x - bx, py = l.y - by, pz = l.z - bz;
         int si = (half * d + half) * d + half;
         relax(si, 0f, 1f, 1f, 1f);
         while (heapSize > 0) {
@@ -398,13 +553,39 @@ public final class DynamicLightField {
             int lx = li % d, ly = (li / d) % d, lz = li / (d * d);
             float free = freePath(Math.abs(lx - half), Math.abs(ly - half), Math.abs(lz - half), round);
             float detour = Math.max(0f, path - free);
+            int vx = bx + lx - ox, vy = by + ly - oy, vz = bz + lz - oz;
+            double wx = lx + 0.5 - px, wy = ly + 0.5 - py, wz = lz + 0.5 - pz;
+            if (subCell && li != si && blendBack(lx, ly, lz, d, wx, wy, wz, blocks, vx, vy, vz)) {
+                float or = 1f, og = 1f, ob = 1f;
+                if (vx >= 0 && vy >= 0 && vz >= 0 && vx < SIZE && vy < SIZE && vz < SIZE) {
+                    int bi = ((vz * SIZE + vy) * SIZE + vx) * 4;
+                    or = (blocks[bi] & 0xFF) / 255f;
+                    og = (blocks[bi + 1] & 0xFF) / 255f;
+                    ob = (blocks[bi + 2] & 0xFF) / 255f;
+                }
+                // what spreads on from here carries it too
+                transR[li] = or * blend[0];
+                transG[li] = og * blend[1];
+                transB[li] = ob * blend[2];
+            }
+            done[li] = generation;
             int oi = li * 4;
             out[oi] = (byte) Math.round(transR[li] * 255f);
             out[oi + 1] = (byte) Math.round(transG[li] * 255f);
             out[oi + 2] = (byte) Math.round(transB[li] * 255f);
             out[oi + 3] = (byte) Math.min(255, Math.round(detour / half * 255f));
             if (path >= half) continue; // the slab's edge: nothing beyond is kept
-            int vx = bx + lx - ox, vy = by + ly - oy, vz = bz + lz - oz;
+            if (exactPrune && li != si) {
+                double len = Math.sqrt(wx * wx + wy * wy + wz * wz);
+                if (len > NEAR_KEEP) {
+                    double cos = (wx * l.dx + wy * l.dy + wz * l.dz) / len;
+                    if (cos < pruneCos) {
+                        // outside the widened cone: spread from only within the skirt round it
+                        double over = Math.acos(Math.max(-1.0, Math.min(1.0, cos))) - pruneAngle;
+                        if (over >= Math.PI / 2 || len * Math.sin(over) > SKIRT) continue;
+                    }
+                }
+            }
             for (int n = 0; n < neighbours; n++) {
                 int nx = lx + NX[n], ny = ly + NY[n], nz = lz + NZ[n];
                 if (nx < 0 || ny < 0 || nz < 0 || nx >= d || ny >= d || nz >= d) continue;
@@ -419,7 +600,7 @@ public final class DynamicLightField {
                 }
                 // a diagonal step passes between its two or three face neighbours: both must be open, or light would cut a corner through a wall
                 if (n >= 6 && !diagonalOpen(blocks, vx, vy, vz, NX[n], NY[n], NZ[n])) continue;
-                if (l.spot) {
+                if (l.spot && !exactPrune) {
                     double ndx = nx - half, ndy = ny - half, ndz = nz - half;
                     double len = Math.sqrt(ndx * ndx + ndy * ndy + ndz * ndz);
                     if (len > 1.5 && (ndx * l.dx + ndy * l.dy + ndz * l.dz) / len < pruneCos) continue;
@@ -428,6 +609,43 @@ public final class DynamicLightField {
                 relax((nz * d + ny) * d + nx, path + step, transR[li] * tr8 / 255f, transG[li] * tg8 / 255f, transB[li] * tb8 / 255f);
             }
         }
+    }
+
+    private static final float[] blend = new float[3];
+
+    /**
+     * The tint arriving at a cell along the straight line from the light: the cells one step back along the line's longest axis,
+     * weighted by where the line crosses their plane, of those already settled and not behind a corner. False when too little of
+     * the line comes through settled cells (the path's tint stands then). {@code wx, wy, wz} is the cell's centre from the light.
+     */
+    private static boolean blendBack(int lx, int ly, int lz, int d, double wx, double wy, double wz, byte[] blocks, int vx, int vy, int vz) {
+        double ax = Math.abs(wx), ay = Math.abs(wy), az = Math.abs(wz);
+        double m = Math.max(ax, Math.max(ay, az));
+        if (m < 1.0e-6) return false;
+        // the longest axis has the share 1, so only the cells a step back along it count
+        double fx = ax / m, fy = ay / m, fz = az / m;
+        int sx = wx > 0 ? -1 : 1, sy = wy > 0 ? -1 : 1, sz = wz > 0 ? -1 : 1;
+        float r = 0f, g = 0f, b = 0f, sum = 0f;
+        for (int k = 1; k < 8; k++) {
+            double w = ((k & 1) != 0 ? fx : 1.0 - fx) * ((k & 2) != 0 ? fy : 1.0 - fy) * ((k & 4) != 0 ? fz : 1.0 - fz);
+            if (w < 1.0e-3) continue;
+            int ux = (k & 1) != 0 ? sx : 0, uy = (k & 2) != 0 ? sy : 0, uz = (k & 4) != 0 ? sz : 0;
+            int nx = lx + ux, ny = ly + uy, nz = lz + uz;
+            if (nx < 0 || ny < 0 || nz < 0 || nx >= d || ny >= d || nz >= d) continue;
+            int ni = (nz * d + ny) * d + nx;
+            if (done[ni] != generation) continue;
+            if (Integer.bitCount(k) > 1 && !diagonalOpen(blocks, vx, vy, vz, ux, uy, uz)) continue;
+            float wf = (float) w;
+            r += transR[ni] * wf;
+            g += transG[ni] * wf;
+            b += transB[ni] * wf;
+            sum += wf;
+        }
+        if (sum < 0.2f) return false;
+        blend[0] = r / sum;
+        blend[1] = g / sum;
+        blend[2] = b / sum;
+        return true;
     }
 
     /** The shortest grid way to an offset with nothing in the way: Manhattan for six neighbours; the diagonal steps for twenty-six. */
@@ -595,8 +813,9 @@ public final class DynamicLightField {
         while ((r = results.poll()) != null) {
             Slab s = r.job.slab;
             s.building = false;
-            s.blocksId = r.job.blocksId;
+            s.blocksId = r.blocksId;
             s.regionHash = r.regionHash;
+            s.tinted = r.tinted;
             if (byKey.get(s.key) != s) {
                 // freed while building
                 if (r.data != null) recycle(s.cls, r.data);
@@ -604,7 +823,12 @@ public final class DynamicLightField {
                 continue;
             }
             if (r.data == null) continue; // the blocks under it were unchanged
-            Light l = r.job.light;
+            Light l = r.light;
+            s.builtX = l.x;
+            s.builtY = l.y;
+            s.builtZ = l.z;
+            s.builtTick = ticks;
+            s.buildMs = r.ms;
             s.cellX = l.cellX();
             s.cellY = l.cellY();
             s.cellZ = l.cellZ();
@@ -647,6 +871,7 @@ public final class DynamicLightField {
     }
 
     private static void forgetSlabs() {
+        queue.clear();
         for (Slab s : new ArrayList<>(byKey.values())) free(s);
         byKey.clear();
         dataByKey.clear();

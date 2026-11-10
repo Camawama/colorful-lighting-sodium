@@ -48,7 +48,16 @@ public class EntityRendererMixin {
         }
         BlockPos blockpos = BlockPos.containing(entity.getLightProbePosition(partialTicks));
         int skyLight = entity.level().getBrightness(LightLayer.SKY, blockpos);
-        ColorRGB8 color = ((LevelAttachments) entity.level()).colorfullighting$getEngine().sampleTrilinearLightColor(entity.getLightProbePosition(partialTicks));
+        net.minecraft.world.phys.Vec3 probe = entity.getLightProbePosition(partialTicks);
+        // the drawn dynamic lights are left out of the eight-cell blend and added at the entity's own place (2.10.3)
+        boolean exact = net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.beginEntitySample();
+        ColorRGB8 color;
+        try {
+            color = ((LevelAttachments) entity.level()).colorfullighting$getEngine().sampleTrilinearLightColor(probe);
+        } finally {
+            if (exact) net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.endEntitySample();
+        }
+        if (exact) color = net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.exactEntityLight(entity, partialTicks, probe, color);
         if(entity.isOnFire() || FIRE_LIT_ENTITIES.contains(entity.getType())) {
             ColorRGB8 fireColor = ColorRGB8.fromRGB4(Config.getLightColor(Blocks.FIRE));
             color = ColorRGB8.fromRGB8(
@@ -61,10 +70,12 @@ public class EntityRendererMixin {
             color = ColorRGB8.fromRGB8(255, 255, 255);
         }
         // an entity carrying a dynamic light that asks to be lit by it (a kart under its headlights) is drawn at least that bright (2.10.0)
-        int glow = net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.entityGlow(entity);
-        if (glow > 0) {
-            int g8 = glow * 17;
-            color = ColorRGB8.fromRGB8(Math.max(g8, color.red), Math.max(g8, color.green), Math.max(g8, color.blue));
+        // in the colour of the light it carries (2.10.3; white before)
+        int glow = net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.entityGlowColor(entity);
+        if (glow != 0) {
+            int g8 = (glow >>> 24) * 17;
+            int gr = g8 * ((glow >> 16) & 0xFF) / 255, gg = g8 * ((glow >> 8) & 0xFF) / 255, gb = g8 * (glow & 0xFF) / 255;
+            color = ColorRGB8.fromRGB8(Math.max(gr, color.red), Math.max(gg, color.green), Math.max(gb, color.blue));
         }
 
         cir.setReturnValue(PackedLightData.packData(skyLight, color));

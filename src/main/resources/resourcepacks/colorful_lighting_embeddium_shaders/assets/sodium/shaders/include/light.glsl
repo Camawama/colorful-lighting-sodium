@@ -29,6 +29,11 @@ uniform sampler3D cl_dynSlabTex2;
 uniform vec3 cl_dynSlabSize;
 uniform vec3 cl_dynSlabCount;
 
+// The lights the fragments draw themselves (2.10.3): the first cl_dynFragSpots of the arrays, the spot lights. A cone is
+// narrower than a block close to its light; taken at the vertices alone it lit whole block corners or none of them, so a
+// flashlight's patch on the ground was jagged and all but gone from close up. The vertices take the lights after those.
+uniform int cl_dynFragSpots;
+
 vec3 cl_dynVisibility(vec4 s, vec3 at, float remaining) {
     int cls = int(s.w / 1000.0);
     float slot = s.w - float(cls) * 1000.0;
@@ -41,10 +46,11 @@ vec3 cl_dynVisibility(vec4 s, vec3 at, float remaining) {
     return v.rgb * clamp(1.0 - detour / max(remaining, 1.0e-3), 0.0, 1.0);
 }
 
-vec3 cl_dynamicLight(vec3 wrel, vec3 normal) {
+// the lights from..to-1 of the arrays at a point
+vec3 cl_dynamicLightRange(vec3 wrel, vec3 normal, int from, int to) {
     vec3 acc = vec3(0.0);
     vec3 at = wrel + normal * 0.5;
-    for (int i = 0; i < cl_dynCount; i++) {
+    for (int i = from; i < to; i++) {
         vec4 p = cl_dynPos[i];
         vec3 d = wrel - p.xyz;
         vec4 c = cl_dynColor[i];
@@ -122,6 +128,11 @@ vec3 cl_facingNormal(uint nib) {
     if (f == 4u) return vec3(-1.0, 0.0, 0.0);
     return vec3(1.0, 0.0, 0.0);
 }
+
+// for the fragments' spot lights: the vertex's own light before the lightmap (rgb 0..255 with the vertices' dynamic lights
+// in, a the sky nibble; -1: none to add to) and its face along the world's axes
+vec4 cl_baseLight = vec4(0.0, 0.0, 0.0, -1.0);
+vec3 cl_faceNormal = vec3(0.0);
 #endif
 
 // wrel: the vertex relative to the camera, along the world's axes (the dynamic lights are given that way); toWorld turns
@@ -142,7 +153,8 @@ vec4 _sample_lightmap_dyn(sampler2D lightMap, ivec2 uv, vec3 wrel, mat3 toWorld)
     if (cl_dynCount > 0) {
         vec3 n = cl_facingNormal(nib);
         if (dot(n, n) > 0.5) n = normalize(toWorld * n);
-        dyn = cl_dynamicLight(wrel, n) * 255.0;
+        cl_faceNormal = n;
+        dyn = cl_dynamicLightRange(wrel, n, cl_dynFragSpots, cl_dynCount) * 255.0;
     }
 #endif
     uvec3 dyn8 = uvec3(clamp(dyn, 0.0, 255.0));
@@ -159,6 +171,9 @@ vec4 _sample_lightmap_dyn(sampler2D lightMap, ivec2 uv, vec3 wrel, mat3 toWorld)
             return _sample_lightmap_vanilla(lightMap, ivec2(int(block8), int(skyLight4) << 4));
         }
 
+#ifdef CL_DYNAMIC_LIGHTS
+        cl_baseLight = vec4(vec3(max(uvec3(red8, green8, blue8), dyn8)), float(skyLight4));
+#endif
         return _sample_colored_common(lightMap, skyLight4, max(red8, dyn8.r), max(green8, dyn8.g), max(blue8, dyn8.b));
     }
 
@@ -179,6 +194,9 @@ vec4 _sample_lightmap_dyn(sampler2D lightMap, ivec2 uv, vec3 wrel, mat3 toWorld)
         float red8 = float(red4) / 15.0;
         float green8 = float(green4) / 15.0;
         float blue8 = float(blue3) / 7.0;
+#ifdef CL_DYNAMIC_LIGHTS
+        cl_baseLight = vec4(vec3(max(uvec3(uint(red8 * 255.0), uint(green8 * 255.0), uint(blue8 * 255.0)), dyn8)), float(skyLight4));
+#endif
 
         return _sample_colored_common(
             lightMap,
@@ -191,9 +209,12 @@ vec4 _sample_lightmap_dyn(sampler2D lightMap, ivec2 uv, vec3 wrel, mat3 toWorld)
     }
 
     // Not our format: vanilla light, raised by the dynamic lights where they reach
+    uint block8 = uint(clamp(uv.x, 0, 255));
+    uint sky4 = uint(clamp(uv.y, 0, 255)) >> 4;
+#ifdef CL_DYNAMIC_LIGHTS
+    cl_baseLight = vec4(vec3(max(uvec3(block8), dyn8)), float(sky4));
+#endif
     if (max(max(dyn8.r, dyn8.g), dyn8.b) > 0u) {
-        uint block8 = uint(clamp(uv.x, 0, 255));
-        uint sky4 = uint(clamp(uv.y, 0, 255)) >> 4;
         return _sample_colored_common(lightMap, sky4, max(block8, dyn8.r), max(block8, dyn8.g), max(block8, dyn8.b));
     }
     return _sample_lightmap_vanilla(lightMap, uv);

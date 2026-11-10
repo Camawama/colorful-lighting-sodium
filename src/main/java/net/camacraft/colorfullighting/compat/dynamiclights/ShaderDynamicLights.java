@@ -47,14 +47,14 @@ public final class ShaderDynamicLights {
     }
 
     /** Uniform locations of one program: count, pos[], color[], dir[], invView, slabs, slab[], the three slab textures, their sizes and counts; -1 where missing. */
-    private record Locations(int count, int pos, int color, int dir, int invView, int slabs, int slab, int slabTex0, int slabTex1, int slabTex2, int slabSize, int slabCount) {
+    private record Locations(int count, int pos, int color, int dir, int invView, int slabs, int slab, int slabTex0, int slabTex1, int slabTex2, int slabSize, int slabCount, int fragSpots) {
         boolean usable() {
             return count >= 0 && pos >= 0 && color >= 0 && dir >= 0;
         }
     }
 
     private static final Map<Integer, Locations> LOCATIONS = new ConcurrentHashMap<>();
-    private static final Locations NONE = new Locations(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
+    private static final Locations NONE = new Locations(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
 
     // the frame's light arrays, built once per frame (keyed by the frame's partial tick and level) and uploaded per pass
     private static float[] pos = new float[MAX_LIGHTS * 4], color = new float[MAX_LIGHTS * 4], dir = new float[MAX_LIGHTS * 4], slab = new float[MAX_LIGHTS * 4];
@@ -67,6 +67,8 @@ public final class ShaderDynamicLights {
     private static final java.nio.FloatBuffer SLAB_BUF = org.lwjgl.BufferUtils.createFloatBuffer(MAX_LIGHTS * 4);
     private static final java.nio.FloatBuffer INV_VIEW_BUF = org.lwjgl.BufferUtils.createFloatBuffer(9);
     private static int count;
+    /** How many of the frame's lights are spot lights: they come first in the arrays (the fragments draw them, 2.10.3). */
+    private static int spots;
     private static float builtPartialTick = Float.NaN;
     private static ClientLevel builtLevel;
     private static long builtFrame = -1;
@@ -106,6 +108,11 @@ public final class ShaderDynamicLights {
         frameCounter++;
     }
 
+    /** The frame's number (one up per level render), for what is gathered once a frame. */
+    public static long frame() {
+        return frameCounter;
+    }
+
     /** Whether this frame has lights to draw; builds the arrays for the frame if not yet done. Render thread. */
     private static boolean prepare() {
         Minecraft mc = Minecraft.getInstance();
@@ -140,8 +147,13 @@ public final class ShaderDynamicLights {
         }
         near.sort((a, b) -> Double.compare(dist2(a.v(), cam), dist2(b.v(), cam)));
         int n = Math.min(maxLights, near.size());
+        // the spot lights first (the terrain's fragments draw the first of the arrays, its vertices the rest), each kind nearest first
+        List<DynamicLightsCompat.FrameLight> picked = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) if (near.get(i).v()[11] < 1f) picked.add(near.get(i));
+        spots = picked.size();
+        for (int i = 0; i < n; i++) if (!(near.get(i).v()[11] < 1f)) picked.add(near.get(i));
         for (int i = 0; i < n; i++) {
-            DynamicLightsCompat.FrameLight fl = near.get(i);
+            DynamicLightsCompat.FrameLight fl = picked.get(i);
             float[] l = fl.v();
             int o = i * 4;
             pos[o] = (float) (l[0] - cam.x);
@@ -200,7 +212,9 @@ public final class ShaderDynamicLights {
                     GL20C.glGetUniformLocation(programHandle, "cl_dynInvView"), GL20C.glGetUniformLocation(programHandle, "cl_dynSlabs"),
                     GL20C.glGetUniformLocation(programHandle, "cl_dynSlab"), GL20C.glGetUniformLocation(programHandle, "cl_dynSlabTex0"),
                     GL20C.glGetUniformLocation(programHandle, "cl_dynSlabTex1"), GL20C.glGetUniformLocation(programHandle, "cl_dynSlabTex2"),
-                    GL20C.glGetUniformLocation(programHandle, "cl_dynSlabSize"), GL20C.glGetUniformLocation(programHandle, "cl_dynSlabCount"));
+                    GL20C.glGetUniformLocation(programHandle, "cl_dynSlabSize"), GL20C.glGetUniformLocation(programHandle, "cl_dynSlabCount"),
+                    GL20C.glGetUniformLocation(programHandle, "cl_dynFragSpots"));
+            if (DEBUG_DUMP) dump(programHandle, loc);
             if (!loc.usable()) loc = NONE;
             LOCATIONS.put(programHandle, loc);
         }
@@ -217,13 +231,32 @@ public final class ShaderDynamicLights {
                 float[] sizes = DynamicLightField.slabSizes(), counts = DynamicLightField.slabCounts();
                 if (loc.slabSize >= 0) GL20C.glUniform3f(loc.slabSize, sizes[0], sizes[1], sizes[2]);
                 if (loc.slabCount >= 0) GL20C.glUniform3f(loc.slabCount, counts[0], counts[1], counts[2]);
+                checkUnits(programHandle);
             }
         }
         if (!any) {
             GL20C.glUniform1i(loc.count, 0);
+            if (loc.fragSpots >= 0) GL20C.glUniform1i(loc.fragSpots, 0);
             return;
         }
         GL20C.glUniform1i(loc.count, count);
+        if (loc.fragSpots >= 0) GL20C.glUniform1i(loc.fragSpots, fragmentSpotsThisFrame());
+        if (DEBUG_DUMP && DUMPED_VALUES.add(programHandle)) {
+            org.slf4j.LoggerFactory.getLogger("ColorfulLighting").info("Dynamic lights debug: program {} bound {} gets count {} fragSpots {} (spots {}) slabs {}",
+                    programHandle, GL20C.glGetInteger(GL20C.GL_CURRENT_PROGRAM), count, fragmentSpotsThisFrame(), spots, slabsOn);
+            StringBuilder units = new StringBuilder();
+            for (String name : new String[] {"u_BlockTex", "u_LightTex", "cfi_sky", "cl_dynSlabTex0", "cl_dynSlabTex1", "cl_dynSlabTex2"}) {
+                int at = GL20C.glGetUniformLocation(programHandle, name);
+                units.append(' ').append(name).append('=').append(at < 0 ? "none" : String.valueOf(GL20C.glGetUniformi(programHandle, at)));
+            }
+            int active = GL20C.glGetInteger(GL20C.GL_ACTIVE_TEXTURE);
+            for (int unit = 0; unit < 16; unit++) {
+                GL20C.glActiveTexture(GL20C.GL_TEXTURE0 + unit);
+                units.append(" [").append(unit).append(": 2D ").append(GL20C.glGetInteger(GL20C.GL_TEXTURE_BINDING_2D)).append(" 3D ").append(GL20C.glGetInteger(GL20C.GL_TEXTURE_BINDING_3D)).append(']');
+            }
+            GL20C.glActiveTexture(active);
+            org.slf4j.LoggerFactory.getLogger("ColorfulLighting").info("Dynamic lights debug: program {} samplers{}", programHandle, units);
+        }
         POS_BUF.clear();
         POS_BUF.put(pos, 0, count * 4).flip();
         GL20C.glUniform4fv(loc.pos, POS_BUF);
@@ -245,9 +278,70 @@ public final class ShaderDynamicLights {
         }
     }
 
+    private static final Map<Integer, int[]> UNIT_CHECKS = new ConcurrentHashMap<>();
+    private static final java.util.Set<String> UNIT_CLASHES = ConcurrentHashMap.newKeySet();
+
+    /**
+     * Whether another mod's sampler in this program sits on a unit the slabs use (2.10.3). Two samplers of different kinds on
+     * one unit make a program the driver may not draw with, and nothing says so: the terrain is simply gone. Looked at on a
+     * program's 2nd, 60th and 1200th upload (the other mod sets its unit when it likes), and named in the log once.
+     */
+    private static void checkUnits(int program) {
+        int[] uploads = UNIT_CHECKS.computeIfAbsent(program, p -> new int[1]);
+        int n = ++uploads[0];
+        if (n != 2 && n != 60 && n != 1200) return;
+        int first = DynamicLightField.FIRST_TEXTURE_UNIT;
+        int count = GL20C.glGetProgrami(program, GL20C.GL_ACTIVE_UNIFORMS);
+        try (org.lwjgl.system.MemoryStack stack = org.lwjgl.system.MemoryStack.stackPush()) {
+            java.nio.IntBuffer size = stack.mallocInt(1), type = stack.mallocInt(1);
+            for (int i = 0; i < count; i++) {
+                String name = GL20C.glGetActiveUniform(program, i, 256, size, type);
+                int t = type.get(0);
+                boolean sampler = t >= 0x8B5D && t <= 0x8B64 || t >= 0x8DC0 && t <= 0x8DD8 || t >= 0x9108 && t <= 0x910D;
+                if (!sampler || name.startsWith("cl_dynSlabTex")) continue;
+                int at = GL20C.glGetUniformLocation(program, name);
+                if (at < 0) continue;
+                int unit = GL20C.glGetUniformi(program, at);
+                if (unit < first || unit > first + 2 || !UNIT_CLASHES.add(name)) continue;
+                org.slf4j.LoggerFactory.getLogger("ColorfulLighting").error("Dynamic lights: the sampler {} of another mod uses texture unit {}, "
+                        + "one of the three ({} to {}) the dynamic lights' slabs are bound at. The terrain may not be drawn. "
+                        + "Start with -Dcolorfullighting.slabTextureUnit=<a free unit, 8 to 45> to move them.", name, unit, first, first + 2);
+            }
+        }
+    }
+
+    /** For finding a fault ({@code -Dcolorfullighting.spotFragDebug=true}): each program's shader sources as the driver has them. */
+    private static final boolean DEBUG_DUMP = Boolean.getBoolean("colorfullighting.spotFragDebug");
+    private static final java.util.Set<Integer> DUMPED_VALUES = new java.util.HashSet<>();
+
+    private static void dump(int program, Locations loc) {
+        org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger("ColorfulLighting");
+        try {
+            java.nio.file.Path dir = java.nio.file.Path.of("cl-shaderdump");
+            java.nio.file.Files.createDirectories(dir);
+            int[] n = new int[1];
+            int[] shaders = new int[8];
+            GL20C.glGetAttachedShaders(program, n, shaders);
+            for (int i = 0; i < n[0]; i++) {
+                int type = GL20C.glGetShaderi(shaders[i], GL20C.GL_SHADER_TYPE);
+                java.nio.file.Files.writeString(dir.resolve(program + (type == GL20C.GL_FRAGMENT_SHADER ? ".fsh" : ".vsh")), GL20C.glGetShaderSource(shaders[i]));
+            }
+            log.info("Dynamic lights debug: program {} has {} shaders; locations count {} fragSpots {} linked {}", program, n[0], loc.count, loc.fragSpots,
+                    GL20C.glGetProgrami(program, GL20C.GL_LINK_STATUS));
+        } catch (Exception e) {
+            log.warn("Dynamic lights debug: program {}: {}", program, e.toString());
+        }
+    }
+
     /** Programs were rebuilt (a resource reload): the cached locations are stale. */
     public static void forgetPrograms() {
         LOCATIONS.clear();
+        UNIT_CHECKS.clear();
+    }
+
+    /** For tests: the spot lights the terrain's fragments draw this frame (0 while the vertices draw them). */
+    public static int fragmentSpotsThisFrame() {
+        return FragmentSpots.active() ? Math.min(Math.min(spots, count), FragmentSpots.MAX) : 0;
     }
 
     /** For tests: the lights uploaded this frame. */

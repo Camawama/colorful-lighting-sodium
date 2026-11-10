@@ -48,10 +48,28 @@ public class ShaderLoaderMixin {
 
         try (InputStream in = res.get().open()) {
             String src = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-            cir.setReturnValue(src);
+            if (Boolean.getBoolean("colorfullighting.debugShaderSources")) {
+                org.slf4j.LoggerFactory.getLogger("ColorfulLighting").info("shader source {} from the resource packs ({})", id, res.get().sourcePackId());
+            }
+            // Embeddium's own sources come this way too (a mod's assets are resources): the terrain fragment shader is wrapped here
+            cir.setReturnValue(net.camacraft.colorfullighting.compat.dynamiclights.FragmentSpots.patch(id, src));
         } catch (Throwable ignored) {
             // Fall back to Sodium's original classpath lookup.
         }
+    }
+
+    /**
+     * Embeddium's own terrain fragment shader, wrapped so its fragments draw the spot lights (2.10.3, FragmentSpots), where it
+     * came from the classpath (the hook above returns before this one for a source the resource packs hold).
+     */
+    @Inject(method = "getShaderSource", at = @At("RETURN"), cancellable = true)
+    private static void colorfulLighting$spotLightsInFragments(ResourceLocation id, CallbackInfoReturnable<String> cir) {
+        String source = cir.getReturnValue();
+        if (Boolean.getBoolean("colorfullighting.debugShaderSources")) {
+            org.slf4j.LoggerFactory.getLogger("ColorfulLighting").info("shader source {} ({} chars)", id, source == null ? -1 : source.length());
+        }
+        String patched = net.camacraft.colorfullighting.compat.dynamiclights.FragmentSpots.patch(id, source);
+        if (patched != source) cir.setReturnValue(patched);
     }
 }
 

@@ -185,6 +185,16 @@ public final class DynamicLightsCompat {
         VoxelOcclusion.setExternalFiller(filler);
     }
 
+    /**
+     * The block filler's structures moved enough to matter (a ship with lamps turned or went a part of a block): the block
+     * volume is rebuilt on the next tick instead of within ten. Cheap to call often; one build runs at a time.
+     *
+     * @since 2.10.3
+     */
+    public static void externalBlocksMoved() {
+        VoxelOcclusion.requestRebuild();
+    }
+
     /** The colour Colorful Lighting gives a block state's light, as 0xRRGGBB (white when it has none). For the providers' lamps. */
     public static int blockLightColor(net.minecraft.world.level.block.state.BlockState state) {
         return rgb8(Config.getLightColor(state));
@@ -311,8 +321,11 @@ public final class DynamicLightsCompat {
     /** The external lights at a moment of the frame, for the shader path: positions, colours, shapes. */
     public static List<FrameLight> externalLightsForFrame(ClientLevel level, float partialTick) {
         List<FrameLight> out = new ArrayList<>();
-        collectExternal(level, partialTick, s -> out.add(new FrameLight(s.key, new float[]{(float) s.x, (float) s.y, (float) s.z, s.level, s.color.red4 / 15f,
-                s.color.green4 / 15f, s.color.blue4 / 15f, s.range, (float) s.dx, (float) s.dy, (float) s.dz, s.outerCos, s.innerCos, s.falloff})));
+        // one gathering a frame, shared with the entities' exact light (2.10.3)
+        for (DynamicSource s : frameSources(level, partialTick)) {
+            out.add(new FrameLight(s.key, new float[]{(float) s.x, (float) s.y, (float) s.z, s.level, s.color.red4 / 15f,
+                    s.color.green4 / 15f, s.color.blue4 / 15f, s.range, (float) s.dx, (float) s.dy, (float) s.dz, s.outerCos, s.innerCos, s.falloff}));
+        }
         return out;
     }
 
@@ -460,6 +473,246 @@ public final class DynamicLightsCompat {
         } catch (RuntimeException e) {
             return 0;
         }
+    }
+
+    /** Who says which lights an entity carries itself (their keys), so its own beam never lights it; null for none. */
+    private static volatile java.util.function.Function<Entity, long[]> entityOwnLights;
+    /** Who says how bright and in which colour an entity carrying a light is drawn at least: {@code level << 24 | 0xRRGGBB}, 0 for nothing. */
+    private static volatile java.util.function.ToIntFunction<Entity> entityGlowColor;
+
+    /**
+     * Sets who answers which lights are an entity's own (the keys the provider gives them): a flashlight's holder, a kart under its
+     * headlights and whoever rides it. An entity's exact light ({@link #exactEntityLight}) leaves those out; what lights the carrier
+     * is its glow.
+     *
+     * @since 2.10.3
+     */
+    public static void setEntityOwnLights(@Nullable java.util.function.Function<Entity, long[]> own) {
+        entityOwnLights = own;
+    }
+
+    /**
+     * Sets who answers {@link #entityGlowColor}: as {@link #setEntityGlow}, with the colour of the light the carrier is lit by.
+     *
+     * @since 2.10.3
+     */
+    public static void setEntityGlowColor(@Nullable java.util.function.ToIntFunction<Entity> glow) {
+        entityGlowColor = glow;
+    }
+
+    /** The glow an entity is drawn with at least: {@code level (0..15) << 24 | 0xRRGGBB}; 0 for none. White when only a level is known. */
+    public static int entityGlowColor(Entity entity) {
+        java.util.function.ToIntFunction<Entity> g = entityGlowColor;
+        if (g == null) {
+            int level = entityGlow(entity);
+            return level <= 0 ? 0 : level << 24 | 0xFFFFFF;
+        }
+        try {
+            int packed = g.applyAsInt(entity);
+            int level = Math.max(0, Math.min(15, packed >>> 24));
+            return level == 0 ? 0 : level << 24 | (packed & 0xFFFFFF);
+        } catch (RuntimeException e) {
+            return 0;
+        }
+    }
+
+    // ---- live samples off the render thread (2.10.3) ----
+
+    /** Switch: {@code -Dcolorfullighting.liveSamplesOffThread=false} leaves worker threads' samples without the drawn lights, as 2.10.2. */
+    private static final boolean LIVE_OFF_THREAD = !"false".equalsIgnoreCase(System.getProperty("colorfullighting.liveSamplesOffThread", "true"));
+    private static final boolean DEBUG_LIVE = Boolean.getBoolean("colorfullighting.debugLiveSamples");
+
+    private static final class LiveSample {
+        int depth;
+        final float[] vis = new float[3];
+    }
+
+    private static final ThreadLocal<LiveSample> LIVE = ThreadLocal.withInitial(LiveSample::new);
+    /** How many threads are inside a live sample now, so mesh builders skip the thread-local while there is none. */
+    private static final java.util.concurrent.atomic.AtomicInteger liveSamplers = new java.util.concurrent.atomic.AtomicInteger();
+    private static final Map<String, java.util.concurrent.atomic.AtomicLong> liveThreads = new ConcurrentHashMap<>();
+
+    /**
+     * Marks the samples this thread takes until {@link #endLiveSample} as live ones: the light of something drawn this frame (a
+     * particle ticked on a worker thread), which takes the lights the shaders draw as the render thread's samples do. Without it a
+     * sample off the render thread is a chunk mesh's and leaves them out: particles refreshed on AsyncParticles' workers went black
+     * in a dynamic light. False on the render thread and with the switch off (nothing to end then).
+     */
+    public static boolean beginLiveSample() {
+        if (!LIVE_OFF_THREAD || com.mojang.blaze3d.systems.RenderSystem.isOnRenderThread()) return false;
+        LIVE.get().depth++;
+        liveSamplers.incrementAndGet();
+        debugNote("live");
+        return true;
+    }
+
+    /** Counts a happening by its name and thread while {@code -Dcolorfullighting.debugLiveSamples=true}. */
+    public static void debugNote(String what) {
+        if (!DEBUG_LIVE) return;
+        String name = what + "@" + Thread.currentThread().getName().replaceAll("[0-9]+", "#");
+        liveThreads.computeIfAbsent(name, k -> new java.util.concurrent.atomic.AtomicLong()).incrementAndGet();
+    }
+
+    public static void endLiveSample() {
+        LiveSample live = LIVE.get();
+        if (live.depth > 0) live.depth--;
+        liveSamplers.decrementAndGet();
+    }
+
+    /** For tests ({@code -Dcolorfullighting.debugLiveSamples=true}): what was counted, as {@code what@thread} with digits as #. */
+    public static Map<String, Long> liveSampleThreads() {
+        Map<String, Long> out = new HashMap<>();
+        liveThreads.forEach((name, n) -> out.put(name, n.get()));
+        return out;
+    }
+
+    // ---- an entity's exact light (2.10.3) ----
+
+    /** Switch: {@code -Dcolorfullighting.entityExactLights=false} lights entities from the eight cells round them, as 2.10.2. */
+    private static final boolean ENTITY_EXACT = !"false".equalsIgnoreCase(System.getProperty("colorfullighting.entityExactLights", "true"));
+    /** What sits this near a spot light's origin is its carrier or beside it: lit by the carrier's glow, never by the cone's edge. */
+    private static final double SPOT_NEAR = 0.75;
+    /** Render thread: the stored sample being taken is an entity's, whose drawn lights are added exactly afterwards. */
+    private static boolean entitySampling;
+    private static DynamicSource[] frameSources = NO_SOURCES;
+    private static long frameSourcesFrame = -1;
+    private static float frameSourcesPartialTick = Float.NaN;
+    private static ClientLevel frameSourcesLevel;
+    private static final float[] EXACT_VIS = new float[3];
+    private static final float[] EXACT_ACC = new float[3];
+
+    /** The providers' lights at a moment of the frame, at their world positions; gathered once per frame. Render thread. */
+    private static DynamicSource[] frameSources(ClientLevel level, float partialTick) {
+        long frame = ShaderDynamicLights.frame();
+        if (frame != frameSourcesFrame || level != frameSourcesLevel || partialTick != frameSourcesPartialTick) {
+            List<DynamicSource> list = new ArrayList<>();
+            collectExternal(level, partialTick, list::add);
+            frameSources = list.isEmpty() ? NO_SOURCES : list.toArray(new DynamicSource[0]);
+            frameSourcesFrame = frame;
+            frameSourcesLevel = level;
+            frameSourcesPartialTick = partialTick;
+        }
+        return frameSources;
+    }
+
+    /** Forgets the frame's lights (the level went away). */
+    public static void forgetFrameSources() {
+        frameSources = NO_SOURCES;
+        frameSourcesLevel = null;
+        frameSourcesFrame = -1;
+    }
+
+    /**
+     * Begins an entity's stored light sample: the drawn lights are left out of it and added by {@link #exactEntityLight}. False off
+     * the render thread, with the switch off or with no provider (nothing to end then).
+     */
+    public static boolean beginEntitySample() {
+        if (!ENTITY_EXACT || EXTERNAL.isEmpty() || !com.mojang.blaze3d.systems.RenderSystem.isOnRenderThread()) return false;
+        entitySampling = true;
+        return true;
+    }
+
+    public static void endEntitySample() {
+        entitySampling = false;
+    }
+
+    /**
+     * An entity's light with the drawn lights added where the entity is (2.10.3). Its stored sample blends the eight cells round its
+     * probe, and each cell took a light as it is at the cell's centre: a narrow cone covered one of them now and then, so a
+     * flashlight's holder turning slowly, or a kart under its headlights, flickered. Here every light is worked out at the probe
+     * itself and at the body's middle (the brighter counts), in its colour, times what its slab leaves of it there. The entity's
+     * own lights are left out ({@link #setEntityOwnLights}), and a spot never lights what sits at its origin.
+     */
+    public static net.camacraft.colorfullighting.common.util.ColorRGB8 exactEntityLight(Entity entity, float partialTick, net.minecraft.world.phys.Vec3 probe,
+                                                                                         net.camacraft.colorfullighting.common.util.ColorRGB8 stored) {
+        if (!(entity.level() instanceof ClientLevel level)) return stored;
+        DynamicSource[] lights = frameSources(level, partialTick);
+        if (lights.length == 0) return stored;
+        long[] own = null;
+        java.util.function.Function<Entity, long[]> owner = entityOwnLights;
+        if (owner != null) {
+            try {
+                own = owner.apply(entity);
+            } catch (RuntimeException ignored) {
+            }
+        }
+        net.minecraft.world.phys.Vec3 feet = entity.getPosition(partialTick);
+        double px = probe.x, py = probe.y, pz = probe.z;
+        double mx = feet.x, my = feet.y + entity.getBbHeight() * 0.5, mz = feet.z;
+        // a shipyard resident (an item frame on a ship) is lit where it is in the world
+        LevelAttachments attachments = (LevelAttachments) level;
+        if (VsCompat.hasShipMirrors(attachments)) {
+            double[] w = VsCompat.shipyardToWorld(attachments, px, py, pz);
+            if (w != null) {
+                double[] m = VsCompat.shipyardToWorld(attachments, mx, my, mz);
+                px = w[0];
+                py = w[1];
+                pz = w[2];
+                if (m != null) {
+                    mx = m[0];
+                    my = m[1];
+                    mz = m[2];
+                } else {
+                    mx = px;
+                    my = py;
+                    mz = pz;
+                }
+            }
+        }
+        // points the engine propagates are in the stored sample already
+        boolean pointsStored = externalMeshLighting && externalPropagation;
+        boolean slabs = !externalMeshLighting && ShaderDynamicLights.transmission() && DynamicLightField.active();
+        float[] acc = EXACT_ACC;
+        acc[0] = stored.red;
+        acc[1] = stored.green;
+        acc[2] = stored.blue;
+        for (DynamicSource s : lights) {
+            if (pointsStored && !s.isSpot() && s.level >= 1f) continue;
+            if (own != null && owns(own, s.key)) continue;
+            addExact(s, px, py, pz, slabs, acc);
+            addExact(s, mx, my, mz, slabs, acc);
+        }
+        int r = Math.min(255, Math.round(acc[0])), g = Math.min(255, Math.round(acc[1])), b = Math.min(255, Math.round(acc[2]));
+        if (r == stored.red && g == stored.green && b == stored.blue) return stored;
+        return net.camacraft.colorfullighting.common.util.ColorRGB8.fromRGB8(r, g, b);
+    }
+
+    private static boolean owns(long[] own, long key) {
+        for (long k : own) if (k == key) return true;
+        return false;
+    }
+
+    /** One light at one exact place, max'd per channel into {@code acc} (0..255). */
+    private static void addExact(DynamicSource s, double x, double y, double z, boolean slabs, float[] acc) {
+        double dx = x - s.x, dy = y - s.y, dz = z - s.z;
+        double d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 > (double) s.range * s.range) return;
+        double level, remaining;
+        if (s.isSpot()) {
+            double d = Math.sqrt(d2);
+            if (d < SPOT_NEAR) return;
+            remaining = s.range - d;
+            double cos = (dx * s.dx + dy * s.dy + dz * s.dz) / d;
+            double cone = cos <= s.outerCos ? 0.0 : s.innerCos <= s.outerCos ? 1.0 : Math.min(1.0, (cos - s.outerCos) / (s.innerCos - s.outerCos));
+            if (cone <= 0.0) return;
+            level = s.level * (remaining / s.range) * cone;
+        } else if (s.falloff == 1) {
+            level = remaining = s.level - Math.sqrt(d2);
+        } else {
+            level = remaining = s.level - (Math.abs(dx) + Math.abs(dy) + Math.abs(dz));
+        }
+        if (level <= 0.0) return;
+        float scale = (float) (Math.min(15.0, level) / 15.0) * 17f;
+        float vr = 1f, vg = 1f, vb = 1f;
+        float[] vis = EXACT_VIS;
+        if (slabs && DynamicLightField.visibility(s.key, (int) Math.floor(x), (int) Math.floor(y), (int) Math.floor(z), remaining, vis)) {
+            vr = vis[0];
+            vg = vis[1];
+            vb = vis[2];
+        }
+        acc[0] = Math.max(acc[0], s.color.red4 * scale * vr);
+        acc[1] = Math.max(acc[1], s.color.green4 * scale * vg);
+        acc[2] = Math.max(acc[2], s.color.blue4 * scale * vb);
     }
 
     /**
@@ -768,11 +1021,17 @@ public final class DynamicLightsCompat {
         // external lights reach meshes only while they are baked (the shader path draws them otherwise); the render
         // thread's samples (entities, block entities, particles) always take them
         boolean onRenderThread = com.mojang.blaze3d.systems.RenderSystem.isOnRenderThread();
-        boolean meshesTakeExternal = externalMeshLighting || onRenderThread;
+        // a worker thread inside a live sample (2.10.3: a particle's light on AsyncParticles' workers) counts as the render thread
+        LiveSample live = !onRenderThread && liveSamplers.get() > 0 ? LIVE.get() : null;
+        if (live != null && live.depth == 0) live = null;
+        boolean liveHere = onRenderThread || live != null;
+        boolean meshesTakeExternal = externalMeshLighting || liveHere;
+        // an entity's stored sample leaves the drawn lights to exactEntityLight (2.10.3)
+        boolean exactAfter = onRenderThread && entitySampling;
         // render-thread samples (entities, block entities, particles) scale each light by its slab in the field the shaders sample
         // (2.10.0: where its light may go through the blocks); a light without a slab shines through everything
-        boolean slabs = onRenderThread && !externalMeshLighting && ShaderDynamicLights.transmission() && DynamicLightField.active();
-        float[] vis = SLAB_SAMPLE;
+        boolean slabs = liveHere && !externalMeshLighting && ShaderDynamicLights.transmission() && DynamicLightField.active();
+        float[] vis = live != null ? live.vis : SLAB_SAMPLE;
         for (DynamicSource source : sources) {
             double dx = x - source.x, dy = y - source.y, dz = z - source.z;
             double distanceSquared = dx * dx + dy * dy + dz * dz;
@@ -780,7 +1039,7 @@ public final class DynamicLightsCompat {
             // the blocks of reach the light has left here: a detour that long through the blocks takes the rest
             double remaining = 0.0;
             if (source.external) {
-                if (!meshesTakeExternal || source.propagatedFlag) continue;
+                if (!meshesTakeExternal || source.propagatedFlag || exactAfter) continue;
                 if (distanceSquared > (double) source.range * source.range) continue;
                 if (source.isSpot()) {
                     double d = Math.sqrt(distanceSquared);

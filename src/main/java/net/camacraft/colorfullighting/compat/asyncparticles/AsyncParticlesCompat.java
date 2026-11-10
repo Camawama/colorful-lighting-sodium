@@ -32,14 +32,16 @@ public final class AsyncParticlesCompat {
             return vanillaPacked;
 
         int x = pos.getX(), y = pos.getY(), z = pos.getZ();
-        var cursor = engine.acquireCursor();
-        int color = engine.sampleLightColorPacked(cursor, x, y, z);
-        color = maxRGB4(color, engine.sampleLightColorPacked(cursor, x, y + 1, z));
-        color = maxRGB4(color, engine.sampleLightColorPacked(cursor, x, y - 1, z));
-        color = maxRGB4(color, engine.sampleLightColorPacked(cursor, x - 1, y, z));
-        color = maxRGB4(color, engine.sampleLightColorPacked(cursor, x + 1, y, z));
-        color = maxRGB4(color, engine.sampleLightColorPacked(cursor, x, y, z - 1));
-        color = maxRGB4(color, engine.sampleLightColorPacked(cursor, x, y, z + 1));
+        // the seed takes the drawn dynamic lights on whichever thread it is made (2.10.3): off the render thread it left them
+        // out, and a block broken in a red dynamic light began with white particles at the vanilla level
+        boolean live = net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.beginLiveSample();
+        int color;
+        try {
+            color = sampleRound(engine, x, y, z);
+        } finally {
+            if (live) net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.endLiveSample();
+        }
+        net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.debugNote("seed");
 
         int sky4 = (vanillaPacked >>> 20) & 0xF;
         if (color == 0) {
@@ -48,6 +50,19 @@ public final class AsyncParticlesCompat {
             return PackedLightData.packData(sky4, block8, block8, block8);
         }
         return SodiumPackedLightData.packDataFromRGB4(sky4, color);
+    }
+
+    /** The per-channel max of the colored light at a block and its six neighbours. */
+    private static int sampleRound(ColoredLightEngine engine, int x, int y, int z) {
+        var cursor = engine.acquireCursor();
+        int color = engine.sampleLightColorPacked(cursor, x, y, z);
+        color = maxRGB4(color, engine.sampleLightColorPacked(cursor, x, y + 1, z));
+        color = maxRGB4(color, engine.sampleLightColorPacked(cursor, x, y - 1, z));
+        color = maxRGB4(color, engine.sampleLightColorPacked(cursor, x - 1, y, z));
+        color = maxRGB4(color, engine.sampleLightColorPacked(cursor, x + 1, y, z));
+        color = maxRGB4(color, engine.sampleLightColorPacked(cursor, x, y, z - 1));
+        color = maxRGB4(color, engine.sampleLightColorPacked(cursor, x, y, z + 1));
+        return color;
     }
 
     /** Per-channel max of two packed 12-bit {@code r << 8 | g << 4 | b} colors. */

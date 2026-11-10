@@ -6,6 +6,49 @@ Planned
 - keep Valkyrien Skies compatibility on every version where VS exists
 - add Sable / Create Aeronautics compatibility alongside Valkyrien Skies where possible
 
+2026-11-10 (2.10.3)
+- Particles take the drawn dynamic lights on whichever thread asks. With AsyncParticles a particle's light is read on its tick
+  workers, where the dynamic lights were left out: the particles of a block broken in a red dynamic light began at the vanilla
+  light level in white and were then drawn with the stored coloured light alone, black in a dark place. A sample of the client's
+  level off the render thread now adds the frame's dynamic lights as the render thread's samples do
+  (`-Dcolorfullighting.liveSamplesOffThread=false` for the way before).
+- An entity is lit by the dynamic lights at its own place, not by the eight cells round it (`DynamicLightsCompat.exactEntityLight`,
+  `-Dcolorfullighting.entityExactLights=false`). Each cell took a light as it is at the cell's centre, so a narrow cone covered
+  one of them now and then: a flashlight's holder turning slowly was dark with lit moments, and a kart under its headlights
+  flickered as it drove. Every light is now worked out at the entity's probe and its middle, in its colour, times what its slab
+  leaves of it there.
+- A provider names the lights an entity is not lit by (`setEntityOwnLights`: a beam's holder, a kart and its headlights), and a
+  carrier's glow has its light's colour (`setEntityGlowColor`; white before). A spot never lights what sits at its origin.
+- The colour behind stained glass follows a light inside its cell. Since 2.10.0 a slab's tint was the tint of the way from the
+  light's cell and changed only when the light entered another cell, so the red patch behind a pane stood still and then jumped
+  as a light came nearer. A cell's tint is now the tints of the cells the straight line to the light's exact place came through,
+  and a slab with a filter block in its box is worked out again when its light has moved a fifth of a block
+  (`-Dcolorfullighting.slabSubCell=false`).
+- Slabs are built on the mod's own worker thread, the most urgent and the smallest first
+  (`-Dcolorfullighting.slabWorker=common` for one batch at a time on the common pool): a rebuild waited behind the batch before
+  it and behind whatever else the pack had queued on that pool.
+- The terrain's fragments draw the spot lights (`FragmentSpots`, `include/light_frag.glsl`;
+  `-Dcolorfullighting.spotPerFragment=false` for the way before, `-Dcolorfullighting.spotPerFragmentMax`, 24, for the most
+  spots a fragment takes). The Embeddium terrain shaders took every dynamic light at the vertices, and a cone is narrower than
+  a block close to its light: a flashlight held close to the ground lit whole block corners or none (a jagged patch, or no
+  patch at all from eye height), and a headlight's edge was stepped on one side. Embeddium's own terrain fragment shader is
+  wrapped when its source is loaded: the vertices hand on their place, face and stored light, the fragment adds what the
+  lightmap makes of the first `cl_dynFragSpots` lights at its own place, and the vertices leave those lights out. Point lights
+  stay with the vertices.
+- The slabs are bound at the texture units 24 to 26 (`-Dcolorfullighting.slabTextureUnit`; 12 to 14 before). Chunks Fade In
+  keeps its sky texture at unit 13, so a terrain program held a 2D and a 3D sampler on one unit, which a driver may refuse to
+  draw with: it drew while the vertices alone read the slabs, and no terrain at all once the fragments read them. A sampler of
+  another mod on one of the slabs' units is now named in the log.
+- A spot's slab is pruned from the light's exact place with a skirt of cells round its cone
+  (`-Dcolorfullighting.slabExactPrune=false`); it was pruned from the cell's centre, up to 0.87 blocks from where the drawn
+  cone starts.
+- `-Dcolorfullighting.spotFragDebug=true` writes each terrain program's shader sources as the driver holds them to
+  `cl-shaderdump` in the game folder, logs the units of its samplers and draws the fragments' inputs in bands.
+- The block volume is handed to its readers whole (`VoxelOcclusion.Snapshot`, `pinLatest`/`unpin`). Two arrays took turns, and a
+  slab build still reading one could see it filled for the next build. A provider of moving blocks can ask for the next build at
+  once (`externalBlocksMoved`): Lively Lighting 0.6.5 does for a ship with lamps that moved or turned.
+- A level that is left forgets its slabs and its block volume (`ClientEventListener.onLevelUnload`); the two methods had no caller.
+
 2026-11-09 (2.10.2)
 - The log no longer holds "Could not open GLSL import colorful_lighting:shaders/include/colored_light.glsl" for the shaders the game loads
   before its first resource reload. Those come from vanilla's own pack alone, where the include can't be found: the import failed with a

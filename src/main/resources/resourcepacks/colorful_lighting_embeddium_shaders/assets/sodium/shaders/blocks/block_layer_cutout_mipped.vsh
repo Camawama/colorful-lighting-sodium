@@ -22,6 +22,15 @@ uniform vec3 u_RegionOffset;
 
 uniform sampler2D u_LightTex; // The light map texture sampler
 
+#if defined(COLORFUL_LIGHTING_MOD_PRESENT) && defined(CL_DYNAMIC_LIGHTS)
+// for the spot lights the fragments draw (include/light_frag.glsl): the place relative to the camera along the world's axes,
+// the face, the vertex's own light before the lightmap, and its colour and shade
+out vec3 cl_v_Wrel;
+out vec3 cl_v_Normal;
+out vec4 cl_v_Base;
+out vec4 cl_v_Vert;
+#endif
+
 #ifdef COLORFUL_LIGHTING_MOD_PRESENT
 #import <sodium:include/light.glsl>
 #else
@@ -55,6 +64,10 @@ void main() {
     // the vertex's face (in its light's top nibble) turned the same way, so a ship's faces point where the ship does
     mat3 cl_toWorld = cl_dynInvView * mat3(u_ModelViewMatrix);
     v_Color = _vert_color * _sample_lightmap_dyn(u_LightTex, _vert_tex_light_coord, cl_wrel, cl_toWorld);
+    cl_v_Wrel = cl_wrel;
+    cl_v_Normal = cl_faceNormal;
+    cl_v_Base = cl_baseLight;
+    cl_v_Vert = _vert_color;
 #else
     v_Color = _vert_color * _sample_lightmap(u_LightTex, _vert_tex_light_coord);
 #endif

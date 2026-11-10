@@ -66,7 +66,15 @@ public class LevelRendererMixin implements LevelRendererAccessor {
             }
         }
 		
-        int color = engine.sampleLightColorInt(pos);
+        // the real level asked off the render thread is something drawn this frame (a particle on AsyncParticles' workers): it
+        // takes the drawn dynamic lights as the render thread's samples do (2.10.3); a chunk mesh never asks with the level itself
+        boolean live = level instanceof ClientLevel && net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.beginLiveSample();
+        int color;
+        try {
+            color = engine.sampleLightColorInt(pos);
+        } finally {
+            if (live) net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.endLiveSample();
+        }
         int packed = SodiumPackedLightData.packDataFromRGB4(skyLight, color);
         VanillinChestLight.answered(packed);
         cir.setReturnValue(packed);

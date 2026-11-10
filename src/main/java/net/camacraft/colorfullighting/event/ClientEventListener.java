@@ -161,6 +161,7 @@ public class ClientEventListener {
             DhCompat.onLevelUnload(level);
             ImmersivePortalsCompat.onLevelUnload(level);
         }
+        net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.forgetFrameSources();
 	    ((LevelAttachments) event.getLevel()).colorfullighting$getNbtCache().clear();
         BeaconEffectSync.clear();
 		// I think this is redundant

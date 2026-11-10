@@ -55,7 +55,9 @@ public final class VoxelOcclusion {
     private static volatile boolean enabled;
     private static volatile @Nullable BlockFiller externalFiller;
     private static int originX = Integer.MIN_VALUE, originY, originZ;
-    private static long lastBuildTick = Long.MIN_VALUE;
+    /** Far back but finite: the game time minus {@code Long.MIN_VALUE} overflows. */
+    private static final long NEVER = -1_000_000L;
+    private static long lastBuildTick = NEVER;
     private static volatile boolean dueNow;
     private static CompletableFuture<Void> building;
     private static ClientLevel builtFor;
@@ -64,7 +66,14 @@ public final class VoxelOcclusion {
     private static volatile int currentX = Integer.MIN_VALUE, currentY, currentZ;
     /** Counts finished builds, so the field knows the blocks changed under it. */
     private static volatile int buildId;
-    private static byte[] spare;
+
+    /** A finished build with its origin and number, taken whole by a reader on another thread (2.10.3). */
+    record Snapshot(byte[] data, int x, int y, int z, int id) {}
+
+    private static volatile @Nullable Snapshot snapshot;
+    /** The array a slab build is reading now: never the one built into next. */
+    private static volatile byte @Nullable [] pinned;
+    private static final byte[][] arrays = new byte[3][];
 
     private VoxelOcclusion() {}
 
@@ -72,9 +81,41 @@ public final class VoxelOcclusion {
         enabled = value;
         if (!value) {
             current = null;
+            snapshot = null;
             currentX = Integer.MIN_VALUE;
             originX = Integer.MIN_VALUE;
         }
+    }
+
+    /**
+     * The latest build for a reader that takes a while (a slab's propagation), held against being built into until
+     * {@link #unpin}; null when there is none. One reader at a time. Until 2.10.3 two arrays took turns, and a reader still on the
+     * older one while blocks changed tick after tick read it half rewritten.
+     */
+    static @Nullable Snapshot pinLatest() {
+        while (true) {
+            Snapshot s = snapshot;
+            if (s == null) {
+                pinned = null;
+                return null;
+            }
+            pinned = s.data;
+            if (snapshot == s) return s;
+        }
+    }
+
+    static void unpin() {
+        pinned = null;
+    }
+
+    /** An array to build into: not the latest finished build, not the one a slab build reads. */
+    private static byte[] takeArray() {
+        byte[] latest = current, held = pinned;
+        for (int i = 0; i < arrays.length; i++) {
+            if (arrays[i] == null) return arrays[i] = new byte[BYTES];
+            if (arrays[i] != latest && arrays[i] != held) return arrays[i];
+        }
+        return new byte[BYTES];
     }
 
     public static boolean enabled() {
@@ -90,6 +131,29 @@ public final class VoxelOcclusion {
         if (!enabled || currentX == Integer.MIN_VALUE) return;
         if (x < currentX || y < currentY || z < currentZ || x >= currentX + SIZE || y >= currentY + SIZE || z >= currentZ + SIZE) return;
         dueNow = true;
+    }
+
+    /**
+     * The blocks of a moving structure in view are somewhere else (a ship with lamps turned or moved; 2.10.3): the volume is
+     * rebuilt on the next tick instead of within ten, one build at a time.
+     */
+    public static void requestRebuild() {
+        if (enabled && currentX != Integer.MIN_VALUE) dueNow = true;
+    }
+
+    private static final java.util.concurrent.atomic.AtomicLong builds = new java.util.concurrent.atomic.AtomicLong(),
+            buildNanos = new java.util.concurrent.atomic.AtomicLong(), longestNanos = new java.util.concurrent.atomic.AtomicLong();
+
+    /** For tests: how many builds of the volume there were and what they took. */
+    public static String stats() {
+        long n = builds.get();
+        return String.format(java.util.Locale.ROOT, "%d builds, %.2f ms mean, %.2f ms longest", n, n == 0 ? 0.0 : buildNanos.get() / 1.0e6 / n, longestNanos.get() / 1.0e6);
+    }
+
+    public static void resetStats() {
+        builds.set(0);
+        buildNanos.set(0);
+        longestNanos.set(0);
     }
 
     /** The latest build (per-channel transmittance, four bytes a cell, x fastest then y then z), or null; its origin by {@link #currentOrigin}. */
@@ -112,9 +176,10 @@ public final class VoxelOcclusion {
         if (builtFor != level) {
             builtFor = level;
             current = null;
+            snapshot = null;
             currentX = Integer.MIN_VALUE;
             originX = Integer.MIN_VALUE;
-            lastBuildTick = Long.MIN_VALUE;
+            lastBuildTick = NEVER;
         }
         Vec3 cam = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
         long tick = level.getGameTime();
@@ -135,9 +200,9 @@ public final class VoxelOcclusion {
     }
 
     private static void build(ClientLevel level, int ox, int oy, int oz, @Nullable BlockFiller filler) {
-        // two arrays in turn: the one being built is never the one being read
-        byte[] data = spare != null && spare != current ? spare : new byte[BYTES];
-        spare = data;
+        // three arrays in turn: the one being built is never the one last finished, nor the one a slab build is reading
+        long started = System.nanoTime();
+        byte[] data = takeArray();
         java.util.Arrays.fill(data, (byte) 0);
         LevelWrapper accessor = new LevelWrapper(level);
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
@@ -205,6 +270,11 @@ public final class VoxelOcclusion {
         currentY = oy;
         currentZ = oz;
         buildId++;
+        snapshot = new Snapshot(data, ox, oy, oz, buildId);
+        long took = System.nanoTime() - started;
+        builds.incrementAndGet();
+        buildNanos.addAndGet(took);
+        longestNanos.accumulateAndGet(took, Math::max);
     }
 
     /** What stops light: an opaque full cube; what tints it: Colorful Lighting's filters; everything else lets it through, as vanilla's light does mostly. */
@@ -221,9 +291,10 @@ public final class VoxelOcclusion {
 
     public static void onLevelUnload() {
         current = null;
+        snapshot = null;
         currentX = Integer.MIN_VALUE;
         originX = Integer.MIN_VALUE;
-        lastBuildTick = Long.MIN_VALUE;
+        lastBuildTick = NEVER;
         builtFor = null;
     }
 }
