@@ -18,6 +18,8 @@
     "render.ClientLevelBlockChangeMixin",
     "render.AmbientOcclusionFaceMixin",
     "render.EntityRendererMixin",
+    "render.ItemRendererGlowMixin",
+    "render.GameRendererHandMixin",
     "render.BrightnessCombinerMixin",
     "compat.sodium.SodiumWorldSliceMixin",
     "compat.sodium.SodiumBlockOcclusionCacheMixin",

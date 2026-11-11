@@ -55,7 +55,12 @@ public abstract class ShaderInstanceMixin implements CLExtendedShader {
 	@Inject(at = @At("TAIL"), method = "<init>(Lnet/minecraft/server/packs/resources/ResourceProvider;Lnet/minecraft/resources/ResourceLocation;Lcom/mojang/blaze3d/vertex/VertexFormat;)V")
 	public void postInit(ResourceProvider p_173336_, ResourceLocation shaderLocation, VertexFormat p_173338_, CallbackInfo ci) {
 		colorfullighting$NIGHT_VIBRANCY = colorfullighting$injectUniform("colorfullighting_mod_injected_u_NightVibrancy", "float", 1);
+		colorfullighting$uvStrength = net.camacraft.colorfullighting.compat.vanilla.EntityBlacklight.init(this.programId);
 	}
+
+	/** Blacklight on entities (2.11.1): where this program takes the ultraviolet's strength, or -1 for a shader without it. */
+	@Unique
+	private int colorfullighting$uvStrength = -1;
 	
 	@Unique
 	protected Uniform colorfullighting$injectUniform(String name, String dtype, int vecSize) {
@@ -82,6 +87,9 @@ public abstract class ShaderInstanceMixin implements CLExtendedShader {
 	
 	@Inject(at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/platform/GlStateManager;_getActiveTexture()I"), method = "apply")
 	public void preApply(CallbackInfo ci) {
+		if (colorfullighting$uvStrength >= 0) {
+			net.camacraft.colorfullighting.compat.vanilla.EntityBlacklight.apply(this.programId, colorfullighting$uvStrength);
+		}
 		if (colorfullighting$NIGHT_VIBRANCY != null) {
 			ClientLevel level = Minecraft.getInstance().level;
 			if (level != null) {
@@ -127,7 +135,7 @@ public abstract class ShaderInstanceMixin implements CLExtendedShader {
 				str0,
 				stream,
 				str1,
-				new Preprocessor(processor)
+				new Preprocessor(processor, type == Program.Type.VERTEX ? Boolean.TRUE : type == Program.Type.FRAGMENT ? Boolean.FALSE : null, str0)
 		);
 	}
 }

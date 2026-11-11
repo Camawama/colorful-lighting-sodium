@@ -119,6 +119,7 @@ public class ClientEventListener {
         net.camacraft.colorfullighting.compat.dynamiclights.BlacklightField.tick(Minecraft.getInstance().level);
         // which blocks in view emit light, for the bloom; nothing while the bloom is off
         net.camacraft.colorfullighting.bloom.EmitterVolume.tick(Minecraft.getInstance().level, net.camacraft.colorfullighting.bloom.Bloom.active());
+        net.camacraft.colorfullighting.bloom.ShipEmitters.tick(Minecraft.getInstance().level, net.camacraft.colorfullighting.bloom.Bloom.active());
 
         if (ColorfulLighting.clientAccessor == null) return;
         var player = ColorfulLighting.clientAccessor.getPlayer();
@@ -136,6 +137,8 @@ public class ClientEventListener {
         if (event.getChunk() instanceof LevelChunk chunk) {
 	        ((LevelAttachments) event.getLevel()).colorfullighting$getNbtCache().onChunkLoaded(chunk);
             if (chunk.getLevel() instanceof ClientLevel clientLevel) {
+                ColoredLightEngine loadedInto = ((LevelAttachments) clientLevel).colorfullighting$getEngine();
+                if (loadedInto != null) loadedInto.onChunkLoaded(chunk.getPos().x, chunk.getPos().z);
                 ImmersivePortalsCompat.onChunkLoad(clientLevel, chunk.getPos());
             }
         }
@@ -177,6 +180,7 @@ public class ClientEventListener {
         net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.forgetFrameSources();
         net.camacraft.colorfullighting.compat.dynamiclights.BlacklightField.onLevelUnload();
         net.camacraft.colorfullighting.bloom.EmitterVolume.onLevelUnload();
+        net.camacraft.colorfullighting.bloom.ShipEmitters.onLevelUnload();
 	    ((LevelAttachments) event.getLevel()).colorfullighting$getNbtCache().clear();
         BeaconEffectSync.clear();
 		// I think this is redundant
@@ -262,8 +266,7 @@ public class ClientEventListener {
                         )
                         .then(Commands.literal("blacklight")
                                 .executes(context -> {
-                                    context.getSource().sendSuccess(() -> Component.literal("Blacklight is " + (ColorfulLightingConfig.blacklight() ? "on" : "off")
-                                            + " (" + net.camacraft.colorfullighting.compat.dynamiclights.BlacklightField.stats() + ")"), false);
+                                    context.getSource().sendSuccess(() -> Component.literal("Blacklight is " + (ColorfulLightingConfig.blacklight() ? "on" : "off")), false);
                                     return 1;
                                 })
                                 .then(Commands.literal("on").executes(context -> setBlacklight(context.getSource(), true)))
@@ -271,8 +274,7 @@ public class ClientEventListener {
                         )
                         .then(Commands.literal("bloom")
                                 .executes(context -> {
-                                    context.getSource().sendSuccess(() -> Component.literal("Bloom is " + (ColorfulLightingConfig.bloom() ? "on" : "off")
-                                            + " (" + net.camacraft.colorfullighting.bloom.Bloom.stats() + "; " + net.camacraft.colorfullighting.bloom.EmitterVolume.stats() + ")"), false);
+                                    context.getSource().sendSuccess(() -> Component.literal("Bloom is " + (ColorfulLightingConfig.bloom() ? "on" : "off")), false);
                                     return 1;
                                 })
                                 .then(Commands.literal("on").executes(context -> setBloom(context.getSource(), true)))
@@ -414,7 +416,7 @@ public class ClientEventListener {
     private static int setBloom(CommandSourceStack source, boolean on) {
         ColorfulLightingConfig.BLOOM.set(on);
         ColorfulLightingConfig.save();
-        source.sendSuccess(() -> Component.literal(on ? "Bloom on: light sources and what glows under blacklight spread a soft glow" : "Bloom off"), false);
+        source.sendSuccess(() -> Component.literal(on ? "Bloom on" : "Bloom off"), false);
         return 1;
     }
 
@@ -425,7 +427,7 @@ public class ClientEventListener {
         if (Minecraft.getInstance().levelRenderer != null) {
             Minecraft.getInstance().levelRenderer.allChanged();
         }
-        source.sendSuccess(() -> Component.literal(on ? "Blacklight on: saturated colours glow under ultraviolet light" : "Blacklight off: ultraviolet light is a dim violet"), false);
+        source.sendSuccess(() -> Component.literal(on ? "Blacklight on" : "Blacklight off"), false);
         return 1;
     }
 

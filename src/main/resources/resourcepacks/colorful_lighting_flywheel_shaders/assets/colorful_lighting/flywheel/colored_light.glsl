@@ -101,6 +101,41 @@ vec3 cl_dynVisibility(vec4 s, vec3 at, float remaining) {
     return v.rgb * clamp(1.0 - detour / max(remaining, 1.0e-3), 0.0, 1.0);
 }
 
+// Blacklight and the lights that absorb (2.12.0), as the terrain shaders have them: which of the lights are ultraviolet and
+// which absorb (a bit a light), the blacklight blocks' field round the camera, and what the loop below gathers of each.
+uniform ivec2 cl_dynUvBits;
+uniform ivec2 cl_dynAbsBits;
+uniform float cl_uvStrength;
+uniform int cl_uvField;
+uniform sampler3D cl_uvFieldTex;
+uniform vec3 cl_uvFieldOrigin;
+uniform float cl_uvFieldSize;
+float cl_uvAcc = 0.0;
+vec3 cl_absAcc = vec3(0.0);
+
+// how much ultraviolet reaches a place relative to the camera, 0..1: the lights' (cl_dynamicLight ran) and the field's
+float cl_fwUltraviolet(vec3 wrel) {
+    float uv = cl_uvAcc;
+    if (cl_uvField > 0) {
+        vec3 tc = (wrel - cl_uvFieldOrigin) / cl_uvFieldSize;
+        if (all(greaterThan(tc, vec3(0.0))) && all(lessThan(tc, vec3(1.0)))) {
+            vec2 f = textureLod(cl_uvFieldTex, tc, 0.0).rg;
+            if (f.g > 0.02) uv = max(uv, f.r / f.g);
+        }
+    }
+    return clamp(uv * cl_uvStrength, 0.0, 1.0);
+}
+
+// what ultraviolet adds to a colour: its own colour by how saturated it is, a pale blue for a white
+vec3 cl_fwGlow(vec3 albedo) {
+    float mx = max(albedo.r, max(albedo.g, albedo.b));
+    float mn = min(albedo.r, min(albedo.g, albedo.b));
+    if (mx <= 1.0e-3) return vec3(0.0);
+    float vivid = smoothstep(0.45, 0.85, (mx - mn) / mx) * smoothstep(0.25, 0.6, mx);
+    float white = smoothstep(0.72, 0.92, mn);
+    return albedo * (vivid * 1.25 / mx) + albedo * vec3(0.55, 0.7, 1.0) * (white * 0.4);
+}
+
 vec3 cl_dynamicLight(vec3 wrel, vec3 normal) {
     vec3 acc = vec3(0.0);
     vec3 at = wrel + normal * 0.5;
@@ -134,6 +169,14 @@ vec3 cl_dynamicLight(vec3 wrel, vec3 normal) {
         vec3 light = c.rgb * (min(l, 15.0) / 15.0);
         vec4 s = cl_dynSlab[i];
         if (cl_dynSlabs > 0 && s.w >= 0.0) light *= cl_dynVisibility(s, at, remaining);
+        if ((((i < 32 ? cl_dynAbsBits.x : cl_dynAbsBits.y) >> (i & 31)) & 1) != 0) {
+            // a light that absorbs (2.12.0): what it would have added is taken away instead
+            cl_absAcc = max(cl_absAcc, light);
+            continue;
+        }
+        if ((((i < 32 ? cl_dynUvBits.x : cl_dynUvBits.y) >> (i & 31)) & 1) != 0) {
+            cl_uvAcc = max(cl_uvAcc, max(light.r, max(light.g, light.b)) / max(max(c.r, max(c.g, c.b)), 1.0e-3));
+        }
         acc = max(acc, light);
     }
     return acc;

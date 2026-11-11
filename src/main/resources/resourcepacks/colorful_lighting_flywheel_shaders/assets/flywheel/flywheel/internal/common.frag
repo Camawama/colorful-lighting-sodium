@@ -105,6 +105,11 @@ void _flw_main() {
     flw_shaderLight();
 
     vec4 color = flw_fragColor;
+    // the colour without its shade, for what glows under blacklight (2.12.0): the vertex colour carries the baked shading of
+    // a contraption's blocks, and a block's darker edge is no less saturated a colour (the terrain's shaders leave the
+    // shade out the same way)
+    float cl_shade = max(flw_vertexColor.r, max(flw_vertexColor.g, flw_vertexColor.b));
+    vec3 cl_albedo = cl_shade > 1.0e-3 ? min(color.rgb / cl_shade, vec3(1.0)) : color.rgb;
 
     #ifdef _FLW_USE_DISCARD
     if (flw_discardPredicate(color)) {
@@ -130,13 +135,14 @@ void _flw_main() {
         // a fragment without coloured data takes its own block light as grey and goes through the composite too
         if (cl_dynCount > 0) {
             vec3 dyn = cl_dynamicLight(flw_vertexPos.xyz - flw_cameraPos.xyz, flw_vertexNormal);
-            if (max(max(dyn.r, dyn.g), dyn.b) > 0.0) {
+            if (max(max(dyn.r, dyn.g), dyn.b) > 0.0 || max(max(cl_absAcc.r, cl_absAcc.g), cl_absAcc.b) > 0.0) {
                 if (data.alpha <= 0.0) {
                     data.lightColor = vec3(clamp(flw_fragLight.x * (16.0 / 15.0), 0.0, 1.0));
                     data.skyLight = clamp(flw_fragLight.y * (16.0 / 15.0), 0.0, 1.0);
                     data.alpha = 1.0;
                 }
-                data.lightColor = max(data.lightColor, dyn);
+                // the lights that absorb (2.12.0) take from the block light here; the sky's share below
+                data.lightColor = max(max(data.lightColor, dyn) - cl_absAcc, vec3(0.0));
             }
         }
         if(data.alpha > 0.0) {
@@ -158,7 +164,12 @@ void _flw_main() {
             #endif
         }
         // END colorful lighting
+        lightColor.rgb *= 1.0 - 0.85 * max(cl_absAcc.r, max(cl_absAcc.g, cl_absAcc.b));
         color *= lightColor;
+        if (cl_uvStrength > 0.0) {
+            float cl_u = cl_fwUltraviolet(flw_vertexPos.xyz - flw_cameraPos.xyz);
+            if (cl_u > 0.002) color.rgb += cl_fwGlow(cl_albedo) * cl_u;
+        }
     }
 
     #ifdef _FLW_DEBUG

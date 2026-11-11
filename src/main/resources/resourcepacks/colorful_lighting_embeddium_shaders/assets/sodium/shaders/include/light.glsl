@@ -44,6 +44,11 @@ uniform float cl_uvStrength;
 float cl_uvAcc = 0.0;
 #endif
 
+// Lights that absorb (2.12.0): cl_dynAbsBits says which of the lights they are (a bit a light, as cl_dynUvBits). What they
+// take at a point, 0..1 a channel, is gathered in cl_absAcc; the block light and the sky light are taken down by it.
+uniform ivec2 cl_dynAbsBits;
+vec3 cl_absAcc = vec3(0.0);
+
 vec3 cl_dynVisibility(vec4 s, vec3 at, float remaining) {
     int cls = int(s.w / 1000.0);
     float slot = s.w - float(cls) * 1000.0;
@@ -90,6 +95,11 @@ vec3 cl_dynamicLightRange(vec3 wrel, vec3 normal, int from, int to) {
         vec3 light = c.rgb * (min(l, 15.0) / 15.0);
         vec4 s = cl_dynSlab[i];
         if (cl_dynSlabs > 0 && s.w >= 0.0) light *= cl_dynVisibility(s, at, remaining);
+        if ((((i < 32 ? cl_dynAbsBits.x : cl_dynAbsBits.y) >> (i & 31)) & 1) != 0) {
+            // a light that absorbs (2.12.0): what it would have added is taken away instead
+            cl_absAcc = max(cl_absAcc, light);
+            continue;
+        }
 #ifdef CL_BLACKLIGHT
         if ((((i < 32 ? cl_dynUvBits.x : cl_dynUvBits.y) >> (i & 31)) & 1) != 0) {
             cl_uvAcc = max(cl_uvAcc, max(light.r, max(light.g, light.b)) / max(max(c.r, max(c.g, c.b)), 1.0e-3));
@@ -173,6 +183,13 @@ vec4 _sample_lightmap_dyn(sampler2D lightMap, ivec2 uv, vec3 wrel, mat3 toWorld)
     }
 #endif
     uvec3 dyn8 = uvec3(clamp(dyn, 0.0, 255.0));
+    // what the lights that absorb take here: of the block light a channel, and of the sky light by the most of them
+    uvec3 abs8 = uvec3(0u);
+    uint absSky = 0u;
+#ifdef CL_DYNAMIC_LIGHTS
+    abs8 = uvec3(clamp(cl_absAcc * 255.0, 0.0, 255.0));
+    absSky = uint(max(cl_absAcc.r, max(cl_absAcc.g, cl_absAcc.b)) * 15.0 + 0.5);
+#endif
 
     // Our format (compact): the top nibble is 15, or 8 plus the vertex's face.
     if (nib >= 8u) {
@@ -186,10 +203,13 @@ vec4 _sample_lightmap_dyn(sampler2D lightMap, ivec2 uv, vec3 wrel, mat3 toWorld)
             return _sample_lightmap_vanilla(lightMap, ivec2(int(block8), int(skyLight4) << 4));
         }
 
+        uvec3 lit8 = max(uvec3(red8, green8, blue8), dyn8);
+        lit8 -= min(lit8, abs8);
+        skyLight4 -= min(skyLight4, absSky);
 #ifdef CL_DYNAMIC_LIGHTS
-        cl_baseLight = vec4(vec3(max(uvec3(red8, green8, blue8), dyn8)), float(skyLight4));
+        cl_baseLight = vec4(vec3(lit8), float(skyLight4));
 #endif
-        return _sample_colored_common(lightMap, skyLight4, max(red8, dyn8.r), max(green8, dyn8.g), max(blue8, dyn8.b));
+        return _sample_colored_common(lightMap, skyLight4, lit8.r, lit8.g, lit8.b);
     }
 
     // Check if it's our compressed 16-bit non-compact format (bit 0 == 1)
@@ -209,28 +229,27 @@ vec4 _sample_lightmap_dyn(sampler2D lightMap, ivec2 uv, vec3 wrel, mat3 toWorld)
         float red8 = float(red4) / 15.0;
         float green8 = float(green4) / 15.0;
         float blue8 = float(blue3) / 7.0;
+        uvec3 lit8 = max(uvec3(uint(red8 * 255.0), uint(green8 * 255.0), uint(blue8 * 255.0)), dyn8);
+        lit8 -= min(lit8, abs8);
+        skyLight4 -= min(skyLight4, absSky);
 #ifdef CL_DYNAMIC_LIGHTS
-        cl_baseLight = vec4(vec3(max(uvec3(uint(red8 * 255.0), uint(green8 * 255.0), uint(blue8 * 255.0)), dyn8)), float(skyLight4));
+        cl_baseLight = vec4(vec3(lit8), float(skyLight4));
 #endif
 
-        return _sample_colored_common(
-            lightMap,
-            skyLight4,
-            // cast to uint, for consistency
-            max(uint(red8 * 255.0), dyn8.r),
-            max(uint(green8 * 255.0), dyn8.g),
-            max(uint(blue8 * 255.0), dyn8.b)
-        );
+        return _sample_colored_common(lightMap, skyLight4, lit8.r, lit8.g, lit8.b);
     }
 
     // Not our format: vanilla light, raised by the dynamic lights where they reach
     uint block8 = uint(clamp(uv.x, 0, 255));
     uint sky4 = uint(clamp(uv.y, 0, 255)) >> 4;
+    uvec3 lit8 = max(uvec3(block8), dyn8);
+    lit8 -= min(lit8, abs8);
+    sky4 -= min(sky4, absSky);
 #ifdef CL_DYNAMIC_LIGHTS
-    cl_baseLight = vec4(vec3(max(uvec3(block8), dyn8)), float(sky4));
+    cl_baseLight = vec4(vec3(lit8), float(sky4));
 #endif
-    if (max(max(dyn8.r, dyn8.g), dyn8.b) > 0u) {
-        return _sample_colored_common(lightMap, sky4, max(block8, dyn8.r), max(block8, dyn8.g), max(block8, dyn8.b));
+    if (max(max(dyn8.r, dyn8.g), dyn8.b) > 0u || max(max(abs8.r, abs8.g), abs8.b) > 0u) {
+        return _sample_colored_common(lightMap, sky4, lit8.r, lit8.g, lit8.b);
     }
     return _sample_lightmap_vanilla(lightMap, uv);
 }

@@ -17,5 +17,6 @@ public abstract class ClientLevelBlockChangeMixin {
         VoxelOcclusion.blockChanged(pos.getX(), pos.getY(), pos.getZ());
         net.camacraft.colorfullighting.compat.dynamiclights.BlacklightField.blockChanged(pos.getX(), pos.getY(), pos.getZ());
         net.camacraft.colorfullighting.bloom.EmitterVolume.blockChanged(pos.getX(), pos.getY(), pos.getZ());
+        net.camacraft.colorfullighting.bloom.ShipEmitters.blockChanged(pos.getX(), pos.getY(), pos.getZ());
     }
 }

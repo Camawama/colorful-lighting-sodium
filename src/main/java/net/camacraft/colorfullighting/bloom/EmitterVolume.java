@@ -77,7 +77,19 @@ public final class EmitterVolume {
     // the worker: what the texture holds once every build handed over is uploaded
     private static final short[][] held = new short[NX * NY * NZ][];
     private static int heldEpoch = -1;
-    private static final Map<BlockState, Short> values = new IdentityHashMap<>();
+    /** Read by the volume's worker and by the ships' look on the client thread. */
+    private static final Map<BlockState, Short> values = new java.util.concurrent.ConcurrentHashMap<>();
+    /**
+     * A block that is seen through and emits nothing (2.11.3): glass and panes. A pixel that shows one is looked up behind it,
+     * through glass alone: with any graphics mode but Fabulous the glass owns the pixel, and a lamp cased in glass had no glow.
+     */
+    static final short GLASS = (short) 0xFFF0;
+
+    /** Whether a cell's value is a light source (its level is not 0). */
+    static boolean isEmitter(short value) {
+        return (value & 0xF) != 0;
+    }
+
 
     private static final ConcurrentLinkedQueue<Built> finished = new ConcurrentLinkedQueue<>();
 
@@ -152,7 +164,7 @@ public final class EmitterVolume {
      * What a block state is in the texture: red, green and blue of its light in four bits each, then a bit for a lamp all
      * through and its level in three (1 to 7); 0 for no light.
      */
-    private static short valueOf(BlockState state) {
+    static short valueOf(BlockState state) {
         Short known = values.get(state);
         if (known != null) return known;
         short value = 0;
@@ -164,6 +176,10 @@ public final class EmitterVolume {
                 boolean lamp = level >= 14 && state.isSolidRender(EmptyBlockGetter.INSTANCE, BlockPos.ZERO);
                 value = (short) ((color.red4 & 15) << 12 | (color.green4 & 15) << 8 | (color.blue4 & 15) << 4 | (lamp ? 8 : 0)
                         | Math.max(1, Math.min(7, (level + 1) >> 1)));
+            } else if (state.getBlock() instanceof net.minecraft.world.level.block.AbstractGlassBlock
+                    || state.getBlock() instanceof net.minecraft.world.level.block.IronBarsBlock
+                    || state.is(net.minecraftforge.common.Tags.Blocks.GLASS) || state.is(net.minecraftforge.common.Tags.Blocks.GLASS_PANES)) {
+                value = GLASS;
             }
         } catch (RuntimeException e) {
             value = 0;
@@ -216,7 +232,7 @@ public final class EmitterVolume {
                             // the section changed under the read: it is as the texture has it until the next look
                             continue;
                         }
-                        if (cells != null) for (short cell : cells) if (cell != 0) emitters++;
+                        if (cells != null) for (short cell : cells) if (isEmitter(cell)) emitters++;
                     }
                     int slot = ((cz & (NZ - 1)) * NY + (cy & (NY - 1))) * NX + (cx & (NX - 1));
                     short[] before = held[slot];

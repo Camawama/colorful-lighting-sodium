@@ -21,6 +21,17 @@ public interface DynamicLightSink {
      */
     int BLACKLIGHT = 0x1000000;
 
+    /**
+     * Or'd into {@code rgb}: a light that absorbs light. Where it reaches, the block light and the sky light are taken down
+     * by what an ordinary light of its level, shape and reach would have added; its red, green and blue say how much of each
+     * channel ({@code ABSORB | 0xFFFFFF} takes everything, {@code ABSORB | 0x00FFFF} leaves red light alone). Drawn where
+     * the dynamic lights are drawn by the shaders (terrain, entities, Flywheel); elsewhere it is no light at all. A build
+     * before 2.12.0 has no such field: look it up by reflection and send no light when it is missing.
+     *
+     * @since 2.12.0
+     */
+    int ABSORB = 0x2000000;
+
     void point(long ownerKey, double x, double y, double z, float level, int rgb, int falloff, float range);
 
     /**

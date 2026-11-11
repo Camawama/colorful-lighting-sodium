@@ -13,5 +13,14 @@ public abstract class LevelRendererFrameMixin {
     @Inject(method = "renderLevel", at = @At("HEAD"))
     private void colorfullighting$newFrame(CallbackInfo ci) {
         ShaderDynamicLights.newFrame();
+        net.camacraft.colorfullighting.compat.vanilla.EntityBlacklight.levelStart();
+        net.camacraft.colorfullighting.bloom.ItemGlows.levelStart();
+    }
+
+    /** The level is drawn: what is drawn from here on (the hand, the screens) is at no place in the world (2.11.1). */
+    @Inject(method = "renderLevel", at = @At("RETURN"))
+    private void colorfullighting$levelDrawn(CallbackInfo ci) {
+        net.camacraft.colorfullighting.compat.vanilla.EntityBlacklight.levelEnd();
+        net.camacraft.colorfullighting.bloom.ItemGlows.levelEnd();
     }
 }

@@ -38,8 +38,24 @@ public class Preprocessor extends GlslPreprocessor {
 		return "#line 0\n" + Resources.CL_VANILLA.replace("#version 150", "/*#version 150*/") + "\n";
 	}
 	
+	/** Whether the source is a vertex shader's, a fragment shader's, or not known (null). */
+	private final Boolean vertex;
+
 	public Preprocessor(GlslPreprocessor par) {
+		this(par, null);
+	}
+
+	public Preprocessor(GlslPreprocessor par, Boolean vertex) {
+		this(par, vertex, null);
+	}
+
+	/** The shader's name, as the game compiles it (2.12.0: some of the blacklight's parts go by it). */
+	private final String name;
+
+	public Preprocessor(GlslPreprocessor par, Boolean vertex, String name) {
 		this.par = par;
+		this.vertex = vertex;
+		this.name = name;
 	}
 	
 	private boolean startsWith(String str, int index, String target) {
@@ -178,7 +194,10 @@ public class Preprocessor extends GlslPreprocessor {
 			}
 		}
 		
-		List<String> patched = par.process(builder.toString().replace("minecraft_sample_lightmap(", "sample_lightmap_colored("));
+		String lit = builder.toString();
+		// blacklight on entities (2.11.1): the entity shaders work out the ultraviolet too
+		if (vertex != null) lit = EntityBlacklight.patch(lit, vertex, name);
+		List<String> patched = par.process(lit.replace("minecraft_sample_lightmap(", "sample_lightmap_colored("));
 		for (int i = 0; i < patched.size(); i++) {
 			String s = patched.get(i);
 			if (s.contains("#error colorful_lighting:shaders/include/colored_light.glsl")) {

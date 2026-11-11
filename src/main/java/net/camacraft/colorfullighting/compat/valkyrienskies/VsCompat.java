@@ -101,7 +101,7 @@ public final class VsCompat {
      * column-row property naming, so applying one is three dot products and never touches a VS or
      * JOML type — this class must stay loadable without Valkyrien Skies.
      */
-    record ShipMirror(double shipyardMinX, double shipyardMinY, double shipyardMinZ,
+    record ShipMirror(long id, double shipyardMinX, double shipyardMinY, double shipyardMinZ,
                       double shipyardMaxX, double shipyardMaxY, double shipyardMaxZ,
                       double worldMinX, double worldMinY, double worldMinZ,
                       double worldMaxX, double worldMaxY, double worldMaxZ,
@@ -190,6 +190,60 @@ public final class VsCompat {
         }
     }
 	
+	/**
+	 * A ship as the bloom needs it (2.11.2): its id, its block bounds in its own grid (the maxima past the last block), its
+	 * bounds in the world and its world-to-ship transform of this tick (rows, as {@link ShipMirror}).
+	 */
+	public record ShipFrame(long id, int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+	                        double worldMinX, double worldMinY, double worldMinZ, double worldMaxX, double worldMaxY, double worldMaxZ,
+	                        double[] worldToShip) {
+		/** How far a place in the world is from the ship's bounds there (0 inside). */
+		public double distanceTo(double x, double y, double z) {
+			double dx = Math.max(0, Math.max(worldMinX - x, x - worldMaxX));
+			double dy = Math.max(0, Math.max(worldMinY - y, y - worldMaxY));
+			double dz = Math.max(0, Math.max(worldMinZ - z, z - worldMaxZ));
+			return Math.sqrt(dx * dx + dy * dy + dz * dz);
+		}
+
+		/** A place in the world in the ship's block grid. */
+		public double[] toShip(double x, double y, double z) {
+			return ShipMirror.apply(worldToShip, x, y, z);
+		}
+	}
+
+	private static final ShipFrame[] NO_SHIPS = new ShipFrame[0];
+
+	/** The loaded ships of a level as of this tick; none without Valkyrien Skies. */
+	public static ShipFrame[] ships(LevelAttachments level) {
+		VsCompat compat = level.colorfullighting$getVSCompat();
+		if (compat == null || !available) return NO_SHIPS;
+		ShipMirror[] now = compat.mirrors;
+		if (now.length == 0) return NO_SHIPS;
+		ShipFrame[] out = new ShipFrame[now.length];
+		for (int i = 0; i < now.length; i++) {
+			ShipMirror m = now[i];
+			out[i] = new ShipFrame(m.id(), (int) Math.floor(m.shipyardMinX()), (int) Math.floor(m.shipyardMinY()), (int) Math.floor(m.shipyardMinZ()),
+					(int) Math.ceil(m.shipyardMaxX()), (int) Math.ceil(m.shipyardMaxY()), (int) Math.ceil(m.shipyardMaxZ()),
+					m.worldMinX(), m.worldMinY(), m.worldMinZ(), m.worldMaxX(), m.worldMaxY(), m.worldMaxZ(), m.worldToShip());
+		}
+		return out;
+	}
+
+	/**
+	 * A ship's world-to-ship transform as it is drawn this frame (rows, as {@link ShipMirror}), or null when the ship is not
+	 * loaded. Render thread.
+	 */
+	public static double[] renderWorldToShip(Level level, long shipId) {
+		if (!available || !(level instanceof LevelAttachments attachments)) return null;
+		VsCompat compat = attachments.colorfullighting$getVSCompat();
+		if (compat == null) return null;
+		try {
+			return compat.impl.renderWorldToShip(level, shipId);
+		} catch (RuntimeException | LinkageError e) {
+			return null;
+		}
+	}
+
 	public static boolean isKnownEmptyShipChunk(LevelAttachments level, int x, int z) {
 		VsCompat compat = level.colorfullighting$getVSCompat();
 		if (compat == null) return false;

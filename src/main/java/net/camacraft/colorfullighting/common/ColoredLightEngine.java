@@ -593,6 +593,17 @@ public class ColoredLightEngine {
      * area but not queued act like ViewArea's border: they hold data written by propagation from the
      * queued chunks but are never propagated themselves.
      */
+    /**
+     * A chunk's blocks arrived (2.11.1; client thread). One whose pass ran already runs it again: light placed beside it while
+     * it was not loaded stopped at its border, and its pass now carries light over its borders (LightPropagator.stitchBorders).
+     * A chunk that arrives for the first time is waiting for its pass anyway.
+     */
+    public void onChunkLoaded(int x, int z) {
+        if (!enabled) return;
+        ChunkPos pos = new ChunkPos(x, z);
+        if (queuedChunks.contains(pos)) chunksWaitingForPropagation.add(pos);
+    }
+
     public record LightRegion(ViewArea area, Set<ChunkPos> chunksToQueue) {}
 
     /**

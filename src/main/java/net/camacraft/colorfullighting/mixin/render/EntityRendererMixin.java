@@ -57,7 +57,11 @@ public class EntityRendererMixin {
         } finally {
             if (exact) net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.endEntitySample();
         }
-        if (exact) color = net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.exactEntityLight(entity, partialTicks, probe, color);
+        if (exact) {
+            color = net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.exactEntityLight(entity, partialTicks, probe, color);
+            // lights that absorb take the sky's light too (2.12.0)
+            skyLight = Math.max(0, skyLight - net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.exactSkyTaken());
+        }
         if(entity.isOnFire() || FIRE_LIT_ENTITIES.contains(entity.getType())) {
             ColorRGB8 fireColor = ColorRGB8.fromRGB4(Config.getLightColor(Blocks.FIRE));
             color = ColorRGB8.fromRGB8(

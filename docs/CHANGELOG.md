@@ -6,6 +6,81 @@ Planned
 - keep Valkyrien Skies compatibility on every version where VS exists
 - add Sable / Create Aeronautics compatibility alongside Valkyrien Skies where possible
 
+2026-11-11 (2.12.0)
+- Lights that absorb light, for dynamic light providers: a light whose colour carries `DynamicLightSink.ABSORB` takes
+  light away where an ordinary light of its level, shape and reach would have added it: the block light by its red, green
+  and blue (`ABSORB | 0xFFFFFF` takes everything), and the sky's light by the most of them. A point or a beam, with walls
+  in its way as any dynamic light. Drawn where the shaders draw the dynamic lights (Embeddium's terrain, Flywheel) and on
+  entities; on the paths that bake dynamic lights into meshes or the lightmap it is no light at all. It is never light
+  for anything that asks how bright a place is. Lively Lighting 0.8.0 sends one for a definition whose colour is
+  `"absorb"`.
+- Bloom for items that give light: a glowstone in the hand, a torch in an item frame, a lantern on the ground or in a
+  mob's hand glow as their blocks do. The bloom finds light sources by the block a pixel shows, and an item is no block:
+  the place and size of every such item is now noted as it is drawn (an item that gives no light costs one lookup by its
+  type), and a bright pixel within that ball counts as a light source. The hand is drawn after the level, over a cleared
+  depth, so it gets a pass of its own, only in frames where it holds something that gives light.
+- Bloom through glass on ships: a ship's lamp behind the ship's glass is followed through the glass as in the world.
+- Blacklight on more of what is drawn: armor (a dyed leather tunic glows in its dye), flat items in the hand, on the
+  ground and in frames, and decals, through the vanilla shaders that fold the light into the vertex colour (the colour
+  before its light rides in the varying `normal`, which their fragments do not read, with a mark no other vertex shader
+  can leave there); particles, by their tint alone (their texture is mostly a grey shape); the hand, which is drawn in the
+  camera's own space half a block before it; and what Flywheel draws (Create's contraptions and Vanillin's block
+  entities), whose fragments now gather the ultraviolet of the lights and of the blacklight blocks' field as the
+  terrain's do. Not lit: Distant Horizons' LODs, and what other mods draw with shaders of their own.
+- `/cl bloom` and `/cl blacklight` say only what they are asked.
+
+2026-11-11 (2.11.3)
+- Bloom through glass: a lamp cased in glass had no glow with any graphics mode but Fabulous, where the glass owns the
+  pixel. Glass and panes are now in the bloom's volume as blocks that are seen through, and a pixel that shows one is
+  followed on through glass alone to a light source behind it. A lamp behind a window with air between glows through it
+  only with Fabulous graphics: the volume cannot tell air from a wall.
+- `/cl bloom on|off` and `/cl blacklight on|off` answer "Bloom on", "Bloom off", "Blacklight on", "Blacklight off", and
+  the commands without an argument say only whether they are on.
+- The bloom's block values are kept in a map that two threads may read (the ships' look of 2.11.2 read it from the client
+  thread beside the volume's worker).
+
+2026-11-11 (2.11.2)
+- Bloom on Valkyrien Skies ships: a lamp on a ship had no glow. The bloom finds light sources by a pixel's place in the
+  world, and a ship's blocks are kept far from where the ship is drawn. The nearest ships that carry a light source (four
+  at most, within 160 blocks) now each get a cube of 64 cells in the ship's own block grid, and a pixel that matches
+  nothing in the world is looked up there through the ship's transform as it is drawn that frame. A ship that moves or
+  turns costs its matrix alone; its cube is read again every ten ticks, or at once when one of its blocks changes
+  (0.13 ms a read in the test). A ship longer than 64 blocks glows in the part round the camera.
+  `-Dcolorfullighting.bloomOnShips=false` for the way before. Harness `cl_bloom`: a glowstone on a ship 13 of 255
+  brighter beside it and 9 above with the bloom on, as one in the world.
+
+2026-11-11 (2.11.1)
+- Fixed: a light's field cut off in a straight edge at a chunk border, until `/cl purge`. A chunk's pass spreads the
+  chunk's own light sources, and a source whose cell holds its light already spreads nothing. Light that had spilled into
+  the neighbouring chunk was therefore lost for good when that chunk left the tracked area and came back empty while the
+  source's chunk stayed (the player about a render distance away and back), or when a lamp was placed beside a chunk that
+  was not loaded yet. A chunk's pass now also carries light over its four borders: every lit cell on either side whose
+  opposite cell holds less than the light could give it spreads again. A border in order costs the comparison of its
+  cells; a chunk whose blocks arrive after its pass ran gets its pass again. `-Dcolorfullighting.stitchBorders=false`
+  for the way before. Harness `cl_border`: a torch three blocks from a chunk border, the player sent away by the tracked
+  area's half width and back; with the switch off the cells east of the border hold nothing where vanilla has 11, with it
+  on they hold the torch's light again.
+- Blacklight on entities: mobs, players, items in frames and block entities such as banners and beds glow under
+  ultraviolet as blocks do (a lime sheep as lime concrete). The game's entity shaders work it out: the vertex shader takes
+  the ultraviolet at each vertex from the blacklight blocks' field and the ultraviolet dynamic lights, with what is in
+  their way, and the fragment shader adds the glow by the texture's own color. Only shaders that hand the lightmap's color
+  to their fragments and multiply the texture by it are touched (the entity render types; 13 vertex and 10 fragment
+  shaders in the test pack); the vertex format and the packed light are as they were. The uniforms go to a program once a
+  frame and only while something ultraviolet is about. Not lit: the hand, armor, and what other mods draw with shaders of
+  their own. Client config `blacklightEntities` (on); `-Dcolorfullighting.entityBlacklight=false` leaves the shaders
+  alone.
+- Fixed: a blacklight boxed in with tinted glass still made the room glow. The blacklight blocks' field was stopped by
+  full solid blocks only; now by anything that lets no light through.
+- Bloom: the glow wavered a little as the camera or a light moved. The picture has no soft edges, so a lamp's outline
+  moves a whole pixel column at a time and the glow's strength stepped with it. Two changes: the pyramid's way down reads
+  thirteen taps instead of five (and nine on the way up), so a bright spot weighs the same wherever it lies on the pixel
+  grid, and each frame's glow is blended with the frame before, read where the pixel's place in the world was on the
+  screen then, over about a thirtieth of a second (client config `bloomSmoothing`, on;
+  `-Dcolorfullighting.bloomSmoothSeconds`). Measured with the camera moved sideways a third of a pixel at a time
+  (harness `cl_bloom`, `shimmer*`): the unevenness of the glow above a glowstone 1.03 percent of the glow before and 0.53
+  with the wider taps, beside it 1.71 and 1.13. What the blending over frames adds does not show in that measure (the
+  test waits between steps).
+
 2026-11-10 (2.11.0)
 - Blacklight: a light color of its own. A block whose color in `light/emitters.json` is `"uv"` (also `"blacklight"`,
   `"ultraviolet"`, with `;level` as any color) is a blacklight: what shows of the light itself is a dim violet, and the

@@ -90,12 +90,17 @@ vec4 cl_litColor() {
 #endif
     int spots = min(cl_dynFragSpots, cl_dynCount);
     if (spots > 0 && cl_v_Base.a >= 0.0) {
+        cl_absAcc = vec3(0.0);
         vec3 spot = cl_dynamicLightRange(cl_v_Wrel, n, 0, spots) * 255.0;
         vec3 base = cl_v_Base.rgb;
-        vec3 lit = max(base, spot);
-        if (lit != base) {
-            vec3 more = cl_lightmapAt(u_LightTex, cl_v_Base.a, lit) - cl_lightmapAt(u_LightTex, cl_v_Base.a, base);
-            col.rgb += cl_v_Vert.rgb * max(more, vec3(0.0));
+        // the beams that absorb (2.12.0) take from the block light and, by the most of them, from the sky's
+        vec3 dark = cl_absAcc * 255.0;
+        float darkest = max(dark.r, max(dark.g, dark.b));
+        vec3 lit = max(max(base, spot) - dark, vec3(0.0));
+        float sky = max(cl_v_Base.a - darkest * (15.0 / 255.0), 0.0);
+        if (lit != base || darkest > 0.0) {
+            vec3 more = cl_lightmapAt(u_LightTex, sky, lit) - cl_lightmapAt(u_LightTex, cl_v_Base.a, base);
+            col.rgb = max(col.rgb + cl_v_Vert.rgb * (darkest > 0.0 ? more : max(more, vec3(0.0))), vec3(0.0));
         }
     }
 #if defined(CL_BLACKLIGHT) && defined(CL_FRAG_ALBEDO)

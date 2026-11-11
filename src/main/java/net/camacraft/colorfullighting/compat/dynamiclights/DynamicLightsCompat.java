@@ -331,6 +331,7 @@ public final class DynamicLightsCompat {
     private static ColorRGB4 colorOf(int rgb) {
         if (rgb < 0) return Config.defaultColor;
         if (rgb == net.camacraft.colorfullighting.api.dynamic.DynamicLightSink.BLACKLIGHT) return ColorRGB4.UV;
+        if ((rgb & net.camacraft.colorfullighting.api.dynamic.DynamicLightSink.ABSORB) != 0) return ColorRGB4.absorbing((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
         return ColorRGB4.fromRGB8((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
     }
 
@@ -348,7 +349,7 @@ public final class DynamicLightsCompat {
         for (DynamicSource s : frameSources(level, partialTick)) {
             out.add(new FrameLight(s.key, new float[]{(float) s.x, (float) s.y, (float) s.z, s.level, s.color.red4 / 15f,
                     s.color.green4 / 15f, s.color.blue4 / 15f, s.range, (float) s.dx, (float) s.dy, (float) s.dz, s.outerCos, s.innerCos, s.falloff,
-                    s.color == ColorRGB4.UV ? 1f : 0f}));
+                    s.color == ColorRGB4.UV ? 1f : 0f, s.color.absorbs ? 1f : 0f}));
         }
         return out;
     }
@@ -604,6 +605,13 @@ public final class DynamicLightsCompat {
     private static ClientLevel frameSourcesLevel;
     private static final float[] EXACT_VIS = new float[3];
     private static final float[] EXACT_ACC = new float[3];
+    private static final float[] EXACT_DARK = new float[3];
+    /** The sky light levels the absorbing lights took at the entity last sampled by {@link #exactEntityLight} (render thread). */
+    private static int exactSkyTaken;
+
+    public static int exactSkyTaken() {
+        return exactSkyTaken;
+    }
 
     /** The providers' lights at a moment of the frame, at their world positions; gathered once per frame. Render thread. */
     private static DynamicSource[] frameSources(ClientLevel level, float partialTick) {
@@ -690,12 +698,23 @@ public final class DynamicLightsCompat {
         acc[0] = stored.red;
         acc[1] = stored.green;
         acc[2] = stored.blue;
+        float[] dark = EXACT_DARK;
+        dark[0] = dark[1] = dark[2] = 0f;
         for (DynamicSource s : lights) {
+            if (s.color.absorbs) {
+                // a light that absorbs (2.12.0): what it takes at the entity's middle
+                addExact(s, mx, my, mz, slabs, dark);
+                continue;
+            }
             if (pointsStored && !s.isSpot() && s.level >= 1f) continue;
             if (own != null && owns(own, s.key)) continue;
             addExact(s, px, py, pz, slabs, acc);
             addExact(s, mx, my, mz, slabs, acc);
         }
+        acc[0] = Math.max(0f, acc[0] - dark[0]);
+        acc[1] = Math.max(0f, acc[1] - dark[1]);
+        acc[2] = Math.max(0f, acc[2] - dark[2]);
+        exactSkyTaken = Math.round(Math.max(dark[0], Math.max(dark[1], dark[2])) / 17f);
         int r = Math.min(255, Math.round(acc[0])), g = Math.min(255, Math.round(acc[1])), b = Math.min(255, Math.round(acc[2]));
         if (r == stored.red && g == stored.green && b == stored.blue) return stored;
         return net.camacraft.colorfullighting.common.util.ColorRGB8.fromRGB8(r, g, b);
@@ -841,7 +860,7 @@ public final class DynamicLightsCompat {
         Map<Long, ColorRGB4> emitters = propagate ? new HashMap<>() : Collections.<Long, ColorRGB4>emptyMap();
         if (propagate) {
             for (DynamicSource source : collected) {
-                if (source.isSpot() || source.level < 1f) continue;
+                if (source.isSpot() || source.level < 1f || source.color.absorbs) continue;
                 float scale = Math.min(15f, source.level) / 15f;
                 ColorRGB4 at = ColorRGB4.fromRGB4(Math.round(source.color.red4 * scale), Math.round(source.color.green4 * scale), Math.round(source.color.blue4 * scale));
                 int cellX = (int) Math.floor(source.x), cellY = (int) Math.floor(source.y), cellZ = (int) Math.floor(source.z);
@@ -1063,6 +1082,7 @@ public final class DynamicLightsCompat {
         boolean slabs = liveHere && !externalMeshLighting && ShaderDynamicLights.transmission() && DynamicLightField.active();
         float[] vis = live != null ? live.vis : SLAB_SAMPLE;
         for (DynamicSource source : sources) {
+            if (source.color.absorbs) continue; // a light that absorbs adds nothing here (2.12.0)
             double dx = x - source.x, dy = y - source.y, dz = z - source.z;
             double distanceSquared = dx * dx + dy * dy + dz * dz;
             double level;

@@ -15,6 +15,7 @@ import org.lwjgl.opengl.GL11C;
 import org.lwjgl.opengl.GL12C;
 import org.lwjgl.opengl.GL13C;
 import org.lwjgl.opengl.GL14C;
+import org.lwjgl.opengl.GL15C;
 import org.lwjgl.opengl.GL20C;
 import org.lwjgl.opengl.GL30C;
 import org.lwjgl.opengl.GL33C;
@@ -57,6 +58,53 @@ public final class Bloom {
     // prefilter
     private static int pColor, pDepth, pSize, pInvViewProj, pVolume, pEmitters, pVolumeSize, pCamInVolume, pWindowMin, pThreshold, pGain, pDebug;
     private static int pUvGain, pUvStrength, pUvField, pUvFieldTex, pUvFieldOrigin, pUvFieldSize, pUvLights, pUvPos, pUvDir;
+    private static int pHistory, pPrevViewProj, pCamDelta, pKeep;
+    private static int pShips, pShipFromRel, pShipEmitters;
+    private static int pGlows, pGlowPos, pGlowColor;
+    private static final float[] glowPos = new float[ItemGlows.MAX * 4], glowCol = new float[ItemGlows.MAX * 4];
+    private static final FloatBuffer GLOW_POS = BufferUtils.createFloatBuffer(ItemGlows.MAX * 4), GLOW_COL = BufferUtils.createFloatBuffer(ItemGlows.MAX * 4);
+    /** While the pass draws over the hand (2.12.0): the picture's depth holds the hand alone, in the hand's own space. */
+    private static boolean handPass;
+    /**
+     * {@code -Dcolorfullighting.bloomGpuTime=true}: what the pass takes on the graphics card, by a timer query round it (one
+     * frame in eight, read back a frame later, left alone while another timer runs). In {@link #stats}.
+     */
+    private static final boolean GPU_TIME = Boolean.getBoolean("colorfullighting.bloomGpuTime");
+    private static int gpuQuery;
+    private static boolean gpuPending;
+    private static double gpuMs, gpuHandMs;
+    private static boolean gpuPendingHand;
+    private static long handFrames;
+
+    /** After the hand is drawn: a pass over it when it holds something that gives light. */
+    public static void renderHand() {
+        if (ItemGlows.handCount() == 0 || !RenderSystem.isOnRenderThread() || !active()) return;
+        handPass = true;
+        try {
+            render(ItemGlows.handProjection(), Minecraft.getInstance().gameRenderer.getMainCamera());
+        } finally {
+            handPass = false;
+        }
+    }
+
+    public static long handFrames() {
+        return handFrames;
+    }
+    private static final float[] shipMatrices = new float[ShipEmitters.SLOTS * 16];
+    private static final FloatBuffer SHIP_MATRICES = BufferUtils.createFloatBuffer(ShipEmitters.SLOTS * 16);
+    /**
+     * What glowed the frame before, at the first level's size (2.11.1): each frame's glow is blended with it, read where the
+     * pixel's place in the world was on the screen then. The picture has no soft edges: a lamp's outline moves a whole pixel
+     * column at a time, and the glow's strength stepped with it as the camera moved. Blended over a few frames the steps
+     * even out, and reading the old glow at the old place keeps it from trailing behind a turn.
+     */
+    private static int historyTex, historyFbo;
+    private static boolean historyValid;
+    private static final Matrix4f PREV_VIEW_PROJ = new Matrix4f();
+    private static double prevCamX, prevCamY, prevCamZ;
+    private static long prevNanos;
+    /** The time over which the glow is evened out, in seconds ({@code -Dcolorfullighting.bloomSmoothSeconds}). */
+    private static final float SMOOTH_SECONDS = Float.parseFloat(System.getProperty("colorfullighting.bloomSmoothSeconds", "0.035"));
     private static int dTex, dTexel, uTex, uTexel, uScale, uSoft;
 
     private static final int[] fbo = new int[LEVELS], tex = new int[LEVELS], widths = new int[LEVELS], heights = new int[LEVELS];
@@ -92,7 +140,8 @@ public final class Bloom {
 
     /** For tests and '/cl bloom': how many frames the pass drew and what it took on the CPU side. */
     public static String stats() {
-        return String.format(java.util.Locale.ROOT, "%d frames drawn, %.3f ms a frame submitting (%.3f the last)%s", frames, averageMs, lastMs,
+        return String.format(java.util.Locale.ROOT, "%d frames drawn, %.3f ms a frame submitting (%.3f the last)%s%s", frames, averageMs, lastMs,
+                GPU_TIME ? String.format(java.util.Locale.ROOT, ", gpu %.3f ms a pass, the hand's %.3f", gpuMs, gpuHandMs) : "",
                 failed ? ", its shaders failed (see the log)" : shaderPack ? ", standing down for the shader pack" : "");
     }
 
@@ -114,18 +163,38 @@ public final class Bloom {
     /** After the level is drawn: the pass. */
     public static void render(Matrix4f lastProjection, Camera camera) {
         if (!RenderSystem.isOnRenderThread() || !active()) return;
-        if (!viewKnown) {
+        final boolean hand = handPass;
+        if (hand) {
+            // the hand is drawn in the camera's own space with a projection of its own
+            VIEW.identity();
+            PROJECTION.set(lastProjection);
+        } else if (!viewKnown) {
             // no stage this frame: the camera's own turn, without what another mod added to the pose
             VIEW.rotationX((float) Math.toRadians(camera.getXRot())).rotateY((float) Math.toRadians(camera.getYRot() + 180f));
             PROJECTION.set(lastProjection);
         }
-        viewKnown = false;
+        if (!hand) viewKnown = false;
         Matrix4f view = VIEW, projection = PROJECTION;
         Vec3 cam = camera.getPosition();
         RenderTarget main = Minecraft.getInstance().getMainRenderTarget();
         int w = main.width, h = main.height;
         if (w < 64 || h < 64 || main.getColorTextureId() <= 0 || main.getDepthTextureId() <= 0) return;
         long started = System.nanoTime();
+        boolean timed = false;
+        if (GPU_TIME) {
+            if (gpuQuery == 0) gpuQuery = GL15C.glGenQueries();
+            if (gpuPending && GL15C.glGetQueryObjecti(gpuQuery, GL15C.GL_QUERY_RESULT_AVAILABLE) != 0) {
+                double ms = GL33C.glGetQueryObjecti64(gpuQuery, GL15C.GL_QUERY_RESULT) / 1.0e6;
+                if (gpuPendingHand) gpuHandMs = gpuHandMs == 0 ? ms : gpuHandMs * 0.9 + ms * 0.1;
+                else gpuMs = gpuMs == 0 ? ms : gpuMs * 0.9 + ms * 0.1;
+                gpuPending = false;
+            }
+            if (!gpuPending && ((frames + (handPass ? 4 : 0)) & 7) == 0 && GL15C.glGetQueryi(GL33C.GL_TIME_ELAPSED, GL15C.GL_CURRENT_QUERY) == 0) {
+                GL15C.glBeginQuery(GL33C.GL_TIME_ELAPSED, gpuQuery);
+                timed = true;
+                gpuPendingHand = handPass;
+            }
+        }
 
         // ---- what is there now (the real state, not the game's record of it) ----
         int program0 = GL11C.glGetInteger(GL20C.GL_CURRENT_PROGRAM);
@@ -149,8 +218,12 @@ public final class Bloom {
         int tex00 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D), sampler00 = GL11C.glGetInteger(GL33C.GL_SAMPLER_BINDING);
         GL13C.glActiveTexture(GL13C.GL_TEXTURE1);
         int tex10 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D), sampler10 = GL11C.glGetInteger(GL33C.GL_SAMPLER_BINDING);
+        GL13C.glActiveTexture(GL13C.GL_TEXTURE2);
+        int tex20 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D), sampler20 = GL11C.glGetInteger(GL33C.GL_SAMPLER_BINDING);
         GL13C.glActiveTexture(GL13C.GL_TEXTURE0 + EmitterVolume.TEXTURE_UNIT);
         int volume0 = GL11C.glGetInteger(GL12C.GL_TEXTURE_BINDING_3D);
+        GL13C.glActiveTexture(GL13C.GL_TEXTURE0 + ShipEmitters.TEXTURE_UNIT);
+        int ships0 = GL11C.glGetInteger(GL12C.GL_TEXTURE_BINDING_3D);
 
         try {
             if (prefilter == 0 && !compile()) return;
@@ -169,10 +242,14 @@ public final class Bloom {
             if (DEBUG > 0 && frames % 600 == 300) probe(main, view, projection, cam, w, h);
 
             // ---- what glows, at half the picture's size ----
-            boolean volume = EmitterVolume.bind();
+            boolean volume = !hand && EmitterVolume.bind();
+            // the light sources on ships near the camera, in each ship's own grid
+            int ships = hand || Minecraft.getInstance().level == null ? 0 : ShipEmitters.bind(Minecraft.getInstance().level, cam, shipMatrices);
+            // the items that give light, as they were drawn
+            int glows = hand ? ItemGlows.hand(glowPos, glowCol) : ItemGlows.level(view, glowPos, glowCol);
             boolean blacklight = ColorfulLightingConfig.blacklight();
-            boolean field = blacklight && BlacklightField.bind();
-            int uvLights = blacklight ? ShaderDynamicLights.blacklights(uvPos, uvDir, MAX_UV_LIGHTS) : 0;
+            boolean field = !hand && blacklight && BlacklightField.bind();
+            int uvLights = blacklight && !hand ? ShaderDynamicLights.blacklights(uvPos, uvDir, MAX_UV_LIGHTS) : 0;
             GL20C.glUseProgram(prefilter);
             GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, fbo[0]);
             GL11C.glViewport(0, 0, widths[0], heights[0]);
@@ -188,6 +265,22 @@ public final class Bloom {
             GL20C.glUniformMatrix4fv(pInvViewProj, false, MATRIX);
             GL20C.glUniform1i(pEmitters, EmitterVolume.TEXTURE_UNIT);
             GL20C.glUniform1i(pVolume, volume ? 1 : 0);
+            GL20C.glUniform1i(pShipEmitters, ShipEmitters.TEXTURE_UNIT);
+            GL20C.glUniform1i(pGlows, glows);
+            if (glows > 0) {
+                GLOW_POS.clear();
+                GLOW_POS.put(glowPos, 0, glows * 4).flip();
+                GL20C.glUniform4fv(pGlowPos, GLOW_POS);
+                GLOW_COL.clear();
+                GLOW_COL.put(glowCol, 0, glows * 4).flip();
+                GL20C.glUniform4fv(pGlowColor, GLOW_COL);
+            }
+            GL20C.glUniform1i(pShips, ships);
+            if (ships > 0) {
+                SHIP_MATRICES.clear();
+                SHIP_MATRICES.put(shipMatrices, 0, ships * 16).flip();
+                GL20C.glUniformMatrix4fv(pShipFromRel, false, SHIP_MATRICES);
+            }
             if (volume) {
                 int[] origin = EmitterVolume.origin();
                 GL20C.glUniform3f(pVolumeSize, EmitterVolume.SX, EmitterVolume.SY, EmitterVolume.SZ);
@@ -206,6 +299,32 @@ public final class Bloom {
                 GL20C.glUniform3f(pUvFieldOrigin, (float) (origin[0] - cam.x), (float) (origin[1] - cam.y), (float) (origin[2] - cam.z));
                 GL20C.glUniform1f(pUvFieldSize, BlacklightField.SIZE);
             }
+            // the glow of the frame before, where this frame's pixels were then
+            Matrix4f viewProj = new Matrix4f(projection).mul(view);
+            float seconds = (started - prevNanos) / 1.0e9f;
+            float keep = !hand && historyValid && DEBUG == 0 && SMOOTH_SECONDS > 0f && seconds > 0f && seconds < 0.25f && ColorfulLightingConfig.bloomSmoothing()
+                    ? Math.min(0.85f, (float) Math.exp(-seconds / SMOOTH_SECONDS)) : 0f;
+            double dx = cam.x - prevCamX, dy = cam.y - prevCamY, dz = cam.z - prevCamZ;
+            if (dx * dx + dy * dy + dz * dz > 64.0) keep = 0f; // a teleport: nothing of the old picture is this one
+            GL20C.glUniform1f(pKeep, keep);
+            GL20C.glUniform1i(pHistory, 2);
+            if (keep > 0f) {
+                GL33C.glBindSampler(2, 0);
+                GL13C.glActiveTexture(GL13C.GL_TEXTURE2);
+                GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, historyTex);
+                GL13C.glActiveTexture(GL13C.GL_TEXTURE0);
+                MATRIX.clear();
+                PREV_VIEW_PROJ.get(MATRIX);
+                GL20C.glUniformMatrix4fv(pPrevViewProj, false, MATRIX);
+                GL20C.glUniform3f(pCamDelta, (float) dx, (float) dy, (float) dz);
+            }
+            if (!hand) {
+                PREV_VIEW_PROJ.set(viewProj);
+                prevCamX = cam.x;
+                prevCamY = cam.y;
+                prevCamZ = cam.z;
+                prevNanos = started;
+            }
             GL20C.glUniform1i(pUvLights, uvLights);
             if (uvLights > 0) {
                 UV_POS.clear();
@@ -216,6 +335,13 @@ public final class Bloom {
                 GL20C.glUniform4fv(pUvDir, UV_DIR);
             }
             GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
+            // kept for the next frame, before the levels below are added onto it
+            if (!hand && DEBUG == 0 && historyFbo != 0) {
+                GL30C.glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, fbo[0]);
+                GL30C.glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, historyFbo);
+                GL30C.glBlitFramebuffer(0, 0, widths[0], heights[0], 0, 0, widths[0], heights[0], GL11C.GL_COLOR_BUFFER_BIT, GL11C.GL_NEAREST);
+                historyValid = true;
+            }
 
             // ---- down the pyramid ----
             GL20C.glUseProgram(down);
@@ -261,14 +387,20 @@ public final class Bloom {
                 GL20C.glUniform1f(uScale, 1f);
             }
             GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
-            frames++;
+            if (hand) handFrames++;
+            else frames++;
         } catch (RuntimeException e) {
             failed = true;
             ColorfulLighting.LOGGER.error("Bloom: the pass failed and is off until the game restarts", e);
         } finally {
             // ---- everything back as it was ----
+            GL13C.glActiveTexture(GL13C.GL_TEXTURE0 + ShipEmitters.TEXTURE_UNIT);
+            GL11C.glBindTexture(GL12C.GL_TEXTURE_3D, ships0);
             GL13C.glActiveTexture(GL13C.GL_TEXTURE0 + EmitterVolume.TEXTURE_UNIT);
             GL11C.glBindTexture(GL12C.GL_TEXTURE_3D, volume0);
+            GL13C.glActiveTexture(GL13C.GL_TEXTURE2);
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, tex20);
+            GL33C.glBindSampler(2, sampler20);
             GL13C.glActiveTexture(GL13C.GL_TEXTURE1);
             GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, tex10);
             GL33C.glBindSampler(1, sampler10);
@@ -289,6 +421,10 @@ public final class Bloom {
             set(GL11C.GL_STENCIL_TEST, stencil0);
             GL30C.glBindVertexArray(vao0);
             GL20C.glUseProgram(program0);
+            if (timed) {
+                GL15C.glEndQuery(GL33C.GL_TIME_ELAPSED);
+                gpuPending = true;
+            }
             lastMs = (System.nanoTime() - started) / 1.0e6;
             averageMs = averageMs == 0 ? lastMs : averageMs * 0.98 + lastMs * 0.02;
         }
@@ -369,6 +505,26 @@ public final class Bloom {
             if (status != GL30C.GL_FRAMEBUFFER_COMPLETE) throw new IllegalStateException("bloom target " + i + " (" + lw + "x" + lh + ") is incomplete: 0x" + Integer.toHexString(status));
             levels++;
         }
+        // the glow of the frame before, at the first level's size
+        if (historyFbo != 0) GL30C.glDeleteFramebuffers(historyFbo);
+        if (historyTex != 0) GL11C.glDeleteTextures(historyTex);
+        historyValid = false;
+        historyTex = GL11C.glGenTextures();
+        GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, historyTex);
+        GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MIN_FILTER, GL11C.GL_LINEAR);
+        GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MAG_FILTER, GL11C.GL_LINEAR);
+        GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_WRAP_S, GL12C.GL_CLAMP_TO_EDGE);
+        GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_WRAP_T, GL12C.GL_CLAMP_TO_EDGE);
+        GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_BASE_LEVEL, 0);
+        GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_MAX_LEVEL, 0);
+        GL11C.glTexImage2D(GL11C.GL_TEXTURE_2D, 0, GL30C.GL_R11F_G11F_B10F, widths[0], heights[0], 0, GL11C.GL_RGB, GL11C.GL_FLOAT, (ByteBuffer) null);
+        historyFbo = GL30C.glGenFramebuffers();
+        GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, historyFbo);
+        GL30C.glFramebufferTexture2D(GL30C.GL_FRAMEBUFFER, GL30C.GL_COLOR_ATTACHMENT0, GL11C.GL_TEXTURE_2D, historyTex, 0);
+        if (GL30C.glCheckFramebufferStatus(GL30C.GL_FRAMEBUFFER) != GL30C.GL_FRAMEBUFFER_COMPLETE) {
+            GL30C.glDeleteFramebuffers(historyFbo);
+            historyFbo = 0;
+        }
         targetsW = w;
         targetsH = h;
     }
@@ -401,6 +557,16 @@ public final class Bloom {
             pUvLights = GL20C.glGetUniformLocation(prefilter, "u_UvLights");
             pUvPos = GL20C.glGetUniformLocation(prefilter, "u_UvPos");
             pUvDir = GL20C.glGetUniformLocation(prefilter, "u_UvDir");
+            pHistory = GL20C.glGetUniformLocation(prefilter, "u_History");
+            pPrevViewProj = GL20C.glGetUniformLocation(prefilter, "u_PrevViewProj");
+            pCamDelta = GL20C.glGetUniformLocation(prefilter, "u_CamDelta");
+            pKeep = GL20C.glGetUniformLocation(prefilter, "u_Keep");
+            pGlows = GL20C.glGetUniformLocation(prefilter, "u_Glows");
+            pGlowPos = GL20C.glGetUniformLocation(prefilter, "u_GlowPos");
+            pGlowColor = GL20C.glGetUniformLocation(prefilter, "u_GlowColor");
+            pShips = GL20C.glGetUniformLocation(prefilter, "u_Ships");
+            pShipFromRel = GL20C.glGetUniformLocation(prefilter, "u_ShipFromRel");
+            pShipEmitters = GL20C.glGetUniformLocation(prefilter, "u_ShipEmitters");
             dTex = GL20C.glGetUniformLocation(down, "u_Tex");
             dTexel = GL20C.glGetUniformLocation(down, "u_Texel");
             uTex = GL20C.glGetUniformLocation(up, "u_Tex");

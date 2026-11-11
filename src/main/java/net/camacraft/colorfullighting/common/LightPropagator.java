@@ -775,6 +775,7 @@ public class LightPropagator implements Runnable {
 	        engine.level.findLightSources(chunkPos, (blockPos -> {
                 increaseRequests.add(new ColoredLightEngine.LightUpdateRequest(blockPos, Config.getColorEmission(engine.level, blockPos), false, true, false));
             }));
+            stitchBorders(engine, chunkPos, increaseRequests);
             propagateIncreases(engine, engine.level, increaseRequests);
             // new chunks' light propagation is not synchronized with main thread
             applyChangesDirectly(engine);
@@ -1096,6 +1097,59 @@ public class LightPropagator implements Runnable {
             }
             propagateDecrease(engine, increaseRequests, decreaseRequests, req, level);
         }
+    }
+
+    /** {@code -Dcolorfullighting.stitchBorders=false}: a chunk's pass spreads its own sources alone, as before 2.11.1. */
+    private static final boolean STITCH_BORDERS = !"false".equalsIgnoreCase(System.getProperty("colorfullighting.stitchBorders"));
+    /** For tests: the border cells the chunk passes spread again. */
+    public static volatile long stitchedCells;
+
+    /**
+     * A chunk's pass also carries light over its four borders (2.11.1). The pass spreads the chunk's own sources, and a
+     * source whose cell holds its light already spreads nothing: light that had spilled into a neighbouring chunk was lost
+     * for good when that chunk's sections left the tracked area and came back empty (the player a render distance away
+     * and back), or when the neighbour was not loaded while a lamp was placed beside it. The field then ended in a straight
+     * edge at the chunk border until '/cl purge'. Here every lit cell on either side of a border whose opposite cell holds
+     * less than the light could give it (more than a level darker in a channel) spreads again; a wall between them costs
+     * one look, and a border in order costs the comparison alone.
+     */
+    private void stitchBorders(ColoredLightEngine engine, ChunkPos chunkPos, Queue<ColoredLightEngine.LightUpdateRequest> increaseRequests) {
+        if (!STITCH_BORDERS) return;
+        int minY = engine.level.getMinSectionY(), maxY = engine.level.getMaxSectionY();
+        long added = 0;
+        for (int side = 0; side < 4; side++) {
+            int dx = side == 0 ? 1 : side == 1 ? -1 : 0, dz = side == 2 ? 1 : side == 3 ? -1 : 0;
+            for (int sy = minY; sy <= maxY; sy++) {
+                ColoredLightSection own = engine.storage.getSection(SectionPos.asLong(chunkPos.x, sy, chunkPos.z));
+                ColoredLightSection other = engine.storage.getSection(SectionPos.asLong(chunkPos.x + dx, sy, chunkPos.z + dz));
+                if (own == null || other == null || (!own.hasData() && !other.hasData())) continue;
+                for (int y = 0; y < 16; y++) {
+                    for (int i = 0; i < 16; i++) {
+                        // the two cells facing each other over the border
+                        int ox = dx > 0 ? 15 : dx < 0 ? 0 : i, oz = dz > 0 ? 15 : dz < 0 ? 0 : i;
+                        int nx = dx != 0 ? 15 - ox : i, nz = dz != 0 ? 15 - oz : i;
+                        int a = own.getPacked(ox, y, oz), b = other.getPacked(nx, y, nz);
+                        if (a == b) continue;
+                        if (darker(b, a)) {
+                            increaseRequests.add(new ColoredLightEngine.LightUpdateRequest(
+                                    new BlockPos((chunkPos.x << 4) + ox, (sy << 4) + y, (chunkPos.z << 4) + oz), null, true, false, true));
+                            added++;
+                        }
+                        if (darker(a, b)) {
+                            increaseRequests.add(new ColoredLightEngine.LightUpdateRequest(
+                                    new BlockPos(((chunkPos.x + dx) << 4) + nx, (sy << 4) + y, ((chunkPos.z + dz) << 4) + nz), null, true, false, true));
+                            added++;
+                        }
+                    }
+                }
+            }
+        }
+        if (added > 0) stitchedCells += added;
+    }
+
+    /** Whether the packed light {@code low} is more than a level under {@code high} in a channel: {@code high} has light to give it. */
+    private static boolean darker(int low, int high) {
+        return ((high >>> 8) & 0xF) - ((low >>> 8) & 0xF) > 1 || ((high >>> 4) & 0xF) - ((low >>> 4) & 0xF) > 1 || (high & 0xF) - (low & 0xF) > 1;
     }
 
     /** Lit neighbours of {@code blockPos} spread their light into it again. */

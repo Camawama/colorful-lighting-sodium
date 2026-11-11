@@ -25,7 +25,24 @@ public class ColorRGB4 {
      */
     public static final ColorRGB4 UV = new ColorRGB4(3, 1, 8);
 
+    /**
+     * A dynamic light that takes light away (2.12.0, {@code DynamicLightSink.ABSORB}): its channels say how much of each it
+     * absorbs. Told by {@link #absorbs}; as with {@link #UV}, any arithmetic on one gives an ordinary colour of the table.
+     */
+    private static final ColorRGB4[] ABSORBING = new ColorRGB4[4096];
+    static {
+        for (int i = 0; i < 4096; ++i) {
+            ABSORBING[i] = new ColorRGB4((i >>> 8) & 0xF, (i >>> 4) & 0xF, i & 0xF, true);
+        }
+    }
+
     public final int red4, green4, blue4;
+    /** Whether this is the colour of a light that absorbs light. */
+    public final boolean absorbs;
+
+    public static ColorRGB4 absorbing(int r8, int g8, int b8) {
+        return ABSORBING[((r8 >> 4) & 15) << 8 | ((g8 >> 4) & 15) << 4 | ((b8 >> 4) & 15)];
+    }
 
     public static ColorRGB4 fromRGB8(int r, int g, int b) {
         return fromRGB4(r >> 4, g >> 4, b >> 4); // 0..255 range to 0..15 range
@@ -40,9 +57,14 @@ public class ColorRGB4 {
     }
 
     private ColorRGB4(int r4, int g4, int b4) {
+        this(r4, g4, b4, false);
+    }
+
+    private ColorRGB4(int r4, int g4, int b4, boolean absorbing) {
         red4 = r4;
         green4 = g4;
         blue4 = b4;
+        absorbs = absorbing;
     }
 
     public boolean isInValidState() {

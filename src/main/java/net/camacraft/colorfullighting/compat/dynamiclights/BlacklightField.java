@@ -252,7 +252,12 @@ public final class BlacklightField {
         LevelChunkSection section = sections[(sz * SECTIONS + sy) * SECTIONS + sx];
         if (section != null) {
             BlockState state = section.getBlockState(x & 15, y & 15, z & 15);
-            if (state.canOcclude() && state.isSolidRender(EmptyBlockGetter.INSTANCE, BlockPos.ZERO)) return;
+            if (!state.isAir()) {
+                if (state.canOcclude() && state.isSolidRender(EmptyBlockGetter.INSTANCE, BlockPos.ZERO)) return;
+                // what lets no light through lets no ultraviolet through either (2.11.1: tinted glass is no solid block to the
+                // renderer, and a blacklight boxed in with it lit the room)
+                if (state.getLightBlock(EmptyBlockGetter.INSTANCE, BlockPos.ZERO) >= 15) return;
+            }
         }
         lit[cell] = level;
         buckets[level].add(cell);

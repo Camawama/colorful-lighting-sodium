@@ -65,9 +65,11 @@ public class ColorfulLightingConfig {
     public static final ForgeConfigSpec.BooleanValue PARTICLE_LIGHT_RAMPS;
     public static final ForgeConfigSpec.BooleanValue BLACKLIGHT;
     public static final ForgeConfigSpec.DoubleValue BLACKLIGHT_STRENGTH;
+    public static final ForgeConfigSpec.BooleanValue BLACKLIGHT_ENTITIES;
     public static final ForgeConfigSpec.BooleanValue BLOOM;
     public static final ForgeConfigSpec.DoubleValue BLOOM_STRENGTH;
     public static final ForgeConfigSpec.DoubleValue BLOOM_THRESHOLD;
+    public static final ForgeConfigSpec.BooleanValue BLOOM_SMOOTHING;
 
     public static final ForgeConfigSpec SPEC;
 
@@ -183,6 +185,11 @@ public class ColorfulLightingConfig {
         BLACKLIGHT_STRENGTH = BUILDER
                 .comment("How strongly blocks glow under blacklight (1 is the default look, 0 nothing).")
                 .defineInRange("blacklightStrength", 1.0, 0.0, 4.0);
+        BLACKLIGHT_ENTITIES = BUILDER
+                .comment("Whether mobs, players, items in frames and block entities glow under blacklight too (their saturated",
+                        "colors, as blocks). Drawn by the game's own entity shaders; the hand and what other mods draw with",
+                        "shaders of their own stay as they are. Off: only blocks glow.")
+                .define("blacklightEntities", true);
         BLOOM = BUILDER
                 .comment(
                         "Bloom: light sources (blocks that emit light, by their light's color) and what glows under blacklight",
@@ -198,6 +205,10 @@ public class ColorfulLightingConfig {
                         "How bright a pixel of a light source must be to glow (0 to 1). Lower and the whole of a lamp glows,",
                         "its dark frame too; higher and only its brightest pixels do.")
                 .defineInRange("bloomThreshold", 0.3, 0.0, 0.95);
+        BLOOM_SMOOTHING = BUILDER
+                .comment("The bloom is evened out over a few frames (about a thirtieth of a second), so the glow does not waver as",
+                        "the camera or a light moves. Off: every frame's glow is that frame's alone.")
+                .define("bloomSmoothing", true);
         SPEC = BUILDER.build();
     }
 
@@ -218,6 +229,11 @@ public class ColorfulLightingConfig {
         return !SPEC.isLoaded() || BLACKLIGHT.get();
     }
 
+    /** Whether entities glow under blacklight (2.11.1). */
+    public static boolean blacklightEntities() {
+        return !SPEC.isLoaded() || BLACKLIGHT_ENTITIES.get();
+    }
+
     public static float blacklightStrength() {
         return SPEC.isLoaded() ? BLACKLIGHT_STRENGTH.get().floatValue() : 1f;
     }
@@ -230,6 +246,10 @@ public class ColorfulLightingConfig {
 
     public static float bloomStrength() {
         return SPEC.isLoaded() ? BLOOM_STRENGTH.get().floatValue() : 1f;
+    }
+
+    public static boolean bloomSmoothing() {
+        return !SPEC.isLoaded() || BLOOM_SMOOTHING.get();
     }
 
     public static float bloomThreshold() {

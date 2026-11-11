@@ -27,8 +27,9 @@ All of this light propagation runs on a separate background thread, so the game 
 *   Modded light sources with no configured color automatically glow in a color sampled from their own texture
 *   Water subtly tints light passing through it, deepening with distance and matching the biome's water color (swamp water filters light differently than ocean water)
 *   Explosions, `/fill` and anything else that changes many blocks at once relight in place: no flashing purge. `/cl purge` (all, or `chunk` for the 3x3 chunks round you) is still there as a manual reset.
-*   Blacklight: a light color of its own (`"uv"`) that makes saturated blocks around it glow in their own color (see the Resource Pack Tutorial)
-*   Optional bloom: light sources glow softly past their edges, in the color of their light (`/cl bloom on`, off by default)
+*   Blacklight: a light color of its own (`"uv"`) that makes saturated blocks, mobs and players around it glow in their own color (see the Resource Pack Tutorial)
+*   Optional bloom: light sources glow softly past their edges, in the color of their light: blocks, lamps on Valkyrien Skies ships, lamps behind glass, and items that give light in the hand, in frames and on the ground (`/cl bloom on`, off by default)
+*   Dynamic lights that absorb light instead of giving it (for dynamic light providers such as Lively Lighting: `DynamicLightSink.ABSORB`)
 *   The mod is client-side, so you can play with it on ANY server while still experiencing colorful lighting!
 
 ## 🔗 Mod Compatibility
@@ -131,12 +132,15 @@ mod in the log.
 A block whose color is `"uv"` (or `"blacklight"`, `"ultraviolet"`) is a blacklight. What you see of the light itself
 is a dim violet. What it does is make the blocks around it glow in their own color: the more saturated a block's texture,
 the stronger. Lime, orange, yellow, cyan and magenta light up; white, gray, stone and wood barely change. The glow falls
-off with distance like any light and is stopped by walls like any light. `"uv"` can be a block's color or the color
-of single block states. No block is a blacklight unless a resource pack says so.
+off with distance like any light and is stopped by walls like any light, tinted glass included. `"uv"` can be a block's
+color or the color of single block states. No block is a blacklight unless a resource pack says so.
 
-Blacklight is drawn on blocks, on Embeddium's terrain shaders. Entities and items are not lit by it, and it stands down
-under an Oculus shader pack (the violet light stays). `/cl blacklight on|off` (the client config's `blacklight`) switches
-the glow; `blacklightStrength` scales it. With bloom on, what glows under a blacklight blooms too.
+Blacklight is drawn on blocks, on Embeddium's terrain shaders, and on entities (mobs, players, armor, items in the
+hand, on the ground and in frames, block entities such as banners and beds, particles by their tint) through the game's
+own entity shaders: a lime sheep glows as lime concrete does. What Flywheel draws (Create's contraptions) glows too. The
+client config's `blacklightEntities` switches the entities' part. Distant Horizons' LODs and what other mods draw with
+shaders of their own stay as they are, and it all stands down under an Oculus shader pack (the violet light stays). `/cl blacklight on|off` (the client config's `blacklight`) switches the glow; `blacklightStrength`
+scales it. With bloom on, what glows under a blacklight blooms too.
 
 ### Block State Format
 
@@ -397,6 +401,7 @@ Define a separate light intensity/vibrancy value for each moon phase.
 | `autoEmitterColors` | `true` | Automatically sample a light color from the block's texture for light sources with no configured color (typically modded blocks). Bright pixels dominate the sample, so a lamp glows in the color of its glowing part rather than its casing. Disable to make unconfigured light sources emit plain white light. |
 | `autoPatchShaderpacks` | `false` | Scan the `shaderpacks` folder on every startup and create patched copies of recognized packs (same as running `/cl patchshaders`; requires Oculus). |
 | `blacklight` | `true` | Blocks glow under blacklight (a light whose color is `"uv"`). Toggle in game with `/cl blacklight on|off`. Off leaves the dim violet light and nothing else. |
+| `blacklightEntities` | `true` | Mobs, players, items in frames and block entities glow under blacklight too. Off: only blocks glow. |
 | `blacklightStrength` | `1.0` | How strongly blocks glow under blacklight (0 to 4). |
 | `bloom` | `false` | Bloom: light sources (blocks that emit light) glow softly past their edges in the color of their light, and so does what glows under blacklight. A lit wall or a bright texture that emits nothing does not bloom. Toggle in game with `/cl bloom on|off`; `/cl bloom` alone shows what the pass costs. Not drawn under an Oculus shader pack (the pack's own bloom applies). |
 | `bloomStrength` | `1.0` | How strong the bloom is (0 to 4). |

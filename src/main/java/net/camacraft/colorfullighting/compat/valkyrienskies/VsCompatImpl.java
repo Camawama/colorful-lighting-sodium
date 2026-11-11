@@ -54,6 +54,15 @@ final class VsCompatImpl {
         };
     }
 
+    /** The ship's world-to-ship transform as drawn this frame (a client ship's render transform), or null without the ship. */
+    double[] renderWorldToShip(Level level, long shipId) {
+        VsiShipWorld shipWorld = VSGameUtilsKt.getShipObjectWorld(level);
+        if (shipWorld == null) return null;
+        Object found = shipWorld.getLoadedShips().getById(shipId);
+        if (found instanceof org.valkyrienskies.core.api.ships.ClientShip client) return affineRows(client.getRenderTransform().getWorldToShip());
+        return found instanceof Ship ship ? affineRows(ship.getWorldToShip()) : null;
+    }
+
     void tick(Level level) {
         ColoredLightEngine engine = ((LevelAttachments) level).colorfullighting$getEngine();
         if (engine == null) {
@@ -88,7 +97,7 @@ final class VsCompatImpl {
             // The coordinate mirror is republished every tick — the region below only cares about
             // the shipyard chunk footprint, but the transform changes whenever the ship moves.
             var worldAabb = ship.getWorldAABB();
-            if (worldAabb != null) mirrors.add(new VsCompat.ShipMirror(
+            if (worldAabb != null) mirrors.add(new VsCompat.ShipMirror(id,
                     aabb.minX(), aabb.minY(), aabb.minZ(),
                     aabb.maxX() + 1, aabb.maxY() + 1, aabb.maxZ() + 1,
                     worldAabb.minX(), worldAabb.minY(), worldAabb.minZ(),
