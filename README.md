@@ -27,6 +27,8 @@ All of this light propagation runs on a separate background thread, so the game 
 *   Modded light sources with no configured color automatically glow in a color sampled from their own texture
 *   Water subtly tints light passing through it, deepening with distance and matching the biome's water color (swamp water filters light differently than ocean water)
 *   Explosions, `/fill` and anything else that changes many blocks at once relight in place: no flashing purge. `/cl purge` (all, or `chunk` for the 3x3 chunks round you) is still there as a manual reset.
+*   Blacklight: a light color of its own (`"uv"`) that makes saturated blocks around it glow in their own color (see the Resource Pack Tutorial)
+*   Optional bloom: light sources glow softly past their edges, in the color of their light (`/cl bloom on`, off by default)
 *   The mod is client-side, so you can play with it on ANY server while still experiencing colorful lighting!
 
 ## 🔗 Mod Compatibility
@@ -83,6 +85,7 @@ In your resource pack's namespace folder (where folders like `textures` and `mod
 | `"vanilla"` | `"vanilla"` | Same color used in vanilla lighting |
 | Hex string | `"#00FF00"` | RGB in hex |
 | Dye name | `"red"` | Any Minecraft dye name |
+| Blacklight | `"uv"` | Ultraviolet (also `"blacklight"`, `"ultraviolet"`): a dim violet light that makes saturated blocks glow. Emitters only. |
 | RGB array | `[0, 255, 255]` | RGB as numbers 0-255 |
 | `;N` suffix | `"purple;5"` | Optional level after `;` as a hex digit `0`-`F` (15). For **emitters/items** it overrides the emitted light level; for **filters/absorbers** it sets how much light is blocked (0 = full pass, 15 = fully blocked). |
 
@@ -115,6 +118,25 @@ from their (empty) block model, per block state: a liquid whose look follows its
 liquid, Flow Fun!'s Liquid Redstone by its power) glows in the color of that state.
 `/cl debug autocolor <namespace>` lists the light color of every light-emitting block state of a
 mod in the log.
+
+### Blacklight
+
+```
+{
+    "mymod:blacklight_lamp": "uv",      // a blacklight of the block's own light level
+    "minecraft:purple_stained_glass": "uv;12" // ";12" makes a block that emits nothing a blacklight of level 12
+}
+```
+
+A block whose color is `"uv"` (or `"blacklight"`, `"ultraviolet"`) is a blacklight. What you see of the light itself
+is a dim violet. What it does is make the blocks around it glow in their own color: the more saturated a block's texture,
+the stronger. Lime, orange, yellow, cyan and magenta light up; white, gray, stone and wood barely change. The glow falls
+off with distance like any light and is stopped by walls like any light. `"uv"` can be a block's color or the color
+of single block states. No block is a blacklight unless a resource pack says so.
+
+Blacklight is drawn on blocks, on Embeddium's terrain shaders. Entities and items are not lit by it, and it stands down
+under an Oculus shader pack (the violet light stays). `/cl blacklight on|off` (the client config's `blacklight`) switches
+the glow; `blacklightStrength` scales it. With bloom on, what glows under a blacklight blooms too.
 
 ### Block State Format
 
@@ -374,6 +396,11 @@ Define a separate light intensity/vibrancy value for each moon phase.
 | `enabled` | `true` | Master switch for colored lighting. |
 | `autoEmitterColors` | `true` | Automatically sample a light color from the block's texture for light sources with no configured color (typically modded blocks). Bright pixels dominate the sample, so a lamp glows in the color of its glowing part rather than its casing. Disable to make unconfigured light sources emit plain white light. |
 | `autoPatchShaderpacks` | `false` | Scan the `shaderpacks` folder on every startup and create patched copies of recognized packs (same as running `/cl patchshaders`; requires Oculus). |
+| `blacklight` | `true` | Blocks glow under blacklight (a light whose color is `"uv"`). Toggle in game with `/cl blacklight on|off`. Off leaves the dim violet light and nothing else. |
+| `blacklightStrength` | `1.0` | How strongly blocks glow under blacklight (0 to 4). |
+| `bloom` | `false` | Bloom: light sources (blocks that emit light) glow softly past their edges in the color of their light, and so does what glows under blacklight. A lit wall or a bright texture that emits nothing does not bloom. Toggle in game with `/cl bloom on|off`; `/cl bloom` alone shows what the pass costs. Not drawn under an Oculus shader pack (the pack's own bloom applies). |
+| `bloomStrength` | `1.0` | How strong the bloom is (0 to 4). |
+| `bloomThreshold` | `0.3` | How bright a pixel of a light source must be to bloom (0 to 0.95). Lower makes dim parts of a lamp glow as well, higher keeps the glow to its brightest pixels. |
 | `lightUpdateSpeed` | `FASTEST` | How quickly colored light fills in after chunks load. |
 | `smoothLightStaysBehindBlockers` | `true` | Smooth lighting counts a neighbouring cell's colored light only as far as it could reach the face (light loses a level per block, so a neighbour can be at most a level brighter than the cell its light passes through). Open scenes look exactly as with this off; light just doesn't glow round blocks that stop it: no bright patch under and beside a shut door on its dark side, and no light round a beacon or lamp walled in tinted glass. |
 | `xaeroMinimapColors` | `true` | With Xaero's Minimap Lighting on, the block-lit part of a pixel on the chunks the minimap draws itself (without the World Map, or with its World Map chunks option off) takes the color of the light there, in cave mode too. While this is on, the minimap draws its own chunks in cave mode even with the World Map installed (the World Map's cave layers carry no colors in singleplayer); on the surface it keeps its World Map chunks option. |

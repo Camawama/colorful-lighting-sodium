@@ -6,6 +6,41 @@ Planned
 - keep Valkyrien Skies compatibility on every version where VS exists
 - add Sable / Create Aeronautics compatibility alongside Valkyrien Skies where possible
 
+2026-11-10 (2.11.0)
+- Blacklight: a light color of its own. A block whose color in `light/emitters.json` is `"uv"` (also `"blacklight"`,
+  `"ultraviolet"`, with `;level` as any color) is a blacklight: what shows of the light itself is a dim violet, and the
+  blocks around it glow in their own color, the more saturated the stronger (lime, orange, yellow, cyan and magenta light
+  up; white, gray, stone and wood barely change). The glow falls off with distance and is stopped by walls as any light:
+  the blacklights' reach is propagated through the blocks into a field of its own, sampled by the terrain shaders. No
+  block is a blacklight unless a resource pack says so. A provider's dynamic light is one with the color
+  `DynamicLightSink.BLACKLIGHT` (Lively Lighting 0.7.0 sends it for a flashlight whose color is `uv`). Drawn on blocks,
+  on Embeddium's terrain shaders; entities and items are not lit by it, and it stands down under an Oculus shader pack
+  (the violet light stays). Client config `blacklight` (on), `blacklightStrength` (1.0), `/cl blacklight on|off`.
+- Bloom, off by default (`/cl bloom on|off`, client config `bloom`, `bloomStrength` 1.0, `bloomThreshold` 0.3;
+  `/cl bloom` alone shows what the pass costs): light sources glow softly past their edges in the color of their light,
+  and so does what glows under a blacklight. It is a pass over the finished picture and changes nothing about how the
+  world is drawn: the vertex format, the packed light and the terrain shaders' light are as they were. What may glow is
+  decided per pixel, not by brightness alone: the pass finds the block behind a pixel from the depth and looks it up in
+  a volume of the light sources round the camera (256 by 128 by 256 blocks, kept up to date as blocks change), so a lit
+  white wall or a bright texture that emits nothing never blooms. A full block of light level 14 or 15 (glowstone, sea
+  lantern, froglights, shroomlight, a lit redstone lamp) glows over its whole face from a quarter of the threshold:
+  colored light deepens such a block's own texture, and by brightness alone glowstone hardly passed. The glow is a
+  screen blend, so it brightens without burning a lamp's texture to white. Not drawn under an Oculus shader pack.
+- Bloom, what it does not cover yet: the hand and held items, entities and dropped items that carry a dynamic light,
+  Distant Horizons' LODs, light sources further than the volume reaches, and the emissive parts of blocks that emit no
+  light. With Fabulous graphics a lamp behind stained glass or under water glows in the color it is seen in; with the
+  other graphics modes the pixel belongs to the glass and does not glow.
+- Bloom reads the level's own view and projection, captured at the sky, particle and weather stages. Forge 1.20.1 hands
+  the stage after the level the projection as its pose, and a pass that unprojects the depth with it finds no block
+  where the picture shows one.
+- For testing: `-Dcolorfullighting.bloomGain` (2.0, the glow of a light source), `bloomUvGain` (1.5, of what glows under
+  blacklight), `bloomUnit` (0.2, the strength at `bloomStrength` 1) and `bloomDebug` (1 paints the pixels matched to a
+  light source red and the block grid the pass sees; 2 the height and the distance).
+- Harness `cl_bloom` (uhhh clean): the glowstone 71 of 255 brighter with the bloom on, the air beside it 10 and above it
+  5; a lit white and a lit lime wall within 0.5; lime concrete 172 brighter under two blacklight blocks and light gray
+  concrete unchanged; the pass 0.075 ms a frame on the CPU, the frame about 1.5 ms with or without it. A
+  redstone torch, a soul torch and a torch by themselves before a white wall color it as 2.10.6 does, within 1 of 255.
+
 2026-11-10 (2.10.6)
 - A provider's point light can lose a level over more or less than a block (`DynamicLightSink.point` with `blocksPerLevel`,
   a default method that falls back to the plain `point`): as bright at its source, reaching `level * blocksPerLevel` blocks.

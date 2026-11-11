@@ -47,14 +47,15 @@ public final class ShaderDynamicLights {
     }
 
     /** Uniform locations of one program: count, pos[], color[], dir[], invView, slabs, slab[], the three slab textures, their sizes and counts; -1 where missing. */
-    private record Locations(int count, int pos, int color, int dir, int invView, int slabs, int slab, int slabTex0, int slabTex1, int slabTex2, int slabSize, int slabCount, int fragSpots) {
+    private record Locations(int count, int pos, int color, int dir, int invView, int slabs, int slab, int slabTex0, int slabTex1, int slabTex2, int slabSize, int slabCount, int fragSpots,
+                             int uvBits, int uvStrength, int uvField, int uvFieldTex, int uvFieldOrigin, int uvFieldSize) {
         boolean usable() {
             return count >= 0 && pos >= 0 && color >= 0 && dir >= 0;
         }
     }
 
     private static final Map<Integer, Locations> LOCATIONS = new ConcurrentHashMap<>();
-    private static final Locations NONE = new Locations(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
+    private static final Locations NONE = new Locations(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
 
     // the frame's light arrays, built once per frame (keyed by the frame's partial tick and level) and uploaded per pass
     private static float[] pos = new float[MAX_LIGHTS * 4], color = new float[MAX_LIGHTS * 4], dir = new float[MAX_LIGHTS * 4], slab = new float[MAX_LIGHTS * 4];
@@ -69,6 +70,9 @@ public final class ShaderDynamicLights {
     private static int count;
     /** How many of the frame's lights are spot lights: they come first in the arrays (the fragments draw them, 2.10.3). */
     private static int spots;
+    /** Which of the frame's lights are blacklights (2.11.0): a bit a light, the first 32 and the rest. */
+    private static int uvBits0, uvBits1;
+    private static Vec3 builtCam = Vec3.ZERO;
     private static float builtPartialTick = Float.NaN;
     private static ClientLevel builtLevel;
     private static long builtFrame = -1;
@@ -117,8 +121,10 @@ public final class ShaderDynamicLights {
     private static boolean prepare() {
         Minecraft mc = Minecraft.getInstance();
         ClientLevel level = mc.level;
-        if (level == null || !DynamicLightsCompat.hasExternalProviders()) {
+        if (level == null) {
             count = 0;
+            uvBits0 = uvBits1 = 0;
+            builtLevel = null;
             return false;
         }
         float partialTick = mc.getFrameTime();
@@ -130,10 +136,20 @@ public final class ShaderDynamicLights {
         builtLevel = level;
         builtPartialTick = partialTick;
         count = 0;
-        // the shaders draw only while meshes don't bake the lights (else the light would show twice); the count stays 0 otherwise
-        if (DynamicLightsCompat.externalMeshLighting()) return false;
+        uvBits0 = uvBits1 = 0;
         Camera camera = mc.gameRenderer.getMainCamera();
         Vec3 cam = camera.getPosition();
+        builtCam = cam;
+        // eye space back to the world's axes: the inverse of the view rotation the game builds for the frame (pitch about X,
+        // then yaw plus 180 about Y, as GameRenderer.renderLevel does; a rotation's inverse is its transpose). The camera's own
+        // quaternion is not that inverse: used as such it turned every vertex half round the camera, and the lights landed behind
+        // the player (2026-11-09, the owner's torch lighting far rectangles and not the ground at their feet). Built whether or
+        // not there are lights: the blacklight field is read at the same places (2.11.0)
+        Matrix3f view = new Matrix3f().rotation(com.mojang.math.Axis.XP.rotationDegrees(camera.getXRot()))
+                .rotate(com.mojang.math.Axis.YP.rotationDegrees(camera.getYRot() + 180f));
+        view.transpose().get(invView);
+        // the shaders draw only while meshes don't bake the lights (else the light would show twice); the count stays 0 otherwise
+        if (!DynamicLightsCompat.hasExternalProviders() || DynamicLightsCompat.externalMeshLighting()) return false;
         List<DynamicLightsCompat.FrameLight> lights = DynamicLightsCompat.externalLightsForFrame(level, partialTick);
         List<DynamicLightsCompat.FrameLight> near = new ArrayList<>(lights.size());
         double maxD2 = (double) maxDistance * maxDistance;
@@ -176,15 +192,12 @@ public final class ShaderDynamicLights {
             slab[o + 1] = SLAB_SCRATCH[1];
             slab[o + 2] = SLAB_SCRATCH[2];
             slab[o + 3] = SLAB_SCRATCH[3];
+            if (l.length > 14 && l[14] >= 0.5f) {
+                if (i < 32) uvBits0 |= 1 << i;
+                else uvBits1 |= 1 << (i - 32);
+            }
         }
         count = n;
-        // eye space back to the world's axes: the inverse of the view rotation the game builds for the frame (pitch about X,
-        // then yaw plus 180 about Y, as GameRenderer.renderLevel does; a rotation's inverse is its transpose). The camera's own
-        // quaternion is not that inverse: used as such it turned every vertex half round the camera, and the lights landed behind
-        // the player (2026-11-09, the owner's torch lighting far rectangles and not the ground at their feet)
-        Matrix3f view = new Matrix3f().rotation(com.mojang.math.Axis.XP.rotationDegrees(camera.getXRot()))
-                .rotate(com.mojang.math.Axis.YP.rotationDegrees(camera.getYRot() + 180f));
-        view.transpose().get(invView);
         return count > 0;
     }
 
@@ -213,7 +226,10 @@ public final class ShaderDynamicLights {
                     GL20C.glGetUniformLocation(programHandle, "cl_dynSlab"), GL20C.glGetUniformLocation(programHandle, "cl_dynSlabTex0"),
                     GL20C.glGetUniformLocation(programHandle, "cl_dynSlabTex1"), GL20C.glGetUniformLocation(programHandle, "cl_dynSlabTex2"),
                     GL20C.glGetUniformLocation(programHandle, "cl_dynSlabSize"), GL20C.glGetUniformLocation(programHandle, "cl_dynSlabCount"),
-                    GL20C.glGetUniformLocation(programHandle, "cl_dynFragSpots"));
+                    GL20C.glGetUniformLocation(programHandle, "cl_dynFragSpots"),
+                    GL20C.glGetUniformLocation(programHandle, "cl_dynUvBits"), GL20C.glGetUniformLocation(programHandle, "cl_uvStrength"),
+                    GL20C.glGetUniformLocation(programHandle, "cl_uvField"), GL20C.glGetUniformLocation(programHandle, "cl_uvFieldTex"),
+                    GL20C.glGetUniformLocation(programHandle, "cl_uvFieldOrigin"), GL20C.glGetUniformLocation(programHandle, "cl_uvFieldSize"));
             if (DEBUG_DUMP) dump(programHandle, loc);
             if (!loc.usable()) loc = NONE;
             LOCATIONS.put(programHandle, loc);
@@ -224,15 +240,39 @@ public final class ShaderDynamicLights {
         boolean any = prepare();
         if (loc.slabs >= 0) {
             GL20C.glUniform1i(loc.slabs, slabsOn ? 1 : 0);
+            // the samplers' units always (2.11.0): a 3D sampler left on unit 0 shares it with the atlas' 2D sampler
+            if (loc.slabTex0 >= 0) GL20C.glUniform1i(loc.slabTex0, DynamicLightField.TEXTURE_UNITS[0]);
+            if (loc.slabTex1 >= 0) GL20C.glUniform1i(loc.slabTex1, DynamicLightField.TEXTURE_UNITS[1]);
+            if (loc.slabTex2 >= 0) GL20C.glUniform1i(loc.slabTex2, DynamicLightField.TEXTURE_UNITS[2]);
             if (slabsOn) {
-                if (loc.slabTex0 >= 0) GL20C.glUniform1i(loc.slabTex0, DynamicLightField.TEXTURE_UNITS[0]);
-                if (loc.slabTex1 >= 0) GL20C.glUniform1i(loc.slabTex1, DynamicLightField.TEXTURE_UNITS[1]);
-                if (loc.slabTex2 >= 0) GL20C.glUniform1i(loc.slabTex2, DynamicLightField.TEXTURE_UNITS[2]);
                 float[] sizes = DynamicLightField.slabSizes(), counts = DynamicLightField.slabCounts();
                 if (loc.slabSize >= 0) GL20C.glUniform3f(loc.slabSize, sizes[0], sizes[1], sizes[2]);
                 if (loc.slabCount >= 0) GL20C.glUniform3f(loc.slabCount, counts[0], counts[1], counts[2]);
-                checkUnits(programHandle);
+                if (loc.uvFieldTex < 0 && loc.uvStrength < 0) checkUnits(programHandle);
             }
+        }
+        if (withInvView && loc.invView >= 0) {
+            INV_VIEW_BUF.clear();
+            INV_VIEW_BUF.put(invView).flip();
+            GL20C.glUniformMatrix3fv(loc.invView, false, INV_VIEW_BUF);
+        }
+        // blacklight (2.11.0): which lights are ultraviolet, where the blacklight blocks' reaches, and how strongly things glow
+        if (loc.uvStrength >= 0 || loc.uvFieldTex >= 0) {
+            boolean on = builtLevel != null && net.camacraft.colorfullighting.common.ColorfulLightingConfig.blacklight();
+            boolean field = on && withInvView && loc.uvField >= 0 && loc.uvFieldTex >= 0 && BlacklightField.bind();
+            boolean lights = on && any && (uvBits0 | uvBits1) != 0;
+            if (loc.uvFieldTex >= 0) GL20C.glUniform1i(loc.uvFieldTex, BlacklightField.TEXTURE_UNIT);
+            if (loc.uvStrength >= 0) GL20C.glUniform1f(loc.uvStrength, field || lights ? (float) net.camacraft.colorfullighting.common.ColorfulLightingConfig.blacklightStrength() : 0f);
+            if (loc.uvBits >= 0) GL20C.glUniform2i(loc.uvBits, lights ? uvBits0 : 0, lights ? uvBits1 : 0);
+            if (loc.uvField >= 0) GL20C.glUniform1i(loc.uvField, field ? 1 : 0);
+            if (field) {
+                int[] origin = BlacklightField.origin();
+                if (loc.uvFieldOrigin >= 0) GL20C.glUniform3f(loc.uvFieldOrigin, (float) (origin[0] - builtCam.x), (float) (origin[1] - builtCam.y), (float) (origin[2] - builtCam.z));
+                if (loc.uvFieldSize >= 0) GL20C.glUniform1f(loc.uvFieldSize, BlacklightField.SIZE);
+            }
+            uvFrame = frameCounter;
+            uvFieldThisFrame = field;
+            checkUnits(programHandle);
         }
         if (!any) {
             GL20C.glUniform1i(loc.count, 0);
@@ -271,11 +311,42 @@ public final class ShaderDynamicLights {
             SLAB_BUF.put(slab, 0, count * 4).flip();
             GL20C.glUniform4fv(loc.slab, SLAB_BUF);
         }
-        if (withInvView && loc.invView >= 0) {
-            INV_VIEW_BUF.clear();
-            INV_VIEW_BUF.put(invView).flip();
-            GL20C.glUniformMatrix3fv(loc.invView, false, INV_VIEW_BUF);
+    }
+
+    private static long uvFrame = -1;
+    private static boolean uvFieldThisFrame;
+
+    /**
+     * For the bloom: the frame's blacklights, nearest of each kind first, at most {@code max}. Four floats a light into each
+     * array: its place relative to the camera and its range, and its direction and the cosine of its cone (1 for a point).
+     */
+    public static int blacklights(float[] posOut, float[] dirOut, int max) {
+        int n = 0;
+        if ((uvBits0 | uvBits1) == 0 || builtFrame != frameCounter) return 0;
+        for (int i = 0; i < count && n < max; i++) {
+            if ((((i < 32 ? uvBits0 : uvBits1) >> (i & 31)) & 1) == 0) continue;
+            int o = i * 4, t = n * 4;
+            posOut[t] = pos[o];
+            posOut[t + 1] = pos[o + 1];
+            posOut[t + 2] = pos[o + 2];
+            posOut[t + 3] = color[o + 3];
+            dirOut[t] = dir[o];
+            dirOut[t + 1] = dir[o + 1];
+            dirOut[t + 2] = dir[o + 2];
+            dirOut[t + 3] = dir[o + 3];
+            n++;
         }
+        return n;
+    }
+
+    /** For tests: the blacklights among the lights uploaded this frame. */
+    public static int blacklightsThisFrame() {
+        return Integer.bitCount(uvBits0) + Integer.bitCount(uvBits1);
+    }
+
+    /** For tests: whether the terrain read the blacklight field this frame. */
+    public static boolean blacklightFieldThisFrame() {
+        return uvFieldThisFrame && frameCounter - uvFrame <= 1;
     }
 
     private static final Map<Integer, int[]> UNIT_CHECKS = new ConcurrentHashMap<>();
@@ -298,14 +369,14 @@ public final class ShaderDynamicLights {
                 String name = GL20C.glGetActiveUniform(program, i, 256, size, type);
                 int t = type.get(0);
                 boolean sampler = t >= 0x8B5D && t <= 0x8B64 || t >= 0x8DC0 && t <= 0x8DD8 || t >= 0x9108 && t <= 0x910D;
-                if (!sampler || name.startsWith("cl_dynSlabTex")) continue;
+                if (!sampler || name.startsWith("cl_dynSlabTex") || name.equals("cl_uvFieldTex")) continue;
                 int at = GL20C.glGetUniformLocation(program, name);
                 if (at < 0) continue;
                 int unit = GL20C.glGetUniformi(program, at);
-                if (unit < first || unit > first + 2 || !UNIT_CLASHES.add(name)) continue;
+                if (unit < first || unit > first + 3 || !UNIT_CLASHES.add(name)) continue;
                 org.slf4j.LoggerFactory.getLogger("ColorfulLighting").error("Dynamic lights: the sampler {} of another mod uses texture unit {}, "
-                        + "one of the three ({} to {}) the dynamic lights' slabs are bound at. The terrain may not be drawn. "
-                        + "Start with -Dcolorfullighting.slabTextureUnit=<a free unit, 8 to 45> to move them.", name, unit, first, first + 2);
+                        + "one of the four ({} to {}) the dynamic lights' slabs and the blacklight field are bound at. The terrain may not be drawn. "
+                        + "Start with -Dcolorfullighting.slabTextureUnit=<a free unit, 8 to 43> to move them.", name, unit, first, first + 3);
             }
         }
     }

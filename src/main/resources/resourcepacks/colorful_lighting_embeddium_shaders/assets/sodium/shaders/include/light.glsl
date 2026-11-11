@@ -34,6 +34,16 @@ uniform vec3 cl_dynSlabCount;
 // flashlight's patch on the ground was jagged and all but gone from close up. The vertices take the lights after those.
 uniform int cl_dynFragSpots;
 
+#ifdef CL_BLACKLIGHT
+// Blacklight (2.11.0): cl_dynUvBits says which of the lights are ultraviolet (a bit a light, the first 32 and the rest).
+// What such a light shows is its own dim violet; how much of it reaches a point (0..1, the level left there over 15, less by
+// what is in its way) is gathered in cl_uvAcc for the fragments, which make saturated colours glow by it (light_frag.glsl).
+// cl_uvStrength: the config's strength, 0 while nothing ultraviolet is about.
+uniform ivec2 cl_dynUvBits;
+uniform float cl_uvStrength;
+float cl_uvAcc = 0.0;
+#endif
+
 vec3 cl_dynVisibility(vec4 s, vec3 at, float remaining) {
     int cls = int(s.w / 1000.0);
     float slot = s.w - float(cls) * 1000.0;
@@ -80,6 +90,11 @@ vec3 cl_dynamicLightRange(vec3 wrel, vec3 normal, int from, int to) {
         vec3 light = c.rgb * (min(l, 15.0) / 15.0);
         vec4 s = cl_dynSlab[i];
         if (cl_dynSlabs > 0 && s.w >= 0.0) light *= cl_dynVisibility(s, at, remaining);
+#ifdef CL_BLACKLIGHT
+        if ((((i < 32 ? cl_dynUvBits.x : cl_dynUvBits.y) >> (i & 31)) & 1) != 0) {
+            cl_uvAcc = max(cl_uvAcc, max(light.r, max(light.g, light.b)) / max(max(c.r, max(c.g, c.b)), 1.0e-3));
+        }
+#endif
         acc = max(acc, light);
     }
     return acc;
@@ -149,11 +164,12 @@ vec4 _sample_lightmap_dyn(sampler2D lightMap, ivec2 uv, vec3 wrel, mat3 toWorld)
 
     vec3 dyn = vec3(0.0);
 #ifdef CL_DYNAMIC_LIGHTS
-    if (cl_dynCount > 0) {
+    {
+        // the face always (2.11.0): the blacklight field is read in front of it with no light about
         vec3 n = cl_facingNormal(nib);
         if (dot(n, n) > 0.5) n = normalize(toWorld * n);
         cl_faceNormal = n;
-        dyn = cl_dynamicLightRange(wrel, n, cl_dynFragSpots, cl_dynCount) * 255.0;
+        if (cl_dynCount > 0) dyn = cl_dynamicLightRange(wrel, n, cl_dynFragSpots, cl_dynCount) * 255.0;
     }
 #endif
     uvec3 dyn8 = uvec3(clamp(dyn, 0.0, 255.0));

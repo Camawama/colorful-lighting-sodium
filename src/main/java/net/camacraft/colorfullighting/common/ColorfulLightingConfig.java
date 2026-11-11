@@ -63,6 +63,11 @@ public class ColorfulLightingConfig {
     public static final ForgeConfigSpec.BooleanValue XAERO_MINIMAP_COLORS;
     public static final ForgeConfigSpec.BooleanValue XAERO_WORLD_MAP_COLORS;
     public static final ForgeConfigSpec.BooleanValue PARTICLE_LIGHT_RAMPS;
+    public static final ForgeConfigSpec.BooleanValue BLACKLIGHT;
+    public static final ForgeConfigSpec.DoubleValue BLACKLIGHT_STRENGTH;
+    public static final ForgeConfigSpec.BooleanValue BLOOM;
+    public static final ForgeConfigSpec.DoubleValue BLOOM_STRENGTH;
+    public static final ForgeConfigSpec.DoubleValue BLOOM_THRESHOLD;
 
     public static final ForgeConfigSpec SPEC;
 
@@ -165,12 +170,70 @@ public class ColorfulLightingConfig {
                         "  BALANCED - pauses for as long as it worked (~50% speed)",
                         "  GENTLE   - pauses for 3x as long as it worked (~25% speed)")
                 .defineEnum("lightUpdateSpeed", LightUpdateSpeed.FASTEST);
+        BLACKLIGHT = BUILDER
+                .comment(
+                        "Blacklight: a light whose color is 'uv' (a block in a resource pack's light/emitters.json, written",
+                        "as 'uv;15' where a color would be, or a dynamic light of another mod) is ultraviolet. Little is seen",
+                        "of the light itself but a dim violet; the blocks it falls on glow in their own color by how saturated",
+                        "that color is, and whites a pale blue, in the dark too. Drawn by Embeddium's terrain shaders, on",
+                        "blocks (not on entities, and not under an Oculus shader pack). No block is a blacklight unless a",
+                        "pack says so, and without one this costs nothing. Off: such lights are plain dim violet lights.",
+                        "Toggle with '/cl blacklight on|off'.")
+                .define("blacklight", true);
+        BLACKLIGHT_STRENGTH = BUILDER
+                .comment("How strongly blocks glow under blacklight (1 is the default look, 0 nothing).")
+                .defineInRange("blacklightStrength", 1.0, 0.0, 4.0);
+        BLOOM = BUILDER
+                .comment(
+                        "Bloom: light sources (blocks that emit light, by their light's color) and what glows under blacklight",
+                        "spread a soft glow over the picture round them. A pass over the finished world picture; nothing is",
+                        "drawn and nothing costs while it is off. Not under an Oculus shader pack (packs have their own).",
+                        "Toggle with '/cl bloom on|off'.")
+                .define("bloom", false);
+        BLOOM_STRENGTH = BUILDER
+                .comment("How strong the bloom is (1 is the default look).")
+                .defineInRange("bloomStrength", 1.0, 0.0, 4.0);
+        BLOOM_THRESHOLD = BUILDER
+                .comment(
+                        "How bright a pixel of a light source must be to glow (0 to 1). Lower and the whole of a lamp glows,",
+                        "its dark frame too; higher and only its brightest pixels do.")
+                .defineInRange("bloomThreshold", 0.3, 0.0, 0.95);
         SPEC = BUILDER.build();
     }
 
     /** Safe before the config file is loaded; auto colors stay off until the config is available. */
     public static boolean autoEmitterColors() {
         return SPEC.isLoaded() && AUTO_EMITTER_COLORS.get();
+    }
+
+    private static final String BLACKLIGHT_PROPERTY = System.getProperty("colorfullighting.blacklight");
+    private static final String BLOOM_PROPERTY = System.getProperty("colorfullighting.bloom");
+
+    /**
+     * Whether blacklight is drawn. On (the default) until the config is available; {@code -Dcolorfullighting.blacklight=true|false}
+     * overrides the file, for tests.
+     */
+    public static boolean blacklight() {
+        if (BLACKLIGHT_PROPERTY != null) return Boolean.parseBoolean(BLACKLIGHT_PROPERTY);
+        return !SPEC.isLoaded() || BLACKLIGHT.get();
+    }
+
+    public static float blacklightStrength() {
+        return SPEC.isLoaded() ? BLACKLIGHT_STRENGTH.get().floatValue() : 1f;
+    }
+
+    /** Whether the bloom pass runs. Off until the config is available; {@code -Dcolorfullighting.bloom=true|false} overrides the file. */
+    public static boolean bloom() {
+        if (BLOOM_PROPERTY != null) return Boolean.parseBoolean(BLOOM_PROPERTY);
+        return SPEC.isLoaded() && BLOOM.get();
+    }
+
+    public static float bloomStrength() {
+        return SPEC.isLoaded() ? BLOOM_STRENGTH.get().floatValue() : 1f;
+    }
+
+    public static float bloomThreshold() {
+        return SPEC.isLoaded() ? BLOOM_THRESHOLD.get().floatValue() : 0.5f;
     }
 
     /** Safe before the config file is loaded; the particle ramps stay vanilla's until the config is available. */

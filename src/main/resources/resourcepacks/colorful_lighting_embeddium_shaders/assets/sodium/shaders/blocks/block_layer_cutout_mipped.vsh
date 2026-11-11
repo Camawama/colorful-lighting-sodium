@@ -29,6 +29,10 @@ out vec3 cl_v_Wrel;
 out vec3 cl_v_Normal;
 out vec4 cl_v_Base;
 out vec4 cl_v_Vert;
+#ifdef CL_BLACKLIGHT
+// how much ultraviolet the lights the vertices take (the point lights) send here, 0..1
+out float cl_v_Uv;
+#endif
 #endif
 
 #ifdef COLORFUL_LIGHTING_MOD_PRESENT
@@ -68,6 +72,9 @@ void main() {
     cl_v_Normal = cl_faceNormal;
     cl_v_Base = cl_baseLight;
     cl_v_Vert = _vert_color;
+#ifdef CL_BLACKLIGHT
+    cl_v_Uv = cl_uvAcc;
+#endif
 #else
     v_Color = _vert_color * _sample_lightmap(u_LightTex, _vert_tex_light_coord);
 #endif

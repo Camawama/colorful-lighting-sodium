@@ -18,6 +18,12 @@ public class ColorRGB4 {
     public static final ColorRGB4 RED = fromRGB4(15, 0, 0);
     public static final ColorRGB4 GREEN = fromRGB4(0, 15, 0);
     public static final ColorRGB4 BLUE = fromRGB4(0, 0, 15);
+    /**
+     * Blacklight (2.11.0): ultraviolet, written {@code "uv"} where a colour is. The one colour that is not in the table: it
+     * is told by identity ({@code color == ColorRGB4.UV}), and what is seen of it is this dim violet. Any arithmetic on it
+     * gives an ordinary colour of the table, so only a config's own colour objects and a dynamic light's colour stay it.
+     */
+    public static final ColorRGB4 UV = new ColorRGB4(3, 1, 8);
 
     public final int red4, green4, blue4;
 
@@ -90,6 +96,11 @@ public class ColorRGB4 {
     @Override
     public String toString() {
         return "ColorRGB4["+ red4 +", " + green4 + ", " + blue4 + "]";
+    }
+
+    @Override
+    public int hashCode() {
+        return red4 << 8 | green4 << 4 | blue4;
     }
 
     @Override

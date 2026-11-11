@@ -13,6 +13,47 @@ in vec4 cl_v_Vert;
 
 vec4 cl_color;
 
+#ifdef CL_BLACKLIGHT
+// Blacklight (2.11.0): ultraviolet makes what is saturated glow in its own colour, and what is white a pale blue.
+// The ultraviolet at a fragment is the most of: the spot lights the fragments take (cl_uvAcc), the point lights the vertices
+// took (cl_v_Uv) and the blacklight blocks' field: a window of cells round the camera, r how much reaches a cell and g whether
+// the cell is lit at all, so r over g is the light of the open cells in front of a face alone (BlacklightField).
+in float cl_v_Uv;
+uniform int cl_uvField;
+uniform sampler3D cl_uvFieldTex;
+uniform vec3 cl_uvFieldOrigin;
+uniform float cl_uvFieldSize;
+
+float cl_ultraviolet(vec3 n) {
+    float uv = max(cl_uvAcc, cl_v_Uv);
+    if (cl_uvField > 0) {
+        vec3 tc = (cl_v_Wrel + n * 0.5 - cl_uvFieldOrigin) / cl_uvFieldSize;
+        if (all(greaterThan(tc, vec3(0.0))) && all(lessThan(tc, vec3(1.0)))) {
+            vec2 f = textureLod(cl_uvFieldTex, tc, 0.0).rg;
+            if (f.g > 0.02) uv = max(uv, f.r / f.g);
+        }
+    }
+    return clamp(uv, 0.0, 1.0);
+}
+
+// what the glow adds to the light of a fragment (the shader multiplies the block's texture by it): for a saturated colour
+// as much as shows the colour at its full brightness, whatever the face's shade; for a white a pale blue
+vec3 cl_blacklightGlow(float uv, vec4 tex) {
+    vec3 vert = cl_v_Vert.rgb;
+    vec3 albedo = tex.rgb * vert;
+    float mx = max(albedo.r, max(albedo.g, albedo.b));
+    float mn = min(albedo.r, min(albedo.g, albedo.b));
+    if (mx <= 1.0e-3) return vec3(0.0);
+    // the face's shade and ambient occlusion out of the brightness: a colour is as bright as its texture and tint make it
+    float shade = max(vert.r, max(vert.g, vert.b));
+    float value = mx / max(shade, 1.0e-3);
+    float sat = (mx - mn) / mx;
+    float vivid = smoothstep(0.45, 0.85, sat) * smoothstep(0.3, 0.65, value);
+    float white = smoothstep(0.72, 0.92, mn / max(shade, 1.0e-3));
+    return (vert * (vivid * 1.25 / mx) + vec3(0.55, 0.7, 1.0) * (white * 0.4)) * (uv * cl_uvStrength);
+}
+#endif
+
 // _sample_colored_common for light that is not whole numbers: the sky nibble, the block light's three channels of 255
 vec3 cl_lightmapAt(sampler2D lightMap, float sky4, vec3 rgb8) {
     float lo = 0.5 / 16.0, hi = 15.5 / 16.0;
@@ -36,17 +77,34 @@ vec4 cl_litColor() {
     if (band == 2) return keep + vec4(fract(cl_v_Wrel), 1.0);
     return keep + vec4(cl_v_Normal * 0.5 + 0.5, 1.0);
 #endif
-    int spots = min(cl_dynFragSpots, cl_dynCount);
-    if (spots <= 0 || cl_v_Base.a < 0.0) return v_Color;
+    vec4 col = v_Color;
     vec3 n = cl_v_Normal;
     float nn = dot(n, n);
     n = nn > 0.25 ? n * inversesqrt(nn) : vec3(0.0);
-    vec3 spot = cl_dynamicLightRange(cl_v_Wrel, n, 0, spots) * 255.0;
-    vec3 base = cl_v_Base.rgb;
-    vec3 lit = max(base, spot);
-    if (lit == base) return v_Color;
-    vec3 more = cl_lightmapAt(u_LightTex, cl_v_Base.a, lit) - cl_lightmapAt(u_LightTex, cl_v_Base.a, base);
-    return vec4(v_Color.rgb + cl_v_Vert.rgb * max(more, vec3(0.0)), v_Color.a);
+#ifdef CL_BLACKLIGHT
+    cl_uvAcc = 0.0;
+#if defined(CL_FRAG_ALBEDO)
+    // the texture's slope here, where every fragment passes: the texture itself is read only under ultraviolet
+    vec2 cl_dx = dFdx(v_TexCoord), cl_dy = dFdy(v_TexCoord);
+#endif
+#endif
+    int spots = min(cl_dynFragSpots, cl_dynCount);
+    if (spots > 0 && cl_v_Base.a >= 0.0) {
+        vec3 spot = cl_dynamicLightRange(cl_v_Wrel, n, 0, spots) * 255.0;
+        vec3 base = cl_v_Base.rgb;
+        vec3 lit = max(base, spot);
+        if (lit != base) {
+            vec3 more = cl_lightmapAt(u_LightTex, cl_v_Base.a, lit) - cl_lightmapAt(u_LightTex, cl_v_Base.a, base);
+            col.rgb += cl_v_Vert.rgb * max(more, vec3(0.0));
+        }
+    }
+#if defined(CL_BLACKLIGHT) && defined(CL_FRAG_ALBEDO)
+    if (cl_uvStrength > 0.0) {
+        float uv = cl_ultraviolet(n);
+        if (uv > 0.002) col.rgb += cl_blacklightGlow(uv, textureGrad(u_BlockTex, v_TexCoord, cl_dx, cl_dy));
+    }
+#endif
+    return col;
 }
 
 #define v_Color cl_color

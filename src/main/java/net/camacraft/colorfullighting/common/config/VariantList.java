@@ -66,6 +66,15 @@ public final class VariantList<T> {
         return defaultValue;
     }
 
+    /** Whether the default or any variant's value passes the test. */
+    public boolean anyMatch(java.util.function.Predicate<T> test) {
+        if (defaultValue != null && test.test(defaultValue)) return true;
+        for (LightVariant<T> variant : variants) {
+            if (variant.value() != null && test.test(variant.value())) return true;
+        }
+        return false;
+    }
+
     /**
      * Whether any variant tests NBT. Callers use this to avoid serializing a block entity or entity
      * that no rule actually inspects — a config with no NBT rules costs exactly what it used to.

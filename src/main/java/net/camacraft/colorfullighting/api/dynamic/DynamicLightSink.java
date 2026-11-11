@@ -12,6 +12,15 @@ package net.camacraft.colorfullighting.api.dynamic;
  * @since 2.8.0
  */
 public interface DynamicLightSink {
+    /**
+     * Passed as {@code rgb}: a blacklight. Ultraviolet: little to see of it but a dim violet, and what it falls on glows by
+     * how saturated its own colour is (whites a pale blue), where the terrain's fragments draw the dynamic lights. A build
+     * before 2.11.0 has no such field: look it up by reflection and pass a violet instead when it is missing.
+     *
+     * @since 2.11.0
+     */
+    int BLACKLIGHT = 0x1000000;
+
     void point(long ownerKey, double x, double y, double z, float level, int rgb, int falloff, float range);
 
     /**

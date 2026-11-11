@@ -330,12 +330,14 @@ public final class DynamicLightsCompat {
 
     private static ColorRGB4 colorOf(int rgb) {
         if (rgb < 0) return Config.defaultColor;
+        if (rgb == net.camacraft.colorfullighting.api.dynamic.DynamicLightSink.BLACKLIGHT) return ColorRGB4.UV;
         return ColorRGB4.fromRGB8((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
     }
 
     /**
      * One external light at a moment of the frame, for the shader path: its key (its slab in the {@link DynamicLightField}) and
-     * x, y, z, level, r, g, b (0..1), range, direction x, y, z, the cosines of the outer and inner half angles, the falloff.
+     * x, y, z, level, r, g, b (0..1), range, direction x, y, z, the cosines of the outer and inner half angles, the falloff,
+     * and 1 for a blacklight (2.11.0).
      */
     public record FrameLight(long key, float[] v) {}
 
@@ -345,7 +347,8 @@ public final class DynamicLightsCompat {
         // one gathering a frame, shared with the entities' exact light (2.10.3)
         for (DynamicSource s : frameSources(level, partialTick)) {
             out.add(new FrameLight(s.key, new float[]{(float) s.x, (float) s.y, (float) s.z, s.level, s.color.red4 / 15f,
-                    s.color.green4 / 15f, s.color.blue4 / 15f, s.range, (float) s.dx, (float) s.dy, (float) s.dz, s.outerCos, s.innerCos, s.falloff}));
+                    s.color.green4 / 15f, s.color.blue4 / 15f, s.range, (float) s.dx, (float) s.dy, (float) s.dz, s.outerCos, s.innerCos, s.falloff,
+                    s.color == ColorRGB4.UV ? 1f : 0f}));
         }
         return out;
     }
@@ -1462,6 +1465,7 @@ public final class DynamicLightsCompat {
     }
 
     private static int rgb8(@Nullable ColorRGB4 color) {
+        if (color == ColorRGB4.UV) return net.camacraft.colorfullighting.api.dynamic.DynamicLightSink.BLACKLIGHT;
         return color == null ? -1 : (color.red4 * 17) << 16 | (color.green4 * 17) << 8 | color.blue4 * 17;
     }
 

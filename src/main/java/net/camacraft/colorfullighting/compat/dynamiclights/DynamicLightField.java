@@ -54,7 +54,7 @@ public final class DynamicLightField {
      * unit in one program, which a driver may refuse to draw with. It drew while the slabs were read by the vertices alone and
      * drew no terrain at all once the fragments read them too ({@link ShaderDynamicLights} names such a clash in the log).
      */
-    public static final int FIRST_TEXTURE_UNIT = Math.max(8, Math.min(45, Integer.getInteger("colorfullighting.slabTextureUnit", 24)));
+    public static final int FIRST_TEXTURE_UNIT = Math.max(8, Math.min(43, Integer.getInteger("colorfullighting.slabTextureUnit", 24)));
     public static final int[] TEXTURE_UNITS = {FIRST_TEXTURE_UNIT, FIRST_TEXTURE_UNIT + 1, FIRST_TEXTURE_UNIT + 2};
     /** A spot's propagation is pruned beyond its outer half angle plus this (degrees): it wraps a corner a little, never behind itself. */
     private static final double WRAP_MARGIN = Math.toRadians(30);

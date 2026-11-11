@@ -46,9 +46,22 @@ public class Config {
      */
     private static volatile Set<Block> blocksNeedingNbt = Collections.emptySet();
 
+    /** The blocks with a blacklight entry (2.11.0); a new set at every config load, so its identity tells a reload. */
+    private static volatile Set<Block> uvBlocks = Collections.emptySet();
+
     public static void setColorEmitters(HashMap<ResourceLocation, VariantList<ColorEmitter>> colors) {
         colorEmitters = byBlock(colors);
+        Set<Block> uv = new HashSet<>();
+        for (var entry : colorEmitters.entrySet()) {
+            if (entry.getValue().anyMatch(ColorEmitter::isUv)) uv.add(entry.getKey());
+        }
+        uvBlocks = uv;
         recomputeBlocksNeedingNbt();
+    }
+
+    /** The blocks some entry of {@code light/emitters.json} makes a blacklight ({@code "uv;15"}); empty in a pack without one. */
+    public static Set<Block> uvBlocks() {
+        return uvBlocks;
     }
 
     public static void setColorFilters(HashMap<ResourceLocation, VariantList<ColorFilter>> filters) {
@@ -387,6 +400,11 @@ public class Config {
     public record ColorEmitter(ColorRGB4 color, int overriddenBrightness4, boolean autoColor) {
         public ColorEmitter(ColorRGB4 color, int overriddenBrightness4) {
             this(color, overriddenBrightness4, false);
+        }
+
+        /** Whether this is a blacklight ({@code "uv"}, 2.11.0): ultraviolet that makes saturated colours glow. */
+        public boolean isUv() {
+            return color == ColorRGB4.UV;
         }
 
         public static ColorEmitter fromJsonElement(JsonElement value) throws IllegalArgumentException {

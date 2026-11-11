@@ -53,6 +53,9 @@ public final class FragmentSpots {
         if (!source.contains("u_LightTex")) out.append("uniform sampler2D u_LightTex;\n");
         // for finding a fault: the picture in four bands (the counts, the lights alone, the place, the face)
         if (Boolean.getBoolean("colorfullighting.spotFragDebug")) out.append("#define CL_FRAG_DEBUG\n");
+        // blacklight (2.11.0) reads the block's own colour: only where the shader has the atlas and its coordinates by these names
+        if (source.contains("u_BlockTex") && source.contains("v_TexCoord") && source.contains("v_MaterialMipBias")) out.append("#define CL_FRAG_ALBEDO\n");
+        else LOGGER.warn("Blacklight: {} has no u_BlockTex, v_TexCoord and v_MaterialMipBias; nothing glows under blacklight there", id);
         out.append("#import <sodium:include/light.glsl>\n");
         out.append("#import <sodium:include/light_frag.glsl>\n");
         out.append("#endif\n");

@@ -7,6 +7,8 @@ import java.awt.*;
 
 public abstract class JsonHelper {
     public static ColorRGB4 getColor4FromString(String string) {
+        // blacklight (2.11.0): not a colour of the table, told by identity
+        if (isBlacklightName(string)) return ColorRGB4.UV;
         ColorRGB4 color = getColor4FromDyeName(string);
         if(color != null) return color;
         color = getColor4FromHexString(string);
@@ -14,6 +16,11 @@ public abstract class JsonHelper {
         color = getColor4FromVanilla(string);
         if(color != null) return color;
         return color;
+    }
+
+    /** Whether a colour's text names blacklight: {@code uv}, {@code blacklight} or {@code ultraviolet}, in any case. */
+    public static boolean isBlacklightName(String string) {
+        return string != null && (string.equalsIgnoreCase("uv") || string.equalsIgnoreCase("blacklight") || string.equalsIgnoreCase("ultraviolet"));
     }
 
     public static ColorRGB4 getColor4FromVanilla(String string) {

@@ -15,5 +15,7 @@ public abstract class ClientLevelBlockChangeMixin {
     @Inject(method = "setBlocksDirty", at = @At("HEAD"))
     private void colorfullighting$blockChanged(BlockPos pos, BlockState oldState, BlockState newState, CallbackInfo ci) {
         VoxelOcclusion.blockChanged(pos.getX(), pos.getY(), pos.getZ());
+        net.camacraft.colorfullighting.compat.dynamiclights.BlacklightField.blockChanged(pos.getX(), pos.getY(), pos.getZ());
+        net.camacraft.colorfullighting.bloom.EmitterVolume.blockChanged(pos.getX(), pos.getY(), pos.getZ());
     }
 }

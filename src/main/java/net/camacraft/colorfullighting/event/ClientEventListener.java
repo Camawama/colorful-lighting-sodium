@@ -115,6 +115,11 @@ public class ClientEventListener {
         // LevelTickEvent; the current level itself is handled in the LevelTickEvent handler above.
         ImmersivePortalsCompat.clientTick(Minecraft.getInstance());
 
+        // where the blacklight blocks' light reaches (2.11.0); nothing while no block is one
+        net.camacraft.colorfullighting.compat.dynamiclights.BlacklightField.tick(Minecraft.getInstance().level);
+        // which blocks in view emit light, for the bloom; nothing while the bloom is off
+        net.camacraft.colorfullighting.bloom.EmitterVolume.tick(Minecraft.getInstance().level, net.camacraft.colorfullighting.bloom.Bloom.active());
+
         if (ColorfulLighting.clientAccessor == null) return;
         var player = ColorfulLighting.clientAccessor.getPlayer();
         if (player == null) return;
@@ -146,11 +151,19 @@ public class ClientEventListener {
 
     @SubscribeEvent
     public void onRenderLevelStage(RenderLevelStageEvent event) {
+        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_SKY || event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES
+                || event.getStage() == RenderLevelStageEvent.Stage.AFTER_WEATHER) {
+            // the level's own camera rotation: the last stage is handed the projection in its place, and the stages of the
+            // chunk layers may come with a ship's pose
+            net.camacraft.colorfullighting.bloom.Bloom.view(event.getPoseStack().last().pose(), event.getProjectionMatrix());
+        }
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
             LevelRenderer levelRenderer = Minecraft.getInstance().levelRenderer;
             if (levelRenderer != null) {
                 ((LevelAttachments) ((LevelRendererAccessor) levelRenderer).colorfullighting$getClientLevel()).colorfullighting$getEngine().updateFrustum(levelRenderer.getFrustum());
             }
+            // the bloom (2.11.0, off by default): over the finished world, under the hand
+            net.camacraft.colorfullighting.bloom.Bloom.render(event.getProjectionMatrix(), event.getCamera());
         }
     }
 
@@ -162,6 +175,8 @@ public class ClientEventListener {
             ImmersivePortalsCompat.onLevelUnload(level);
         }
         net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.forgetFrameSources();
+        net.camacraft.colorfullighting.compat.dynamiclights.BlacklightField.onLevelUnload();
+        net.camacraft.colorfullighting.bloom.EmitterVolume.onLevelUnload();
 	    ((LevelAttachments) event.getLevel()).colorfullighting$getNbtCache().clear();
         BeaconEffectSync.clear();
 		// I think this is redundant
@@ -244,6 +259,24 @@ public class ClientEventListener {
                                     context.getSource().sendSuccess(() -> Component.literal("Colored lighting disabled"), false);
                                     return 1;
                                 })
+                        )
+                        .then(Commands.literal("blacklight")
+                                .executes(context -> {
+                                    context.getSource().sendSuccess(() -> Component.literal("Blacklight is " + (ColorfulLightingConfig.blacklight() ? "on" : "off")
+                                            + " (" + net.camacraft.colorfullighting.compat.dynamiclights.BlacklightField.stats() + ")"), false);
+                                    return 1;
+                                })
+                                .then(Commands.literal("on").executes(context -> setBlacklight(context.getSource(), true)))
+                                .then(Commands.literal("off").executes(context -> setBlacklight(context.getSource(), false)))
+                        )
+                        .then(Commands.literal("bloom")
+                                .executes(context -> {
+                                    context.getSource().sendSuccess(() -> Component.literal("Bloom is " + (ColorfulLightingConfig.bloom() ? "on" : "off")
+                                            + " (" + net.camacraft.colorfullighting.bloom.Bloom.stats() + "; " + net.camacraft.colorfullighting.bloom.EmitterVolume.stats() + ")"), false);
+                                    return 1;
+                                })
+                                .then(Commands.literal("on").executes(context -> setBloom(context.getSource(), true)))
+                                .then(Commands.literal("off").executes(context -> setBloom(context.getSource(), false)))
                         )
                         .then(Commands.literal("dh")
                                 .executes(context -> {
@@ -377,6 +410,25 @@ public class ClientEventListener {
      * config ({@code auto}: on whenever DH is installed, the default). Enabling also relights the
      * current area so the color memory has data to start from.
      */
+    /** Bloom on or off (2.11.0): saved; a pass over the finished picture, so nothing is rebuilt. */
+    private static int setBloom(CommandSourceStack source, boolean on) {
+        ColorfulLightingConfig.BLOOM.set(on);
+        ColorfulLightingConfig.save();
+        source.sendSuccess(() -> Component.literal(on ? "Bloom on: light sources and what glows under blacklight spread a soft glow" : "Bloom off"), false);
+        return 1;
+    }
+
+    /** Blacklight on or off (2.11.0): saved, and the terrain shaders are rebuilt with or without it. */
+    private static int setBlacklight(CommandSourceStack source, boolean on) {
+        ColorfulLightingConfig.BLACKLIGHT.set(on);
+        ColorfulLightingConfig.save();
+        if (Minecraft.getInstance().levelRenderer != null) {
+            Minecraft.getInstance().levelRenderer.allChanged();
+        }
+        source.sendSuccess(() -> Component.literal(on ? "Blacklight on: saturated colours glow under ultraviolet light" : "Blacklight off: ultraviolet light is a dim violet"), false);
+        return 1;
+    }
+
     private static int setDhLodColor(CommandSourceStack source, ColorfulLightingConfig.DhLodColorMode mode) {
         boolean enable = mode != ColorfulLightingConfig.DhLodColorMode.OFF;
         String message;
