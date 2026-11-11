@@ -30,6 +30,8 @@ All of this light propagation runs on a separate background thread, so the game 
 *   Blacklight: a light color of its own (`"uv"`) that makes saturated blocks, mobs and players around it glow in their own color (see the Resource Pack Tutorial)
 *   Optional bloom: light sources glow softly past their edges, in the color of their light: blocks, lamps on Valkyrien Skies ships, lamps behind glass, and items that give light in the hand, in frames and on the ground (`/cl bloom on`, off by default)
 *   Dynamic lights that absorb light instead of giving it (for dynamic light providers such as Lively Lighting: `DynamicLightSink.ABSORB`)
+*   Blocks that absorb light take it from dynamic lights too: a flashlight does not light the ground beside an end gateway
+*   Dynamic lights for the blocks of Valkyrien Skies ships alone (`DynamicLightSink.SHIPS_ONLY`: a lamp of the world lighting a ship beside it)
 *   The mod is client-side, so you can play with it on ANY server while still experiencing colorful lighting!
 
 ## 🔗 Mod Compatibility

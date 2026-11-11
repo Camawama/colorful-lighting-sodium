@@ -137,7 +137,9 @@ public final class DynamicLightsCompat {
      * {@code range} the reach for 0 and 1; a spot has {@code outerCos} below 1 (the cosine of half its full angle),
      * {@code innerCos} where it is fully lit, and a direction. {@code level} may be fractional while a light fades.
      * A point light has no direction: its {@code dx} holds the blocks it takes to lose a level when that isn't 1
-     * ({@link #stretch()}, 2.10.6), which goes to the shaders in the direction's place as it is.
+     * ({@link #stretch()}, 2.10.6), its {@code dy} where it is drawn (2.13.0: 1 on the blocks of ships alone, 2 not on
+     * them) and its {@code dz} 1 for a light that absorbs and leaves the sky's light; they go to the shaders in the
+     * direction's place as they are.
      */
     record DynamicSource(double x, double y, double z, int luminance, ColorRGB4 color, float level, int falloff, float range,
                                  double dx, double dy, double dz, float outerCos, float innerCos, boolean external, long key, boolean propagatedFlag) {
@@ -152,6 +154,21 @@ public final class DynamicLightsCompat {
         /** The blocks a point light takes to lose a level: 1 unless its provider said otherwise (a lamp on a scaled ship). */
         double stretch() {
             return outerCos >= 1f && dx > 0.0 ? dx : 1.0;
+        }
+
+        /** A point light drawn on the blocks of Valkyrien Skies ships alone ({@code DynamicLightSink.SHIPS_ONLY}). */
+        boolean shipsOnly() {
+            return outerCos >= 1f && dy == 1.0;
+        }
+
+        /** A point light not drawn on ships' blocks ({@code DynamicLightSink.NOT_ON_SHIPS}). */
+        boolean notOnShips() {
+            return outerCos >= 1f && dy == 2.0;
+        }
+
+        /** A point light that absorbs and leaves the sky's light ({@code DynamicLightSink.KEEPS_SKY}). */
+        boolean keepsSky() {
+            return outerCos >= 1f && dz == 1.0;
         }
 
         /** The same light, marked as propagated by the engine (left out of the straight-line path). */
@@ -200,6 +217,27 @@ public final class DynamicLightsCompat {
      */
     public static void externalBlocksMoved() {
         VoxelOcclusion.requestRebuild();
+    }
+
+    /**
+     * The level a block state gives light at as Colorful Lighting takes it: {@code light/emitters.json}'s brightness for it
+     * where it has one (an end gateway's 0), else the block's own. For the providers' lamps (2.13.0).
+     */
+    public static int blockLightLevel(net.minecraft.world.level.block.state.BlockState state) {
+        return Math.max(0, Math.min(15, Config.getEmissionBrightness(new net.camacraft.colorfullighting.accessors.BlockStateWrapper(state))));
+    }
+
+    /**
+     * What a block state takes away ({@code light/absorbers.json}): its level in the top byte over the channels it takes as
+     * 0xRRGGBB, or 0 for a block that absorbs nothing. For the providers' lamps (2.13.0): such a block on a ship or a
+     * contraption, where no darkness is stored for the world, is a light that absorbs.
+     */
+    public static int blockAbsorption(net.minecraft.world.level.block.state.BlockState state) {
+        Config.ColorEmitter absorber = Config.resolveAbsorber(new net.camacraft.colorfullighting.accessors.BlockStateWrapper(state), null);
+        if (absorber == null || absorber.overriddenBrightness4() <= 0) return 0;
+        ColorRGB4 c = absorber.color();
+        int rgb = (c.red4 * 17) << 16 | (c.green4 * 17) << 8 | c.blue4 * 17;
+        return rgb == 0 ? 0 : Math.min(15, absorber.overriddenBrightness4()) << 24 | rgb;
     }
 
     /** The colour Colorful Lighting gives a block state's light, as 0xRRGGBB (white when it has none). For the providers' lamps. */
@@ -303,8 +341,11 @@ public final class DynamicLightsCompat {
                 float stretch = POINT_STRETCH && blocksPerLevel > 0f && !Float.isInfinite(blocksPerLevel) ? Math.max(MIN_STRETCH, Math.min(MAX_STRETCH, blocksPerLevel)) : 1f;
                 if (Math.abs(stretch - 1f) < 1.0e-3f) stretch = 1f;
                 // a level above 15 (2.10.1, a merged light): full light for the blocks above 15 and that much more reach
+                // where it is drawn and whether an absorbing one leaves the sky (2.13.0), in the place of the direction it has none of
+                int where = rgb < 0 ? 0 : (rgb & SHIPS_ONLY) != 0 ? 1 : (rgb & NOT_ON_SHIPS) != 0 ? 2 : 0;
+                int keepsSky = rgb >= 0 && (rgb & KEEPS_SKY) != 0 ? 1 : 0;
                 out.accept(new DynamicSource(x, y, z, Math.min(15, Math.max(1, Math.round(lvl))), colorOf(rgb), Math.min(ShaderDynamicLights.MAX_LEVEL, lvl), falloff == 1 ? 1 : 0,
-                        Math.max(1f, range > 0 ? range : lvl * stretch), stretch == 1f ? 0 : stretch, 0, 0, 1f, 1f, true, ownerKey, false));
+                        Math.max(1f, range > 0 ? range : lvl * stretch), stretch == 1f ? 0 : stretch, where, keepsSky, 1f, 1f, true, ownerKey, false));
             }
 
             @Override
@@ -330,6 +371,8 @@ public final class DynamicLightsCompat {
 
     private static ColorRGB4 colorOf(int rgb) {
         if (rgb < 0) return Config.defaultColor;
+        rgb &= ~(net.camacraft.colorfullighting.api.dynamic.DynamicLightSink.SHIPS_ONLY | net.camacraft.colorfullighting.api.dynamic.DynamicLightSink.NOT_ON_SHIPS
+                | net.camacraft.colorfullighting.api.dynamic.DynamicLightSink.KEEPS_SKY);
         if (rgb == net.camacraft.colorfullighting.api.dynamic.DynamicLightSink.BLACKLIGHT) return ColorRGB4.UV;
         if ((rgb & net.camacraft.colorfullighting.api.dynamic.DynamicLightSink.ABSORB) != 0) return ColorRGB4.absorbing((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
         return ColorRGB4.fromRGB8((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
@@ -606,6 +649,9 @@ public final class DynamicLightsCompat {
     private static final float[] EXACT_VIS = new float[3];
     private static final float[] EXACT_ACC = new float[3];
     private static final float[] EXACT_DARK = new float[3];
+    private static final float[] EXACT_DARK_SKY = new float[3];
+    private static final float[] EXACT_DYN = new float[3];
+    private static final float[] EXACT_STORED_DARK = new float[3];
     /** The sky light levels the absorbing lights took at the entity last sampled by {@link #exactEntityLight} (render thread). */
     private static int exactSkyTaken;
 
@@ -671,11 +717,16 @@ public final class DynamicLightsCompat {
         net.minecraft.world.phys.Vec3 feet = entity.getPosition(partialTick);
         double px = probe.x, py = probe.y, pz = probe.z;
         double mx = feet.x, my = feet.y + entity.getBbHeight() * 0.5, mz = feet.z;
+        // the darkness stored where the entity is (an end gateway's): the drawn lights lose it as the stored light has (2.13.0)
+        float[] storedDark = EXACT_STORED_DARK;
+        boolean darkHere = DarknessField.at(level, (int) Math.floor(mx), (int) Math.floor(my), (int) Math.floor(mz), storedDark);
         // a shipyard resident (an item frame on a ship) is lit where it is in the world
         LevelAttachments attachments = (LevelAttachments) level;
+        boolean onShip = false;
         if (VsCompat.hasShipMirrors(attachments)) {
             double[] w = VsCompat.shipyardToWorld(attachments, px, py, pz);
             if (w != null) {
+                onShip = true;
                 double[] m = VsCompat.shipyardToWorld(attachments, mx, my, mz);
                 px = w[0];
                 py = w[1];
@@ -695,26 +746,35 @@ public final class DynamicLightsCompat {
         boolean pointsStored = externalMeshLighting && externalPropagation;
         boolean slabs = !externalMeshLighting && ShaderDynamicLights.transmission() && DynamicLightField.active();
         float[] acc = EXACT_ACC;
-        acc[0] = stored.red;
-        acc[1] = stored.green;
-        acc[2] = stored.blue;
-        float[] dark = EXACT_DARK;
+        float[] dyn = EXACT_DYN;
+        dyn[0] = dyn[1] = dyn[2] = 0f;
+        // what the lights that absorb take: of the block light, and (those that take the sky's too) for the sky's share
+        float[] dark = EXACT_DARK, darkSky = EXACT_DARK_SKY;
         dark[0] = dark[1] = dark[2] = 0f;
+        darkSky[0] = darkSky[1] = darkSky[2] = 0f;
         for (DynamicSource s : lights) {
+            // a light for ships' blocks alone, or not for them (2.13.0): by whether the entity lives on a ship
+            if (s.shipsOnly() ? !onShip : s.notOnShips() && onShip && !s.color.absorbs) continue;
             if (s.color.absorbs) {
                 // a light that absorbs (2.12.0): what it takes at the entity's middle
                 addExact(s, mx, my, mz, slabs, dark);
+                if (!s.keepsSky()) addExact(s, mx, my, mz, slabs, darkSky);
                 continue;
             }
             if (pointsStored && !s.isSpot() && s.level >= 1f) continue;
             if (own != null && owns(own, s.key)) continue;
-            addExact(s, px, py, pz, slabs, acc);
-            addExact(s, mx, my, mz, slabs, acc);
+            addExact(s, px, py, pz, slabs, dyn);
+            addExact(s, mx, my, mz, slabs, dyn);
         }
-        acc[0] = Math.max(0f, acc[0] - dark[0]);
-        acc[1] = Math.max(0f, acc[1] - dark[1]);
-        acc[2] = Math.max(0f, acc[2] - dark[2]);
-        exactSkyTaken = Math.round(Math.max(dark[0], Math.max(dark[1], dark[2])) / 17f);
+        if (darkHere) {
+            dyn[0] = Math.max(0f, dyn[0] - storedDark[0] * 17f);
+            dyn[1] = Math.max(0f, dyn[1] - storedDark[1] * 17f);
+            dyn[2] = Math.max(0f, dyn[2] - storedDark[2] * 17f);
+        }
+        acc[0] = Math.max(0f, Math.max(stored.red, dyn[0]) - dark[0]);
+        acc[1] = Math.max(0f, Math.max(stored.green, dyn[1]) - dark[1]);
+        acc[2] = Math.max(0f, Math.max(stored.blue, dyn[2]) - dark[2]);
+        exactSkyTaken = Math.round(Math.max(darkSky[0], Math.max(darkSky[1], darkSky[2])) / 17f);
         int r = Math.min(255, Math.round(acc[0])), g = Math.min(255, Math.round(acc[1])), b = Math.min(255, Math.round(acc[2]));
         if (r == stored.red && g == stored.green && b == stored.blue) return stored;
         return net.camacraft.colorfullighting.common.util.ColorRGB8.fromRGB8(r, g, b);
@@ -860,7 +920,7 @@ public final class DynamicLightsCompat {
         Map<Long, ColorRGB4> emitters = propagate ? new HashMap<>() : Collections.<Long, ColorRGB4>emptyMap();
         if (propagate) {
             for (DynamicSource source : collected) {
-                if (source.isSpot() || source.level < 1f || source.color.absorbs) continue;
+                if (source.isSpot() || source.level < 1f || source.color.absorbs || source.shipsOnly()) continue;
                 float scale = Math.min(15f, source.level) / 15f;
                 ColorRGB4 at = ColorRGB4.fromRGB4(Math.round(source.color.red4 * scale), Math.round(source.color.green4 * scale), Math.round(source.color.blue4 * scale));
                 int cellX = (int) Math.floor(source.x), cellY = (int) Math.floor(source.y), cellZ = (int) Math.floor(source.z);
@@ -885,9 +945,11 @@ public final class DynamicLightsCompat {
         }
         for (DynamicSource collectedSource : collected) {
             // a propagated point light is in the storage: the straight-line path must not add it again (through walls)
-            final DynamicSource source = propagate && !collectedSource.isSpot() && collectedSource.level >= 1f ? collectedSource.propagated() : collectedSource;
-            sources.add(source);
-            if (mirrors) {
+            final DynamicSource source = propagate && !collectedSource.isSpot() && collectedSource.level >= 1f && !collectedSource.shipsOnly() ? collectedSource.propagated() : collectedSource;
+            // a light for ships' blocks alone (2.13.0) is in the world's light already: only its copies in the shipyards count
+            boolean inWorld = !source.shipsOnly();
+            if (inWorld) sources.add(source);
+            if (mirrors && !source.notOnShips()) {
                 double[] world = VsCompat.shipyardToWorld(attachments, source.x, source.y, source.z);
                 if (world == null) {
                     // a ship's own space is the world's divided by its scale: a point light's copy there lasts as many of the
@@ -901,7 +963,7 @@ public final class DynamicLightsCompat {
                     });
                 }
             }
-            if (!meshes || source.propagatedFlag) continue; // the engine remeshes what a propagated light changes
+            if (!meshes || source.propagatedFlag || !inWorld) continue; // the engine remeshes what a propagated light changes
             long key = source.key;
             DynamicSource anchor = externalAnchors.remove(key);
             DynamicSource kept = source;

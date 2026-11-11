@@ -117,6 +117,8 @@ public class ClientEventListener {
 
         // where the blacklight blocks' light reaches (2.11.0); nothing while no block is one
         net.camacraft.colorfullighting.compat.dynamiclights.BlacklightField.tick(Minecraft.getInstance().level);
+        // the darkness round absorbing blocks, for the dynamic lights (2.13.0); nothing while there is none near
+        net.camacraft.colorfullighting.compat.dynamiclights.DarknessField.tick(Minecraft.getInstance().level);
         // which blocks in view emit light, for the bloom; nothing while the bloom is off
         net.camacraft.colorfullighting.bloom.EmitterVolume.tick(Minecraft.getInstance().level, net.camacraft.colorfullighting.bloom.Bloom.active());
         net.camacraft.colorfullighting.bloom.ShipEmitters.tick(Minecraft.getInstance().level, net.camacraft.colorfullighting.bloom.Bloom.active());
@@ -179,6 +181,7 @@ public class ClientEventListener {
         }
         net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat.forgetFrameSources();
         net.camacraft.colorfullighting.compat.dynamiclights.BlacklightField.onLevelUnload();
+        net.camacraft.colorfullighting.compat.dynamiclights.DarknessField.onLevelUnload();
         net.camacraft.colorfullighting.bloom.EmitterVolume.onLevelUnload();
         net.camacraft.colorfullighting.bloom.ShipEmitters.onLevelUnload();
 	    ((LevelAttachments) event.getLevel()).colorfullighting$getNbtCache().clear();

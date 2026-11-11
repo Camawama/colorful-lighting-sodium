@@ -10,6 +10,8 @@ in vec3 cl_v_Wrel;
 in vec3 cl_v_Normal;
 in vec4 cl_v_Base;
 in vec4 cl_v_Vert;
+// what the vertices' lights that absorb and the darkness field take here (2.13.0): the spot lights lose it too
+in vec3 cl_v_Abs;
 
 vec4 cl_color;
 
@@ -91,7 +93,7 @@ vec4 cl_litColor() {
     int spots = min(cl_dynFragSpots, cl_dynCount);
     if (spots > 0 && cl_v_Base.a >= 0.0) {
         cl_absAcc = vec3(0.0);
-        vec3 spot = cl_dynamicLightRange(cl_v_Wrel, n, 0, spots) * 255.0;
+        vec3 spot = max(cl_dynamicLightRange(cl_v_Wrel, n, 0, spots) - cl_v_Abs, vec3(0.0)) * 255.0;
         vec3 base = cl_v_Base.rgb;
         // the beams that absorb (2.12.0) take from the block light and, by the most of them, from the sky's
         vec3 dark = cl_absAcc * 255.0;

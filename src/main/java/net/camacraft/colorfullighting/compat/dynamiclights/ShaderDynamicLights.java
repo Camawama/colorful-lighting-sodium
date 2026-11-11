@@ -48,14 +48,15 @@ public final class ShaderDynamicLights {
 
     /** Uniform locations of one program: count, pos[], color[], dir[], invView, slabs, slab[], the three slab textures, their sizes and counts; -1 where missing. */
     private record Locations(int count, int pos, int color, int dir, int invView, int slabs, int slab, int slabTex0, int slabTex1, int slabTex2, int slabSize, int slabCount, int fragSpots,
-                             int uvBits, int uvStrength, int uvField, int uvFieldTex, int uvFieldOrigin, int uvFieldSize, int absBits) {
+                             int uvBits, int uvStrength, int uvField, int uvFieldTex, int uvFieldOrigin, int uvFieldSize, int absBits,
+                             int onShip, int darkField, int darkFieldTex, int darkFieldOrigin, int darkFieldSize) {
         boolean usable() {
             return count >= 0 && pos >= 0 && color >= 0 && dir >= 0;
         }
     }
 
     private static final Map<Integer, Locations> LOCATIONS = new ConcurrentHashMap<>();
-    private static final Locations NONE = new Locations(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
+    private static final Locations NONE = new Locations(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
 
     // the frame's light arrays, built once per frame (keyed by the frame's partial tick and level) and uploaded per pass
     private static float[] pos = new float[MAX_LIGHTS * 4], color = new float[MAX_LIGHTS * 4], dir = new float[MAX_LIGHTS * 4], slab = new float[MAX_LIGHTS * 4];
@@ -216,8 +217,33 @@ public final class ShaderDynamicLights {
 
     /** Uploads the frame's lights to a bound Embeddium terrain program; a program without the uniforms is left alone. */
     public static void uploadTerrain(int programHandle) {
+        uploadTerrain(programHandle, false);
+    }
+
+    /**
+     * {@link #uploadTerrain(int)} for one draw of the terrain: {@code ship} while the blocks of a Valkyrien Skies ship are
+     * drawn (2.13.0), for the lights that are drawn on ships' blocks alone or not on them.
+     */
+    public static void uploadTerrain(int programHandle, boolean ship) {
         wired = true;
+        drawingShip = ship;
         upload(programHandle, true);
+        drawingShip = false;
+        if (ship) shipDrawFrame = frameCounter;
+    }
+
+    private static boolean drawingShip;
+    private static long shipDrawFrame = -1;
+    private static long darkFrame = -1;
+
+    /** For tests: whether a ship's blocks were drawn as such this frame or the one before. */
+    public static boolean shipDrawnLately() {
+        return frameCounter - shipDrawFrame <= 1;
+    }
+
+    /** For tests: whether the shaders read the darkness field this frame or the one before. */
+    public static boolean darknessFieldLately() {
+        return frameCounter - darkFrame <= 1;
     }
 
     /** Uploads the frame's lights to a bound Flywheel program (their positions are camera-relative, as its fragments compute). */
@@ -251,7 +277,10 @@ public final class ShaderDynamicLights {
                     GL20C.glGetUniformLocation(programHandle, "cl_dynUvBits"), GL20C.glGetUniformLocation(programHandle, "cl_uvStrength"),
                     GL20C.glGetUniformLocation(programHandle, "cl_uvField"), GL20C.glGetUniformLocation(programHandle, "cl_uvFieldTex"),
                     GL20C.glGetUniformLocation(programHandle, "cl_uvFieldOrigin"), GL20C.glGetUniformLocation(programHandle, "cl_uvFieldSize"),
-                    GL20C.glGetUniformLocation(programHandle, "cl_dynAbsBits"));
+                    GL20C.glGetUniformLocation(programHandle, "cl_dynAbsBits"),
+                    GL20C.glGetUniformLocation(programHandle, "cl_onShip"), GL20C.glGetUniformLocation(programHandle, "cl_darkField"),
+                    GL20C.glGetUniformLocation(programHandle, "cl_darkFieldTex"), GL20C.glGetUniformLocation(programHandle, "cl_darkFieldOrigin"),
+                    GL20C.glGetUniformLocation(programHandle, "cl_darkFieldSize"));
             if (DEBUG_DUMP) dump(programHandle, loc);
             if (!loc.usable()) loc = NONE;
             LOCATIONS.put(programHandle, loc);
@@ -298,6 +327,19 @@ public final class ShaderDynamicLights {
             checkUnits(programHandle);
         }
         if (loc.absBits >= 0) GL20C.glUniform2i(loc.absBits, any ? absBits0 : 0, any ? absBits1 : 0);
+        // 2.13.0: whether a ship's blocks are drawn, and the darkness round absorbing blocks while there are lights to take it from
+        if (loc.onShip >= 0) GL20C.glUniform1f(loc.onShip, drawingShip ? 1f : 0f);
+        if (loc.darkFieldTex >= 0) GL20C.glUniform1i(loc.darkFieldTex, DarknessField.TEXTURE_UNIT);
+        if (loc.darkField >= 0) {
+            boolean dark = any && DarknessField.bind();
+            GL20C.glUniform1i(loc.darkField, dark ? 1 : 0);
+            if (dark) {
+                int[] origin = DarknessField.origin();
+                if (loc.darkFieldOrigin >= 0) GL20C.glUniform3f(loc.darkFieldOrigin, (float) (origin[0] - builtCam.x), (float) (origin[1] - builtCam.y), (float) (origin[2] - builtCam.z));
+                if (loc.darkFieldSize >= 0) GL20C.glUniform1f(loc.darkFieldSize, DarknessField.SIZE);
+                darkFrame = frameCounter;
+            }
+        }
         if (!any) {
             GL20C.glUniform1i(loc.count, 0);
             if (loc.fragSpots >= 0) GL20C.glUniform1i(loc.fragSpots, 0);
@@ -393,14 +435,14 @@ public final class ShaderDynamicLights {
                 String name = GL20C.glGetActiveUniform(program, i, 256, size, type);
                 int t = type.get(0);
                 boolean sampler = t >= 0x8B5D && t <= 0x8B64 || t >= 0x8DC0 && t <= 0x8DD8 || t >= 0x9108 && t <= 0x910D;
-                if (!sampler || name.startsWith("cl_dynSlabTex") || name.equals("cl_uvFieldTex")) continue;
+                if (!sampler || name.startsWith("cl_dynSlabTex") || name.equals("cl_uvFieldTex") || name.equals("cl_darkFieldTex")) continue;
                 int at = GL20C.glGetUniformLocation(program, name);
                 if (at < 0) continue;
                 int unit = GL20C.glGetUniformi(program, at);
-                if (unit < first || unit > first + 3 || !UNIT_CLASHES.add(name)) continue;
+                if ((unit < first || unit > first + 3) && unit != DarknessField.TEXTURE_UNIT || !UNIT_CLASHES.add(name)) continue;
                 org.slf4j.LoggerFactory.getLogger("ColorfulLighting").error("Dynamic lights: the sampler {} of another mod uses texture unit {}, "
-                        + "one of the four ({} to {}) the dynamic lights' slabs and the blacklight field are bound at. The terrain may not be drawn. "
-                        + "Start with -Dcolorfullighting.slabTextureUnit=<a free unit, 8 to 43> to move them.", name, unit, first, first + 3);
+                        + "one of those ({} to {}, and {}) the dynamic lights' slabs, the blacklight field and the darkness field are bound at. The terrain may not be drawn. "
+                        + "Start with -Dcolorfullighting.slabTextureUnit=<a free unit, 8 to 41> to move them.", name, unit, first, first + 3, DarknessField.TEXTURE_UNIT);
             }
         }
     }

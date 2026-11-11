@@ -112,6 +112,21 @@ uniform vec3 cl_uvFieldOrigin;
 uniform float cl_uvFieldSize;
 float cl_uvAcc = 0.0;
 vec3 cl_absAcc = vec3(0.0);
+// 2.13.0, as the terrain shaders have them: what is taken from the dynamic lights alone, the sky's share of what the
+// lights that absorb take (a point light's direction z of 1 leaves the sky), and the darkness field
+vec3 cl_absDyn = vec3(0.0);
+float cl_absSky = 0.0;
+uniform int cl_darkField;
+uniform sampler3D cl_darkFieldTex;
+uniform vec3 cl_darkFieldOrigin;
+uniform float cl_darkFieldSize;
+
+vec3 cl_darkness(vec3 at) {
+    vec3 tc = (at - cl_darkFieldOrigin) / cl_darkFieldSize;
+    if (any(lessThanEqual(tc, vec3(0.0))) || any(greaterThanEqual(tc, vec3(1.0)))) return vec3(0.0);
+    vec4 f = textureLod(cl_darkFieldTex, tc, 0.0);
+    return f.a > 0.02 ? clamp(f.rgb / f.a * (15.0 / 14.0), vec3(0.0), vec3(1.0)) : vec3(0.0);
+}
 
 // how much ultraviolet reaches a place relative to the camera, 0..1: the lights' (cl_dynamicLight ran) and the field's
 float cl_fwUltraviolet(vec3 wrel) {
@@ -149,6 +164,8 @@ vec3 cl_dynamicLight(vec3 wrel, vec3 normal) {
         float falloff = floor(p.w / 32.0);
         float level = p.w - falloff * 32.0;
         vec4 dir = cl_dynDir[i];
+        // a point light for the blocks of ships alone (2.13.0, its direction's y of 1) is not for what Flywheel draws
+        if (dir.w >= 1.0 && dir.y > 0.5 && dir.y < 1.5) continue;
         // l: the level left here; remaining: the blocks of reach left here (a detour that long takes the rest)
         float l, remaining;
         if (dir.w < 1.0) {
@@ -172,6 +189,7 @@ vec3 cl_dynamicLight(vec3 wrel, vec3 normal) {
         if ((((i < 32 ? cl_dynAbsBits.x : cl_dynAbsBits.y) >> (i & 31)) & 1) != 0) {
             // a light that absorbs (2.12.0): what it would have added is taken away instead
             cl_absAcc = max(cl_absAcc, light);
+            if (dir.w < 1.0 || dir.z < 0.5) cl_absSky = max(cl_absSky, max(light.r, max(light.g, light.b)));
             continue;
         }
         if ((((i < 32 ? cl_dynUvBits.x : cl_dynUvBits.y) >> (i & 31)) & 1) != 0) {
@@ -179,7 +197,9 @@ vec3 cl_dynamicLight(vec3 wrel, vec3 normal) {
         }
         acc = max(acc, light);
     }
-    return acc;
+    // the darkness round absorbing blocks takes from the dynamic lights (2.13.0)
+    if (cl_darkField > 0) cl_absDyn = cl_darkness(at);
+    return max(acc - cl_absDyn, vec3(0.0));
 }
 
 // The in-world composite of sky and colored block light: the same as cl_blendLight (the chunk shaders), the vanilla core

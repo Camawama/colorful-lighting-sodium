@@ -32,6 +32,37 @@ public interface DynamicLightSink {
      */
     int ABSORB = 0x2000000;
 
+    /**
+     * Or'd into a point light's {@code rgb}: a light drawn only on the blocks of Valkyrien Skies ships. For a lamp that
+     * stands in the world beside a ship: the world holds that lamp's light already, the ship's blocks, kept and lit far
+     * away, hold none of it. Drawn by the terrain's shaders on ships' blocks, with the ship's own blocks in its way; baked
+     * into the ship's meshes where the shaders don't draw the dynamic lights. A build before 2.13.0 has no such field:
+     * look it up by reflection and send no such light when it is missing (it would light the world a second time).
+     *
+     * @since 2.13.0
+     */
+    int SHIPS_ONLY = 0x4000000;
+
+    /**
+     * Or'd into a point light's {@code rgb}: a light not drawn on ships' blocks. For what a block of a ship does in the
+     * world when the ship's own light holds it already (an absorbing block of a ship: its ship is darkened by the light
+     * stored there).
+     *
+     * @since 2.13.0
+     */
+    int NOT_ON_SHIPS = 0x8000000;
+
+    /**
+     * Or'd into the {@code rgb} of a point light that absorbs: the sky's light is left as it is, as the blocks of
+     * {@code light/absorbers.json} leave it.
+     *
+     * @since 2.13.0
+     */
+    int KEEPS_SKY = 0x10000000;
+
+    /** The bits of {@code rgb} that are no colour. */
+    int FLAGS = BLACKLIGHT | ABSORB | SHIPS_ONLY | NOT_ON_SHIPS | KEEPS_SKY;
+
     void point(long ownerKey, double x, double y, double z, float level, int rgb, int falloff, float range);
 
     /**

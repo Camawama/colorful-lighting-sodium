@@ -49,6 +49,31 @@ float cl_uvAcc = 0.0;
 uniform ivec2 cl_dynAbsBits;
 vec3 cl_absAcc = vec3(0.0);
 
+// What is drawn where (2.13.0). cl_onShip: 1 while the blocks of a Valkyrien Skies ship are drawn. A point light has no
+// direction, so its y says where the light is drawn (1: on ships' blocks alone, a lamp of the world lighting a ship beside
+// it; 2: not on them, what a block of a ship does in the world) and its z is 1 for a light that absorbs and leaves the sky.
+// cl_absDyn: what is taken from the dynamic lights alone, 0..1 a channel: by an absorbing block of a ship on ships' blocks
+// (the ship's stored light is taken down by it already) and by the darkness of the blocks of light/absorbers.json.
+uniform float cl_onShip;
+vec3 cl_absDyn = vec3(0.0);
+float cl_absSky = 0.0;
+
+// The darkness field (2.13.0): the darkness the engine keeps round absorbing blocks (an end gateway), in a window of cells
+// round the camera: rgb the levels taken less one, over 15, and a whether the cell holds any, so rgb over a is the darkness
+// of the open cells alone. The stored light is taken down by it in the meshes; the dynamic lights are taken down by it
+// here, at the place half a block before the face.
+uniform int cl_darkField;
+uniform sampler3D cl_darkFieldTex;
+uniform vec3 cl_darkFieldOrigin;
+uniform float cl_darkFieldSize;
+
+vec3 cl_darkness(vec3 at) {
+    vec3 tc = (at - cl_darkFieldOrigin) / cl_darkFieldSize;
+    if (any(lessThanEqual(tc, vec3(0.0))) || any(greaterThanEqual(tc, vec3(1.0)))) return vec3(0.0);
+    vec4 f = textureLod(cl_darkFieldTex, tc, 0.0);
+    return f.a > 0.02 ? clamp(f.rgb / f.a * (15.0 / 14.0), vec3(0.0), vec3(1.0)) : vec3(0.0);
+}
+
 vec3 cl_dynVisibility(vec4 s, vec3 at, float remaining) {
     int cls = int(s.w / 1000.0);
     float slot = s.w - float(cls) * 1000.0;
@@ -75,6 +100,12 @@ vec3 cl_dynamicLightRange(vec3 wrel, vec3 normal, int from, int to) {
         float falloff = floor(p.w / 32.0);
         float level = p.w - falloff * 32.0;
         vec4 dir = cl_dynDir[i];
+        bool absorbs = (((i < 32 ? cl_dynAbsBits.x : cl_dynAbsBits.y) >> (i & 31)) & 1) != 0;
+        // where a point light is drawn (2.13.0): on ships' blocks alone, or not on them (an absorbing one still takes from
+        // the dynamic lights there)
+        bool offShips = dir.w >= 1.0 && dir.y > 1.5;
+        if (dir.w >= 1.0 && dir.y > 0.5 && !offShips && cl_onShip < 0.5) continue;
+        if (offShips && cl_onShip > 0.5 && !absorbs) continue;
         // l: the level left here; remaining: the blocks of reach left here (a detour that long takes the rest)
         float l, remaining;
         if (dir.w < 1.0) {
@@ -95,9 +126,14 @@ vec3 cl_dynamicLightRange(vec3 wrel, vec3 normal, int from, int to) {
         vec3 light = c.rgb * (min(l, 15.0) / 15.0);
         vec4 s = cl_dynSlab[i];
         if (cl_dynSlabs > 0 && s.w >= 0.0) light *= cl_dynVisibility(s, at, remaining);
-        if ((((i < 32 ? cl_dynAbsBits.x : cl_dynAbsBits.y) >> (i & 31)) & 1) != 0) {
+        if (absorbs) {
             // a light that absorbs (2.12.0): what it would have added is taken away instead
-            cl_absAcc = max(cl_absAcc, light);
+            if (offShips && cl_onShip > 0.5) {
+                cl_absDyn = max(cl_absDyn, light);
+            } else {
+                cl_absAcc = max(cl_absAcc, light);
+                if (dir.w < 1.0 || dir.z < 0.5) cl_absSky = max(cl_absSky, max(light.r, max(light.g, light.b)));
+            }
             continue;
         }
 #ifdef CL_BLACKLIGHT
@@ -157,6 +193,8 @@ vec3 cl_facingNormal(uint nib) {
 // in, a the sky nibble; -1: none to add to) and its face along the world's axes
 vec4 cl_baseLight = vec4(0.0, 0.0, 0.0, -1.0);
 vec3 cl_faceNormal = vec3(0.0);
+// what the vertices' lights that absorb and the darkness field take here, for the fragments' spot lights (2.13.0)
+vec3 cl_vertAbs = vec3(0.0);
 #endif
 
 // wrel: the vertex relative to the camera, along the world's axes (the dynamic lights are given that way); toWorld turns
@@ -179,7 +217,13 @@ vec4 _sample_lightmap_dyn(sampler2D lightMap, ivec2 uv, vec3 wrel, mat3 toWorld)
         vec3 n = cl_facingNormal(nib);
         if (dot(n, n) > 0.5) n = normalize(toWorld * n);
         cl_faceNormal = n;
-        if (cl_dynCount > 0) dyn = cl_dynamicLightRange(wrel, n, cl_dynFragSpots, cl_dynCount) * 255.0;
+        if (cl_dynCount > 0) {
+            dyn = cl_dynamicLightRange(wrel, n, cl_dynFragSpots, cl_dynCount);
+            // the darkness round absorbing blocks takes from the dynamic lights (2.13.0), the fragments' spot lights too
+            if (cl_darkField > 0) cl_absDyn = max(cl_absDyn, cl_darkness(wrel + n * 0.5));
+            dyn = max(dyn - cl_absDyn, vec3(0.0)) * 255.0;
+            cl_vertAbs = max(cl_absAcc, cl_absDyn);
+        }
     }
 #endif
     uvec3 dyn8 = uvec3(clamp(dyn, 0.0, 255.0));
@@ -188,7 +232,7 @@ vec4 _sample_lightmap_dyn(sampler2D lightMap, ivec2 uv, vec3 wrel, mat3 toWorld)
     uint absSky = 0u;
 #ifdef CL_DYNAMIC_LIGHTS
     abs8 = uvec3(clamp(cl_absAcc * 255.0, 0.0, 255.0));
-    absSky = uint(max(cl_absAcc.r, max(cl_absAcc.g, cl_absAcc.b)) * 15.0 + 0.5);
+    absSky = uint(cl_absSky * 15.0 + 0.5);
 #endif
 
     // Our format (compact): the top nibble is 15, or 8 plus the vertex's face.

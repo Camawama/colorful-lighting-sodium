@@ -6,6 +6,34 @@ Planned
 - keep Valkyrien Skies compatibility on every version where VS exists
 - add Sable / Create Aeronautics compatibility alongside Valkyrien Skies where possible
 
+2026-11-11 (2.13.0)
+- Fixed: a block that absorbs light (`light/absorbers.json`: an end gateway, an end portal) took nothing from the dynamic
+  lights. Its darkness is spread by the engine as light is and taken from the stored light when a mesh is built; a dynamic
+  light is drawn by the shaders over the finished mesh, so a flashlight lit the ground beside an end gateway as if the
+  gateway were not there. The darkness round such blocks is now kept in a field round the camera (128 cells a side, two
+  bytes a cell) that the terrain's and Flywheel's shaders read, and what the engine stores as dark at a place is taken
+  from the dynamic lights there; an entity's exact light takes it the same way. Nothing is copied, bound or uploaded
+  while there is no darkness near: the sections round the camera are asked for theirs every ten ticks, the ones that
+  hold any are read on a worker (0.3 ms in the test), and a build that changed nothing uploads nothing.
+  `-Dcolorfullighting.darknessField=false` for the way before. Harness `ll_ship_world`: a beam onto the floor three
+  blocks from an end gateway reads 0 of 255 where the same beam 24 blocks away reads 142.
+- Fixed: a point light that absorbs (2.12.0) took nothing from the spot lights the terrain's fragments draw, only from
+  the stored light and the lights the vertices take. What the vertices' absorbing lights take now goes to the fragments.
+- For dynamic light providers, where a point light is drawn: `DynamicLightSink.SHIPS_ONLY` (on the blocks of Valkyrien
+  Skies ships alone) and `NOT_ON_SHIPS`, or'd into the colour. A ship's blocks are kept and lit far from where the ship
+  is drawn, so a lamp standing in the world beside a ship lights the world and not the ship; a provider can now hand
+  that lamp over as a light for ships' blocks alone, which the world, the entities in it and Flywheel never see. The
+  terrain's shaders are told which draw is a ship's (Valkyrien Skies draws a ship through the same renderer with a
+  camera of the ship's own); where meshes carry the dynamic lights only the light's copies in the shipyards count. A
+  light that absorbs and is not for ships still takes from the dynamic lights on them: the ship's own stored light is
+  taken down by the block's darkness already. Lively Lighting 0.9.0 sends the world's lamps and a ship's absorbing
+  blocks this way.
+- `DynamicLightSink.KEEPS_SKY`: a point light that absorbs and leaves the sky's light, as the blocks of
+  `light/absorbers.json` leave it.
+- For providers' lamps: `DynamicLightsCompat.blockLightLevel(BlockState)`, the level a block gives light at as Colorful
+  Lighting takes it (`light/emitters.json`'s where it gives one: an end gateway's is 0), and
+  `blockAbsorption(BlockState)`, what it takes away.
+
 2026-11-11 (2.12.0)
 - Lights that absorb light, for dynamic light providers: a light whose colour carries `DynamicLightSink.ABSORB` takes
   light away where an ordinary light of its level, shape and reach would have added it: the block light by its red, green

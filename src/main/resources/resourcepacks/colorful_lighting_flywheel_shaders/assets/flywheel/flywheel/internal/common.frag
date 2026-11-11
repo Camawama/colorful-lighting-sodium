@@ -164,7 +164,7 @@ void _flw_main() {
             #endif
         }
         // END colorful lighting
-        lightColor.rgb *= 1.0 - 0.85 * max(cl_absAcc.r, max(cl_absAcc.g, cl_absAcc.b));
+        lightColor.rgb *= 1.0 - 0.85 * cl_absSky;
         color *= lightColor;
         if (cl_uvStrength > 0.0) {
             float cl_u = cl_fwUltraviolet(flw_vertexPos.xyz - flw_cameraPos.xyz);

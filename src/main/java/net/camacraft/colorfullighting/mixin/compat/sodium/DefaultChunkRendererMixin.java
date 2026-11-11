@@ -35,7 +35,10 @@ public abstract class DefaultChunkRendererMixin {
 	    if (shader instanceof ChunkShaderInterfaceExtension extension) {
 		    SodiumShaderCompat.setupShader(extension);
 	    }
-	    // the dynamic lights of this frame (2.8.0), to this pass's program
-	    net.camacraft.colorfullighting.compat.dynamiclights.ShaderDynamicLights.uploadTerrain(activeProgram.handle());
+	    // the dynamic lights of this frame (2.8.0), to this pass's program. Valkyrien Skies draws a ship's blocks through
+	    // this renderer with a camera of the ship's own, far from the game's: such a draw is a ship's (2.13.0)
+	    net.minecraft.world.phys.Vec3 eye = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
+	    double dx = camera.x - eye.x, dy = camera.y - eye.y, dz = camera.z - eye.z;
+	    net.camacraft.colorfullighting.compat.dynamiclights.ShaderDynamicLights.uploadTerrain(activeProgram.handle(), dx * dx + dy * dy + dz * dz > 4.0);
     }
 }
