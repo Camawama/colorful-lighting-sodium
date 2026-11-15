@@ -19,6 +19,7 @@
     "render.AmbientOcclusionFaceMixin",
     "render.EntityRendererMixin",
     "render.ItemRendererGlowMixin",
+    "render.EntityRenderDispatcherFluorescenceMixin",
     "render.GameRendererHandMixin",
     "render.BrightnessCombinerMixin",
     "compat.sodium.SodiumWorldSliceMixin",

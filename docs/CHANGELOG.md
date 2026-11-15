@@ -6,6 +6,31 @@ Planned
 - keep Valkyrien Skies compatibility on every version where VS exists
 - add Sable / Create Aeronautics compatibility alongside Valkyrien Skies where possible
 
+2026-11-14 (2.14.0)
+- Fluorescence: entities that glow under ultraviolet whatever their own colours, as a scorpion does. A blacklight makes
+  what is saturated glow; a mod can now say which entities glow in a colour of their own, a dark body too
+  (`compat.vanilla.EntityFluorescence.setProvider`: for an entity, eight numbers or nothing: the glow's red, green,
+  blue and strength, the part of the texture that glows by its brightness from and to, and a hue with how far from it;
+  `setTextures` for textures that glow whoever draws them). Lively Lighting 0.10.0 reads the list from
+  `config/livelylighting/uv_definitions`. Nothing is added to a vertex and no buffer or render type is wrapped: the
+  game draws an entity's body in batches of one texture, so the glow goes by texture. When a listed entity is about to
+  be drawn while ultraviolet is about, its renderer's texture is noted for the frame; when an entity shader is bound
+  for a batch, the texture on its first unit is looked up and two uniforms are set if they differ from what the
+  program holds. An entity that is not listed costs one lookup by its type while ultraviolet is about and nothing
+  without; a batch one lookup by its texture's number. What a renderer draws with other textures (a saddle, wool, a
+  held item) does not glow unless its texture is named. Drawn by the game's entity shaders where the blacklight on
+  entities is (the config's `blacklightEntities`), not under an Oculus shader pack.
+  `-Dcolorfullighting.entityFluorescence=false` switches it off.
+- Fixed: a lamp that needs redstone glowed in the hand. The bloom took an item for a light source when its block's
+  default state gives light, or when the light tables name the block at all; a block that names no default state has
+  the game's first state, "lit" for a true-or-false property (Quark's crystal lamps), and a lamp the tables give a
+  colour (Create's rose quartz lamp) counted whatever its state. An item's block is now asked what it is when set down
+  with nothing round it (`common.util.PlacedState`: its own placement rule, below the world, once per block and only
+  for blocks whose states differ in light), and a block that is dark then gives its item no glow and no light, unless
+  `light/items.json` names the item itself. The same for the light Colorful Lighting gives a held item when no dynamic
+  lights mod does.
+- Fixed: what an item is to the bloom was kept across a resource reload, so a changed light table took a restart.
+
 2026-11-11 (2.13.0)
 - Fixed: a block that absorbs light (`light/absorbers.json`: an end gateway, an end portal) took nothing from the dynamic
   lights. Its darkness is spread by the engine as light is and taken from the stored light when a mesh is built; a dynamic

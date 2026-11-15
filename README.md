@@ -144,6 +144,11 @@ client config's `blacklightEntities` switches the entities' part. Distant Horizo
 shaders of their own stay as they are, and it all stands down under an Oculus shader pack (the violet light stays). `/cl blacklight on|off` (the client config's `blacklight`) switches the glow; `blacklightStrength`
 scales it. With bloom on, what glows under a blacklight blooms too.
 
+Some things glow under ultraviolet whatever their colours (a scorpion, bone, a jellyfish). Which entities do, and in
+what colour, is another mod's to say (`compat.vanilla.EntityFluorescence.setProvider`, since 2.14.0); Lively Lighting
+0.10.0 reads the list from `config/livelylighting/uv_definitions`. The glow goes by the texture an entity's body is
+drawn with, where the blacklight on entities is drawn.
+
 ### Block State Format
 
 You can define different colors for different block states.

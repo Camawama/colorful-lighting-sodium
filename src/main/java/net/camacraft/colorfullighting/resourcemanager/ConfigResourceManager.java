@@ -86,6 +86,9 @@ public class ConfigResourceManager implements ResourceManagerReloadListener {
 
         // texture atlas and models were rebuilt; sampled emitter colors must be re-derived
         AutoEmitterColors.clearCache();
+        // what an item is to the bloom and what a block is when set down follow the tables and the other mods' configs (2.14.0)
+        net.camacraft.colorfullighting.bloom.ItemGlows.forget();
+        net.camacraft.colorfullighting.common.util.PlacedState.forget();
 
         // which block entities need NBT snapshots depends on the configs that just changed, and the
         // snapshots must be in place before the engine starts re-propagating light below

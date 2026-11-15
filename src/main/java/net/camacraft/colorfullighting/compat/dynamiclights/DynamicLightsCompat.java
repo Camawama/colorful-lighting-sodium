@@ -1522,6 +1522,14 @@ public final class DynamicLightsCompat {
         return rgb8(resolveStackColor(stack));
     }
 
+    /** Whether the light tables name this item itself (items.json), which gives it a light whatever its block does. */
+    public static boolean itemNamedAsLight(ItemStack stack) {
+        if (stack.isEmpty()) return false;
+        ResourceLocation itemId = ForgeRegistries.ITEMS.getKey(stack.getItem());
+        VariantList<Config.ColorEmitter> itemConfig = itemId == null ? null : Config.getItemEmitterConfig(itemId);
+        return itemConfig != null && itemConfig.resolve(null, stackNbt(itemConfig, stack)) != null;
+    }
+
     /** A burning entity's light colour (minecraft:fire's). */
     public static int fireLightColor() {
         return rgb8(Config.getLightColor(Blocks.FIRE));
@@ -1620,15 +1628,15 @@ public final class DynamicLightsCompat {
             return itemEmitter.overriddenBrightness4();
         }
 
-        // otherwise a held block glows like the same block placed in the world: an emitters.json
-        // brightness override if present, else the block's vanilla emission (glowstone item == 15)
+        // otherwise a held block glows like the same block set down in the world without power (2.14.0: the state its
+        // own placement gives, not its default state; a lamp that needs redstone is dark in the hand): an emitters.json
+        // brightness for that state if present, else that state's own emission (glowstone item == 15)
         if (stack.getItem() instanceof BlockItem blockItem) {
-            VariantList<Config.ColorEmitter> config = Config.getBlockEmitterConfig(blockItem.getBlock());
-            if (config != null && config.getDefault() != null && config.getDefault().overriddenBrightness4() >= 0) {
-                return config.getDefault().overriddenBrightness4();
-            }
-            int emission = blockItem.getBlock().defaultBlockState().getLightEmission();
+            net.minecraft.world.level.block.state.BlockState placed = net.camacraft.colorfullighting.common.util.PlacedState.of(blockItem.getBlock());
+            int emission = Config.getEmissionBrightness(new net.camacraft.colorfullighting.accessors.BlockStateWrapper(placed));
             if (emission > 0) return emission;
+            // a dark block's item is a light only if items.json names the item itself
+            return itemEmitter != null ? 8 : 0;
         }
 
         // non-block items (lava bucket, ...) have no block emission; a configured color marks them

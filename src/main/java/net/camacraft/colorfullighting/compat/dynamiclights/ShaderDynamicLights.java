@@ -405,6 +405,11 @@ public final class ShaderDynamicLights {
         return n;
     }
 
+    /** Whether any of this frame's dynamic lights is ultraviolet (the arrays are built for the frame if not yet done). Render thread. */
+    public static boolean ultravioletLightsThisFrame() {
+        return prepare() && (uvBits0 | uvBits1) != 0;
+    }
+
     /** For tests: the blacklights among the lights uploaded this frame. */
     public static int blacklightsThisFrame() {
         return Integer.bitCount(uvBits0) + Integer.bitCount(uvBits1);

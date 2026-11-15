@@ -100,11 +100,15 @@ public final class ItemGlows {
         }
         int value = 0;
         try {
+            boolean dark = false;
             if (item instanceof BlockItem blockItem) {
-                short cell = EmitterVolume.valueOf(blockItem.getBlock().defaultBlockState());
+                // the state the block has when set down without power (2.14.0): a lamp that needs redstone is dark in the hand
+                short cell = EmitterVolume.valueOf(net.camacraft.colorfullighting.common.util.PlacedState.of(blockItem.getBlock()));
                 if (EmitterVolume.isEmitter(cell)) value = cell & 0xFFFF;
+                // a dark block's item glows only if the light tables name the item itself
+                else dark = !DynamicLightsCompat.itemNamedAsLight(stack);
             }
-            if (value == 0) {
+            if (value == 0 && !dark) {
                 int rgb = DynamicLightsCompat.itemLightColor(stack);
                 if (rgb >= 0 && rgb != DynamicLightSink.BLACKLIGHT && (rgb & DynamicLightSink.ABSORB) == 0) {
                     value = ((rgb >> 20) & 15) << 12 | ((rgb >> 12) & 15) << 8 | ((rgb >> 4) & 15) << 4 | 7;

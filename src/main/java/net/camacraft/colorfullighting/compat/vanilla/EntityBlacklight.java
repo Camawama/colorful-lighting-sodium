@@ -196,6 +196,7 @@ public final class EntityBlacklight {
         GL20C.glUniform1f(strength, 0f);
         GL20C.glUseProgram(previous);
         UPLOADED.remove(program);
+        EntityFluorescence.forget(program);
         return strength;
     }
 
@@ -212,15 +213,25 @@ public final class EntityBlacklight {
         if (levelDepth > 0) levelDepth--;
     }
 
+    /** Whether the render thread is drawing the level (or the hand after it): positions are places in the world. */
+    public static boolean drawingLevel() {
+        return levelDepth > 0;
+    }
+
     /** The program is bound and about to draw: its blacklight uniforms for this frame, or a strength of 0. Render thread. */
     public static void apply(int program, int strengthLocation) {
         long state = UPLOADED.get(program);
         if (levelDepth > 0 && ColorfulLightingConfig.blacklightEntities()) {
             long frame = ShaderDynamicLights.frame();
-            if (state == frame) return;
+            if (state == frame) {
+                // ultraviolet reaches this program's draws: what fluoresces goes by the batch's texture (2.14.0)
+                EntityFluorescence.apply(program);
+                return;
+            }
             if (ShaderDynamicLights.uploadEntityBlacklight(program)) {
                 UPLOADED.put(program, frame);
                 uploads++;
+                EntityFluorescence.apply(program);
                 return;
             }
         }
