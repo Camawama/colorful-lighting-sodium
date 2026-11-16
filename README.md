@@ -32,6 +32,9 @@ All of this light propagation runs on a separate background thread, so the game 
 *   Dynamic lights that absorb light instead of giving it (for dynamic light providers such as Lively Lighting: `DynamicLightSink.ABSORB`)
 *   Blocks that absorb light take it from dynamic lights too: a flashlight does not light the ground beside an end gateway
 *   Dynamic lights for the blocks of Valkyrien Skies ships alone (`DynamicLightSink.SHIPS_ONLY`: a lamp of the world lighting a ship beside it)
+*   Dynamic lights go through the world the way a placed lamp's light does: round corners and through open doors, never through a solid wall
+*   Fluorescence: some entities glow under blacklight whatever their colours, as a scorpion does (the list is another mod's to give; Lively Lighting reads it from its config)
+*   A light item glows in the hand only if its block gives light when placed: a lamp that needs redstone (a redstone lamp, Quark's crystal lamps) stays dark in the hand
 *   The mod is client-side, so you can play with it on ANY server while still experiencing colorful lighting!
 
 ## 🔗 Mod Compatibility
@@ -42,13 +45,13 @@ All of this light propagation runs on a separate background thread, so the game 
 *   **[Embeddium](https://github.com/FiniteReality/embeddium)**: Fully compatible and recommended, but **no longer required**: colored lighting now works with vanilla rendering too.
 *   **[Starlight](https://github.com/PaperMC/Starlight)**: Works seamlessly with Starlight.
 *   **[True Darkness](https://github.com/grondag/darkness)**: Compatible with True Darkness.
-*   **[Oculus](https://github.com/Asek3/Oculus)**: Colorful Lighting ships a two-tier shader patcher. Specific shader packs get a **dedicated patch applied automatically as the pack loads**: currently the Complementary family (including Euphoria Patches) and the BSL family (v8 through v10, plus forks like Insanity). Just select the pack in the Oculus shader GUI and colored lighting works; no patched copy needed. Every other pack falls back to the generic auto-patcher (similar to Euphoria Patches): run `/cl patchshaders` to scan your `shaderpacks` folder and create a patched `<Pack> + ColorfulLighting` copy of every recognized pack, then select that copy in the shader GUI. Set `autoPatchShaderpacks = true` in the client config to run the scan automatically on every startup. Unpatched packs still disable the engine automatically, and unknown packs that read the lightmap through standard `gl_MultiTexCoord1` patterns still get the compatibility decode (correct light levels, no rainbow artifacts), just without the color tint.
+*   **[Oculus](https://github.com/Asek3/Oculus)**: Colorful Lighting ships a two-tier shader patcher. Specific shader packs get a **dedicated patch applied automatically as the pack loads**: currently the Complementary family (including Euphoria Patches) and the BSL family (v8 through v10, plus forks like Insanity). Just select the pack in the Oculus shader GUI and colored lighting works; no patched copy needed. Every other pack falls back to the generic auto-patcher (similar to Euphoria Patches): run `/cl patchshader` to scan your `shaderpacks` folder and create a patched `<Pack> + ColorfulLighting` copy of every recognized pack, then select that copy in the shader GUI. Set `autoPatchShaderpacks = true` in the client config to run the scan automatically on every startup. Unpatched packs still disable the engine automatically, and unknown packs that read the lightmap through standard `gl_MultiTexCoord1` patterns still get the compatibility decode (correct light levels, no rainbow artifacts), just without the color tint.
 *   **Dynamic light provider API** (2.8.0): a mod registers a `DynamicLightProvider` and its lights (points and spot cones, with colour, reach and falloff) are drawn in colour everywhere Colorful Lighting lights, mirrored into ships, and, with Embeddium and no shader pack, in the shaders themselves with no mesh rebuilt. [Lively Lighting](https://github.com/Camawama/LivelyLighting) 0.5.0's client module uses it.
-*   **Dynamic Light Mods**: Most dynamic light mods now work ([Sodium Dynamic Lights](https://modrinth.com/mod/sodium-dynamic-lights), [Torcy](https://www.curseforge.com/minecraft/mc-mods/torcy), [AtomicStryker's Dynamic Lights](https://github.com/AtomicStryker/atomicstrykers-minecraft-mods)). [Lively Lighting](https://github.com/Camawama/LivelyLighting) is the recommended companion: it is the only dynamic light mod that also works with `filters.json` and `entities.json` entries, and dynamic sources emit light with their configured color (the lingering-light bug is fixed). A held or dropped light item emits the colour its block has placed: an `emitters.json` colour, an `auto` entry's, or the colour sampled from the texture of a lamp no entry names (`autoEmitterColors`), where it used to be white (2026-10-17). Vanilla's particles that brighten with age (portal, enchantment table, flames, glow, lava) do so on the colored light instead of reading it as vanilla's packed light (a portal particle by day was black and faded in; 2026-10-18, option `particleLightRamps`).
+*   **Dynamic Light Mods**: Most dynamic light mods work ([Sodium Dynamic Lights](https://modrinth.com/mod/sodium-dynamic-lights), [Torcy](https://www.curseforge.com/minecraft/mc-mods/torcy), [AtomicStryker's Dynamic Lights](https://github.com/AtomicStryker/atomicstrykers-minecraft-mods)). [Lively Lighting](https://github.com/Camawama/LivelyLighting) is the recommended companion: it is the only one that also works with `filters.json` and `entities.json` entries, its lights take their configured colour, and its client module draws lights through this mod's dynamic light API. A held or dropped light item glows in the colour its block has when placed (an `emitters.json` colour, an `auto` entry's, or the colour sampled from its texture), and only if that block gives light when placed. Particles that brighten with age (portal, enchantment table, flames, glow, lava) keep their colour (`particleLightRamps`).
 *   **[Wakes: Reforged](https://www.curseforge.com/minecraft/mc-mods/wakes-reforged)**: Works perfectly with wakes and tints them accordingly.
 *   **[Flywheel](https://github.com/Engine-Room/Flywheel) / [Create](https://github.com/Creators-of-Create/Create)**: Flywheel-rendered objects (Create contraptions, etc.) render with colorful lighting since Colorful Lighting 2.4.0. Supported versions: Flywheel `1.0.0-beta-214` through `1.0.8` with Create `6.0.x` (tested with Flywheel 1.0.5). OpenGL 4.5 is **no longer required**; on older GPUs and drivers (down to and below GL 4.3, including GL 4.1 Macs) the mod automatically falls back to a buffer-texture path instead of crashing. Ponder scenes also work fine, with no more red tint issue.
-*   **[Vanillin](https://github.com/Engine-Room/Flywheel)** (Flywheel's visuals for vanilla's block entities): double chests are lit as vanilla's renderer lights them. Vanillin combines a double chest's two lights the way vanilla's `BrightnessCombiner` does, with `LightTexture.block`/`sky`/`pack`, which drops the sky nibble of a colored value; since 2.7.6 the colored max of the two is set on its instances instead (the single chest was never affected).
-*   **[Valkyrien Skies](https://github.com/ValkyrienSkies/Valkyrien-Skies-2)**: Colored lighting renders on ships, including dynamic light sources moving between ships and the world. *Recently added and still being tested; please report any issues.*
+*   **[Vanillin](https://github.com/Engine-Room/Flywheel)** (Flywheel's visuals for vanilla's block entities): double chests are lit as vanilla lights them (they were lit by the torch alone before 2.7.6).
+*   **[Valkyrien Skies](https://github.com/ValkyrienSkies/Valkyrien-Skies-2)**: Colored lighting renders on ships: a ship's own lamps light it as it moves and turns, lamps in the world light a ship beside them, stained glass on a ship tints the light through it, a scaled ship's lamps scale with it, and dynamic lights move between ships and the world.
 *   **[Epic Fight](https://www.curseforge.com/minecraft/mc-mods/epic-fight-mod)**: Patched player and mob models (zombies, skeletons, players, etc.) render with correct colored lighting instead of appearing dark.
 *   **HBM's Nuclear Tech Modernized**: Machines render with full colored lighting and no striped light glitches. If a future HBM update changes its shaders, the compat auto-disables and falls back to plain correct brightness.
 *   **[Flerovium](https://modrinth.com/mod/flerovium)**: Held and dropped items, and the block-breaking cracks overlay, render with correct lighting instead of appearing dark.
@@ -406,14 +409,21 @@ Define a separate light intensity/vibrancy value for each moon phase.
 | --- | --- | --- |
 | `enabled` | `true` | Master switch for colored lighting. |
 | `autoEmitterColors` | `true` | Automatically sample a light color from the block's texture for light sources with no configured color (typically modded blocks). Bright pixels dominate the sample, so a lamp glows in the color of its glowing part rather than its casing. Disable to make unconfigured light sources emit plain white light. |
-| `autoPatchShaderpacks` | `false` | Scan the `shaderpacks` folder on every startup and create patched copies of recognized packs (same as running `/cl patchshaders`; requires Oculus). |
+| `autoPatchShaderpacks` | `false` | Scan the `shaderpacks` folder on every startup and create patched copies of recognized packs (same as running `/cl patchshader`; requires Oculus). |
 | `blacklight` | `true` | Blocks glow under blacklight (a light whose color is `"uv"`). Toggle in game with `/cl blacklight on|off`. Off leaves the dim violet light and nothing else. |
 | `blacklightEntities` | `true` | Mobs, players, items in frames and block entities glow under blacklight too. Off: only blocks glow. |
 | `blacklightStrength` | `1.0` | How strongly blocks glow under blacklight (0 to 4). |
 | `bloom` | `false` | Bloom: light sources (blocks that emit light) glow softly past their edges in the color of their light, and so does what glows under blacklight. A lit wall or a bright texture that emits nothing does not bloom. Toggle in game with `/cl bloom on|off`; `/cl bloom` alone shows what the pass costs. Not drawn under an Oculus shader pack (the pack's own bloom applies). |
+| `bloomSmoothing` | `true` | Evens the bloom out over about a thirtieth of a second, so the glow doesn't waver as the camera or a light moves. |
 | `bloomStrength` | `1.0` | How strong the bloom is (0 to 4). |
 | `bloomThreshold` | `0.3` | How bright a pixel of a light source must be to bloom (0 to 0.95). Lower makes dim parts of a lamp glow as well, higher keeps the glow to its brightest pixels. |
+| `dhLodColorMode` | `AUTO` | Colored light on Distant Horizons' LODs (`AUTO`: on whenever Distant Horizons is installed). `/cl dh on|off|auto`. See Known Issues. |
+| `dhLodsHiddenInFluids` | `true` | No LOD is drawn while the camera is in water, lava or powder snow (or blind), where Distant Horizons would paint them in the fog colour. |
+| `dhLodsStartAtVanillaFade` | `true` | Colored LODs begin where Distant Horizons starts fading the vanilla terrain into them, so a carpet or iron bars never show as a full cube. |
+| `dhTranslucentLodsKeepDhFade` | `true` | Translucent LODs (water, ice, glass) keep Distant Horizons' own dithered start, so deep water fades into the LOD sea without a ring. |
+| `flywheelForceTextureMode` | `false` | Testing only: forces Flywheel down the path older GPUs take (colored light as a buffer texture). Needs a restart and `/flywheel backend instancing`. |
 | `lightUpdateSpeed` | `FASTEST` | How quickly colored light fills in after chunks load. |
+| `particleLightRamps` | `true` | Particles that brighten with age (portal, enchantment table, flames, glow, lava) do so on the colored light instead of vanilla's packed light, which turned a portal particle black by day. |
 | `smoothLightStaysBehindBlockers` | `true` | Smooth lighting counts a neighbouring cell's colored light only as far as it could reach the face (light loses a level per block, so a neighbour can be at most a level brighter than the cell its light passes through). Open scenes look exactly as with this off; light just doesn't glow round blocks that stop it: no bright patch under and beside a shut door on its dark side, and no light round a beacon or lamp walled in tinted glass. |
 | `xaeroMinimapColors` | `true` | With Xaero's Minimap Lighting on, the block-lit part of a pixel on the chunks the minimap draws itself (without the World Map, or with its World Map chunks option off) takes the color of the light there, in cave mode too. While this is on, the minimap draws its own chunks in cave mode even with the World Map installed (the World Map's cave layers carry no colors in singleplayer); on the surface it keeps its World Map chunks option. |
 | `xaeroWorldMapColors` | `true` | The same on Xaero's World Map (the full-screen map at every zoom, and the minimap when it shows World Map chunks). Colors are recorded when the World Map updates a chunk near you and saved beside its region files (`<region>.clcolors`); off draws the grey lighting and keeps what was recorded. |
@@ -450,6 +460,22 @@ does on your machine.
 > that over the file.
 
 </details>
+
+## ⌨️ Commands
+
+All client-side, under `/cl`:
+
+| Command | What it does |
+| --- | --- |
+| `/cl on` · `/cl off` | Colored lighting on or off. |
+| `/cl purge` · `/cl purge chunk` | Recalculate all colored light, or only the 3x3 chunks round you. |
+| `/cl blacklight on\|off` | The glow under blacklight (alone, shows whether it is on). |
+| `/cl bloom on\|off` · `/cl bloom` | Bloom on or off; alone, shows what the bloom pass costs. |
+| `/cl dh on\|off\|auto` | Colored light on Distant Horizons' LODs (`/cl dh debug` toggles a debug view of them). |
+| `/cl patchshader` | Make patched copies of the shader packs in your `shaderpacks` folder (Oculus). |
+| `/cl debug autocolor <namespace>` | List the light color of every light-emitting block state of a mod in the log. |
+| `/cl debug queue` | The light engine's queue and thread state in the log (run it while the light is wrong, before a purge). |
+| `/cl debug flywheel report\|texture\|ssbo\|auto` | Flywheel's light path: a report, or a forced mode for testing. |
 
 ## 🗺️ Roadmap
 

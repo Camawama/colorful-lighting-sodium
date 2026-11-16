@@ -47,12 +47,12 @@ repositories {
     flatDir { dirs 'libs' }
 }
 dependencies {
-    // the full mod: libs/colorful_lighting-1.20.1-2.7.1.jar (the group part is ignored by flatDir)
-    compileOnly fg.deobf("local:colorful_lighting-1.20.1:2.7.1")
+    // the full mod: libs/colorful_lighting-1.20.1-2.14.0.jar (the group part is ignored by flatDir)
+    compileOnly fg.deobf("local:colorful_lighting-1.20.1:2.14.0")
 
-    // or only the API, for compiling: libs/colorful_lighting-1.20.1-2.7.1-api.jar
+    // or only the API, for compiling: libs/colorful_lighting-1.20.1-2.14.0-api.jar
     // (already in official names, so no fg.deobf)
-    // compileOnly files('libs/colorful_lighting-1.20.1-2.7.1-api.jar')
+    // compileOnly files('libs/colorful_lighting-1.20.1-2.14.0-api.jar')
 }
 ```
 
@@ -76,7 +76,7 @@ cloned into (`settings.gradle` sets no project name), e.g. `colorful-lighting-so
 ```gradle
 repositories { mavenLocal() }
 dependencies {
-    compileOnly fg.deobf("net.camacraft.colorful_lighting:colorful-lighting-sodium-mc1.20.1:2.7.1")
+    compileOnly fg.deobf("net.camacraft.colorful_lighting:colorful-lighting-sodium-mc1.20.1:2.14.0")
 }
 ```
 
@@ -159,6 +159,42 @@ Brightness is not part of the provider; it still comes from the state's vanilla
 
 Entity variant: `registerEntityLightColorProvider(entity -> ...)`, consulted when entities act
 as dynamic light sources.
+
+## Dynamic lights (since 2.8.0)
+
+For lights that move or come and go: held torches, burning mobs, lamps on moving ships, flashlights. A mod gives its
+lights to Colorful Lighting every client tick and, for the shader renderer, every frame; Colorful Lighting mixes them
+into every light sample in colour (terrain, entities, block entities, particles, Flywheel), mirrors them onto Valkyrien
+Skies ships and propagates them through the blocks the way a placed lamp's light goes, so they never shine through a
+solid wall. Lively Lighting's client module is one such provider.
+
+```java
+// net.camacraft.colorfullighting.compat.dynamiclights.DynamicLightsCompat (client side, once)
+DynamicLightsCompat.registerExternalProvider((level, partialTick, sink) -> {
+    // a torch held by the local player: an id that stays the same across ticks, a position, level 0-15, 0xRRGGBB (-1 white),
+    // falloff 0 (vanilla's diamond) or 1 (round), reach in blocks
+    sink.point(myLightKey, x, y, z, 14f, 0xFFB060, 1, 14f);
+    // a cone: axis, outer and inner full angles in degrees, then the same colour and reach
+    sink.spot(myBeamKey, x, y, z, dirX, dirY, dirZ, 40f, 20f, 14f, 0xFFFFFF, 48f);
+});
+```
+
+Flags or'd into the colour (`DynamicLightSink`): `BLACKLIGHT` (2.11.0, an ultraviolet light: saturated colours round it
+glow), `ABSORB` (2.12.0, a light that takes light away; its RGB says which channels), `SHIPS_ONLY` and `NOT_ON_SHIPS`
+(2.13.0, drawn only on, or never on, Valkyrien Skies ships' blocks), `KEEPS_SKY` (2.13.0, an absorbing light that leaves
+sky light alone). `point(..., blocksPerLevel)` (2.10.6) makes a light lose a level every so many blocks (a lamp on a
+ship drawn at twice its size). Look the flags up by reflection when supporting older builds, as each field's javadoc
+says.
+
+## Fluorescence (since 2.14.0)
+
+Entities that glow under a blacklight whatever their own colours (a scorpion, bones, a jellyfish):
+`net.camacraft.colorfullighting.compat.vanilla.EntityFluorescence.setProvider(entity -> float[] or null)`, eight numbers
+per glowing entity: the glow's red, green, blue and strength, the part of the texture that glows by brightness (from,
+to), and a hue with how far from it. `setTextures(Map<ResourceLocation, float[]>)` names textures that glow whoever
+draws them. The glow goes by the texture an entity's body is drawn with, costs one lookup per listed entity while a
+blacklight is about and nothing otherwise, and stands down under an Oculus shader pack. Lively Lighting 0.10.0 feeds it
+from `config/livelylighting/uv_definitions`.
 
 ## Custom levels and renderers
 
