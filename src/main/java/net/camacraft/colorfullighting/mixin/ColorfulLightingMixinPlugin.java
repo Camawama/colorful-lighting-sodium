@@ -175,6 +175,12 @@ public class ColorfulLightingMixinPlugin implements IMixinConfigPlugin {
             // Ensure Iris or Oculus is installed
             return hasClass("net.irisshaders.iris.Iris");
         }
+        if (mixinClassName.contains(".sodium.emberbium.")) {
+            // Emberbium (a fork of Embeddium that keeps its mod id and classes) draws fading-in sections with a program of
+            // its own (2.14.1): told apart by the method that binds it, which Embeddium doesn't have
+            return hasMembers("me.jellysquid.mods.sodium.client.render.chunk.ShaderChunkRenderer",
+                    new String[0], new String[]{"bindFadeInProgram"});
+        }
         if (mixinClassName.contains(".embeddium.")) {
             // Ensure SPECIFICALLY embeddium is installed
             return hasClass("org.embeddedt.embeddium_integrity.MixinTaintDetector");

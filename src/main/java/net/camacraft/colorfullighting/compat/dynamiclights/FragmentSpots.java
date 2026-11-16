@@ -49,8 +49,11 @@ public final class FragmentSpots {
         }
         StringBuilder out = new StringBuilder(source.length() + 512);
         out.append(source, 0, main.start());
+        // outside the block (2.14.1): Chunks Fade In puts its declarations after a shader's last line that starts with
+        // "uniform", and inside this block they were compiled out with it (Colorful Lighting switched off, or no dynamic
+        // lights and no blacklight blocks), and the shader failed: "undefined variable cfi_FadeFactor", the game stopped
+        if (!source.contains("u_LightTex")) out.append("\nuniform sampler2D u_LightTex;\n");
         out.append("\n#if defined(COLORFUL_LIGHTING_MOD_PRESENT) && defined(CL_DYNAMIC_LIGHTS)\n");
-        if (!source.contains("u_LightTex")) out.append("uniform sampler2D u_LightTex;\n");
         // for finding a fault: the picture in four bands (the counts, the lights alone, the place, the face)
         if (Boolean.getBoolean("colorfullighting.spotFragDebug")) out.append("#define CL_FRAG_DEBUG\n");
         // blacklight (2.11.0) reads the block's own colour: only where the shader has the atlas and its coordinates by these names

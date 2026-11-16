@@ -6,6 +6,39 @@ Planned
 - keep Valkyrien Skies compatibility on every version where VS exists
 - add Sable / Create Aeronautics compatibility alongside Valkyrien Skies where possible
 
+2026-11-16 (2.14.2)
+- Dynamic lights stay still behind the pause menu of a singleplayer game. The terrain's dynamic lights were placed at
+  the game timer's partial tick, which runs on while the game is paused and the world is drawn at the paused moment, so a
+  light another mod hands over through the dynamic light API slid between its last two places and flickered behind the
+  menu. They are placed at the moment the world is drawn (`Minecraft.getPartialTick`).
+- The Nether and the End are no longer lighter with Colorful Lighting on than off. The coloured lightmap adds the sky's
+  part and each colour's block part, each read from the game's lightmap, and the lightmap's darkest texel (the Nether's
+  ambient light, the End's bright lightmap, the game's own lift toward grey) is in both: it was counted twice wherever
+  the light was low. It is now taken off the block part while that is dim, as the Distant Horizons LODs already did:
+  where no block light shines the overworld and the End are lit as with Colorful Lighting off, True Darkness's darkening
+  included, and the Nether comes within a few percent (a little darker); coloured light shows on top as before (vanilla
+  core shaders, the Embeddium terrain and its fragments' spot lights, Flywheel).
+
+2026-11-15 (2.14.1)
+- Emberbium support. Emberbium is a fork of Embeddium that keeps Embeddium's mod id and classes, so Colorful Lighting
+  already took it for Embeddium and every hook applied; what broke was its chunk fade-in (on by default since
+  0.3.32-beta.118). A region whose sections have just appeared is drawn for 750 ms with a second terrain program,
+  compiled with `USE_CHUNK_FADE_IN`, whose fragment shader reads a `v_FadeIn` that Embeddium's vertex shader writes, and
+  Colorful Lighting puts its own vertex shader in Embeddium's place: the program's fragment shader read an input nothing
+  wrote (GLSL makes that a link error; NVIDIA's driver links it and reads 0, so new land stayed the fog colour for the
+  whole fade and then popped in), and the program never got the
+  uniforms Colorful Lighting sets at the start of a pass, so a fading region lost its colours (the coloured light switch
+  read 0 and coloured vertices were drawn as plain light) and its dynamic lights. The terrain vertex shaders now carry
+  Emberbium's fade input under `USE_CHUNK_FADE_IN`, which only Emberbium's fade-in program defines, and the per-pass
+  uniforms are set on that program each time it is bound (`mixin.compat.sodium.emberbium`, applied only where
+  `ShaderChunkRenderer` has `bindFadeInProgram`). Nothing changes with Embeddium: the define is never set there and the
+  two mixins do not apply.
+- Chunks Fade In no longer crashes the game when Colorful Lighting is switched off. Chunks Fade In puts its
+  declarations after the terrain fragment shader's last `uniform` line, which was a line Colorful Lighting adds inside a
+  block compiled only with its dynamic lights on; with Colorful Lighting off (or with no dynamic lights and no blacklight
+  blocks) they were compiled out and the shader failed ("undefined variable cfi_FadeFactor"), on the first frame at every
+  start once the setting was saved. That line now stands outside the block (`FragmentSpots`). In 2.10.3 to 2.14.0.
+
 2026-11-14 (2.14.0)
 - Fluorescence: entities that glow under ultraviolet whatever their own colours, as a scorpion does. A blacklight makes
   what is saturated glow; a mod can now say which entities glow in a colour of their own, a dark body too

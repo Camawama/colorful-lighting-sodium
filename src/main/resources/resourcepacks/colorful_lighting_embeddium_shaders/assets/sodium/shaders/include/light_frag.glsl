@@ -62,6 +62,11 @@ vec3 cl_lightmapAt(sampler2D lightMap, float sky4, vec3 rgb8) {
     vec3 sky = texture(lightMap, vec2(lo, clamp(sky4 / 16.0, lo, hi))).xyz;
     vec3 at = clamp(rgb8 / 256.0, vec3(lo), vec3(hi));
     vec3 block = vec3(texture(lightMap, vec2(at.r, lo)).r, texture(lightMap, vec2(at.g, lo)).r, texture(lightMap, vec2(at.b, lo)).r);
+    // the lightmap's darkest texel (block 0, sky 0) is a floor every sample above holds, and the sky's already has it: taken
+    // off the block light while it is dim, as the Distant Horizons LODs do, so where no block light shines this is the game's
+    // own texel (2.14.2: the Nether's ambient light and the End's bright lightmap were counted twice, lighter than /cl off)
+    float lightFloor = texture(lightMap, vec2(lo, lo)).r;
+    block = max(block - lightFloor * (1.0 - clamp(rgb8 / 240.0, 0.0, 1.0)), vec3(0.0));
     float moonWashoutFactor = mix(1.0, 0.0, colorfullighting_mod_injected_u_NightVibrancy);
     float effectiveSkyBrightness = sky.r * moonWashoutFactor * (sky4 / 16.0);
     float washFactor = max(0.1, 1.0 - effectiveSkyBrightness);

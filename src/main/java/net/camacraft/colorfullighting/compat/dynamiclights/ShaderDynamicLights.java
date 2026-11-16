@@ -131,7 +131,9 @@ public final class ShaderDynamicLights {
             builtLevel = null;
             return false;
         }
-        float partialTick = mc.getFrameTime();
+        // the moment the world is drawn at (2.14.2): while a singleplayer game is paused that is the paused moment, where the
+        // timer's own partial tick (getFrameTime) runs on and every light another mod hands over slid between its last two ticks
+        float partialTick = mc.getPartialTick();
         // the same frame (the frame counter, or failing its hook, a fresh build within the last 40 ms) reuses the arrays
         long now = System.nanoTime();
         if (builtFrame == frameCounter && builtLevel == level && builtPartialTick == partialTick && now - builtNanos < 40_000_000L) return count > 0;

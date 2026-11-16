@@ -20,6 +20,12 @@ out float v_FragDistance;
 uniform int u_FogShape;
 uniform vec3 u_RegionOffset;
 
+#ifdef USE_CHUNK_FADE_IN
+// Emberbium's chunk fade-in (only its fade-in program defines this): each section's progress for its fragment shader
+uniform vec4 u_FadeIn[64];
+flat out float v_FadeIn;
+#endif
+
 uniform sampler2D u_LightTex; // The light map texture sampler
 
 #if defined(COLORFUL_LIGHTING_MOD_PRESENT) && defined(CL_DYNAMIC_LIGHTS)
@@ -52,6 +58,10 @@ vec3 _get_draw_translation(uint pos) {
 
 void main() {
     _vert_init();
+
+#ifdef USE_CHUNK_FADE_IN
+    v_FadeIn = u_FadeIn[int(_draw_id >> 2u)][int(_draw_id & 3u)];
+#endif
 
     vec3 translation = u_RegionOffset + _get_draw_translation(_draw_id);
     vec3 position = _vert_position + translation;

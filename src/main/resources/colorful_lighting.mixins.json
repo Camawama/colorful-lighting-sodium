@@ -62,6 +62,8 @@
     "compat.wakes.BrickMixin",
     "compat.wakes.SplashPlaneParticleMixin",
     "compat.sodium.embeddium.VanillaLikeChunkVertexMixin",
+    "compat.sodium.emberbium.EmberbiumShaderChunkRendererMixin",
+    "compat.sodium.emberbium.EmberbiumDefaultChunkRendererMixin",
     "compat.flywheel.LightBuffersMixin",
     "compat.flywheel.LightStorageMixin",
     "compat.flywheel.InstancedLightMixin",
