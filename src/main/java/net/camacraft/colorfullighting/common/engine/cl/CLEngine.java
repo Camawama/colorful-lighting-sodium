@@ -239,7 +239,9 @@ public class CLEngine extends AbstractColoredLightEngine {
 	@Override
 	public void tick() {
 		if (lightPropagatorThread == null) {
-			lightPropagator.doWork();
+			if (lightPropagator != null) {
+				lightPropagator.doWork();
+			}
 		}
 	}
 	
